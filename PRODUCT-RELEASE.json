@@ -1,9 +1,9 @@
 {
-  "sourceTree": "bc001468b140a5c46aa43024e480170305b1c4a3",
+  "sourceTree": "5f73b1a91ceed6d03eb661cb9897e2ad8d2af076",
   "schema": 1,
   "product": "eona-mail",
   "version": "0.2.0",
-  "sourceCommit": "5d35fbb7d69724f0c2ea4f9d69ee3b67000fe01c",
+  "sourceCommit": "ffd3b8a193fe07524429f9aa639077e7ff39044a",
   "workingTree": false,
   "databaseSchema": 1,
   "compatibility": {
@@ -79,7 +79,7 @@
     "product/workspace-worker.py": "c497387e70866e7113c7b7fec09e3fc3fd8f8eb4649de871c850e0d092beabc5",
     "schema.sql": "d7fce0817d18f8248dff0ee30d0e24ac6c8c006d5d227b2365f7046b0dae49c0",
     "scripts/follow.py": "7ed01e8ba577077df90cd1ca5fdf5c3bc1a486670fc0a420e37adce2aadc8f91",
-    "scripts/test-follow.py": "ef2a82412bfd4948577aa8fd6ef1cc59c5cf779255bd1653f07233fe79d102ba",
+    "scripts/test-follow.py": "7515f698e437f37be50fdcd3770eed000669860f0b20f99feac04c5bc2860029",
     "scripts/verify-release.mjs": "033249a8b73a100ba323539b4ddf75088240b97728d9e29a1fa520d6cfc49cbd",
     "src/eona-foundation-assets.js": "b1c868e89bc3f8babed54a518b90de7ef76830268a40ef41ab74c278d39fda9f",
     "src/index.js": "fd6f169548bbe63c321568502b8399ce80eaff06609fea35e0a628c1c45b1475",
