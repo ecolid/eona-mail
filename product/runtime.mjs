@@ -15,6 +15,7 @@ import {openIdentity} from '../sv/identity.mjs';
 import {openMailIcons} from '../sv/home-icons.mjs';
 import {writeResponse} from '../sv/http-response.mjs';
 
+const machinePath=path=>path==='/health'||path==='/v1'||path.startsWith('/v1/')||path.startsWith('/internal/product/');
 const json=(value,status=200,headers={})=>Response.json(value,{status,headers:{'cache-control':'no-store',...headers}});
 const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&a.length===b.length&&timingSafeEqual(Buffer.from(a),Buffer.from(b));
 export async function openProduct(input,options={}){
@@ -82,7 +83,7 @@ export async function openProduct(input,options={}){
   async function handle(request,{client='local'}={}){
     if(closed)return json({error:'product_closed'},503);
     const url=new URL(request.url),path=url.pathname;
-    if(url.origin!==config.origin)return json({error:'wrong_origin'},403);
+    if(url.origin!==config.origin&&!(config.mode==='personal'&&machinePath(path)&&url.origin===config.internal_url))return json({error:'wrong_origin'},403);
     if(path==='/health')return json({ok:true,product:'mail',schema:1,mode:config.mode});
     const icon=icons(request);if(icon)return icon;
     if(assets.has(path))return new Response(assets.get(path),{headers:{'content-type':'text/css','cache-control':'public,max-age=3600'}});
@@ -127,8 +128,10 @@ export async function serveProduct(path,options={}){
   const product=await openProduct(path,options),origin=new URL(product.config.origin);
   const server=createServer(async(req,res)=>{
     try{
-      if(req.headers.host!==origin.host){res.writeHead(403);res.end();return;}
-      const url=new URL(req.url,origin);if(url.origin!==origin.origin){res.writeHead(403);res.end();return;}
+      const internal=product.config.mode==='personal'&&product.config.internal_url?new URL(product.config.internal_url):null;
+      const base=req.headers.host===origin.host?origin:internal&&req.headers.host===internal.host?internal:null;
+      if(!base){res.writeHead(403);res.end();return;}
+      const url=new URL(req.url,base);if(url.origin!==base.origin||base===internal&&!machinePath(url.pathname)){res.writeHead(403);res.end();return;}
       let size=0,chunks=[];for await(const chunk of req){size+=chunk.length;if(size>72*1024*1024){res.writeHead(413);res.end();return;}chunks.push(chunk);}
       const request=new Request(url,{method:req.method,headers:req.headers,...(size?{body:Buffer.concat(chunks)}:{})});
       await writeResponse(await product.handle(request,{client:req.socket.remoteAddress}),res);

@@ -1,0 +1,12 @@
+import {request as httpRequest} from 'node:http';import test from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';import {join} from 'node:path';import {tmpdir} from 'node:os';import {createServer} from 'node:net';import {once} from 'node:events';import {initialize} from './cli.mjs';import {serveProduct} from './runtime.mjs';
+test('standalone HTTPS instances expose only configured machine paths over loopback HTTP',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mail-http-boundary-'));t.after(()=>rm(root,{recursive:true,force:true}));const probe=createServer();probe.listen(0,'127.0.0.1');await once(probe,'listening');const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));const local='http://127.0.0.1:'+port;
+ const path=await initialize({directory:join(root,'instance'),origin:local,email:'owner@example.test',password:'synthetic-test-password'}),config=JSON.parse(await readFile(path,'utf8'));config.port=port;config.origin='https://mail.example.test';config.internal_url=local;config.service_clients=[{id:'reader',token_env:'READER',scopes:['mail.read']}];await writeFile(path,JSON.stringify(config));const secretPath=join(root,'instance','credentials.json');const secrets=JSON.parse(await readFile(secretPath,'utf8'));secrets.READER='r'.repeat(48);await writeFile(secretPath,JSON.stringify(secrets));
+ const app=await serveProduct(path,{fetcher:()=>{throw Error('unexpected_network')}});t.after(()=>app.close());
+ assert.equal((await fetch(local+'/health')).status,200);
+ assert.equal((await fetch(local+'/v1/messages',{headers:{authorization:'Bearer '+secrets.READER}})).status,200);
+ assert.equal((await fetch(local+'/internal/product/status',{headers:{authorization:'Bearer '+secrets.MAIL_WORKER_TOKEN}})).status,200);
+ for(const path of ['/','/auth/start','/api/emails'])assert.equal((await fetch(local+path,{headers:{authorization:'Bearer '+secrets.READER}})).status,403,path);
+ const wrongHost=await new Promise((resolve,reject)=>{const req=httpRequest(local+'/v1/messages',{headers:{host:'other.example.test',authorization:'Bearer '+secrets.READER}},response=>{response.resume();response.on('end',()=>resolve(response.statusCode))});req.on('error',reject);req.end()});assert.equal(wrongHost,403);
+ assert.equal((await fetch(local+'/v1/messages',{headers:{cookie:'forged=1',authorization:'Bearer '+secrets.READER}})).status,403);
+});
