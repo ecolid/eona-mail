@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -29,6 +30,7 @@ jobs:
       - run: python3 scripts/test-follow.py
       - run: node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
       - run: cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs
+      - run: python3 scripts/test-release.py --bundle "$RUNNER_TEMP/mail-bundle"
       - name: Start the independent demo
         run: |
           set -euo pipefail
