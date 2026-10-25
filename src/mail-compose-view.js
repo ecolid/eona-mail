@@ -43,7 +43,7 @@ export function installMailComposer() {
   send.disabled=uploading||sending||!!attempt||!senders.length||!!active?.from_id&&!senders.some(s=>s.id===active.from_id&&s.available!==false);
  };
  const feedback=(value='',error=false)=>{clearTimeout(slowSaveTimer);if(status.textContent!==value)status.textContent=value;status.dataset.error=String(error)};
- const normalFeedback=()=>{const sync=(workspace.data.sync?.accounts||[]).find(a=>a.account===active?.from_id),blocked=workspace.data.sync?.source_error||sync&&sync.state!=='ok',otherVersion=workspace.data.drafts.some(d=>d.sync?.conflict_of===active?.id);feedback(active?.previous_failure?'上次发送未成功，草稿会自动保存。':blocked?'已保存在本站，原邮箱同步暂未完成。':otherVersion?'自动保存 · 另一端版本已单独保留':'自动保存',!!blocked);status.title=(active?.updated_at?'上次保存：'+new Date(active.updated_at).toLocaleTimeString():'输入会自动保存')+(sync?.last_success?'；原邮箱上次同步：'+new Date(sync.last_success).toLocaleTimeString():'')};
+ const normalFeedback=()=>{const sync=(workspace.data.sync?.accounts||[]).find(a=>a.account===active?.from_id),blocked=!!workspace.data.sync?.configured&&(workspace.data.sync?.source_error||sync&&sync.state!=='ok'),otherVersion=workspace.data.drafts.some(d=>d.sync?.conflict_of===active?.id);feedback(active?.previous_failure?'上次发送未成功，草稿会自动保存。':blocked?'已保存在本站，原邮箱同步暂未完成。':otherVersion?'自动保存 · 另一端版本已单独保留':'自动保存',!!blocked);status.title=(active?.updated_at?'上次保存：'+new Date(active.updated_at).toLocaleTimeString():'输入会自动保存')+(sync?.last_success?'；原邮箱上次同步：'+new Date(sync.last_success).toLocaleTimeString():'')};
  const flush=async()=>{
   clearTimeout(timer);if(saving)return saving;if(!active||!dirty||composition.active)return;
   if(!active.rev&&!meaningful(active)&&!uploading){dirty=false;firstDirtyAt=0;normalFeedback();return}
