@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run the shared Sent/Drafts reconciler with product-owned configuration."""
-import argparse,base64,contextlib,fcntl,importlib.util,json,os,pathlib,sqlite3,ssl,imaplib,time,signal,threading
+import argparse,base64,contextlib,fcntl,importlib.util,json,os,pathlib,sqlite3,ssl,imaplib,time,signal,threading,datetime
 from types import SimpleNamespace
 from importlib.machinery import SourceFileLoader
 HERE=pathlib.Path(__file__).resolve().parent
@@ -43,12 +43,14 @@ def run_once(config,credentials,connect=imaplib.IMAP4_SSL):
                     if not password:raise RuntimeError('source_credential_missing')
                     connection=connect(imap['host'],imap['port'],ssl_context=ssl.create_default_context(),timeout=30)
                     connection.login(imap['user'],password);protocol.identify(connection)
-                    folders=list(imap['folders'])
+                    folders=list(imap['folders']);discovered=False
                     if imap.get('discovery')=='all':
-                        row=db.execute('SELECT folders_json FROM product_source_inventory WHERE account=?',(account.key,)).fetchone()
-                        if row:folders=list({f['name']:f for f in [*folders,*json.loads(row[0])]}.values())
+                        row=db.execute('SELECT folders_json,state,checked_at FROM product_source_inventory WHERE account=?',(account.key,)).fetchone()
+                        if row:
+                            folders=list({f['name']:f for f in [*folders,*json.loads(row[0])]}.values())
+                            discovered=row[1]=='connected' and time.time()-datetime.datetime.fromisoformat(row[2].replace('Z','+00:00')).timestamp()<300
                     remote=Remote(connection,root/'objects',folders);report=engine.account(account,remote)
-                    states=state.StateSync(db,root/'objects',core.unpack);states.observe(account.key,state.IMAPState(remote),folders);errors=states.push(account.key,state.IMAPState(remote),folders);pending=states.complete()
+                    states=state.StateSync(db,root/'objects',core.unpack);states.observe(account.key,state.IMAPState(remote),folders,discovered=discovered);errors=states.push(account.key,state.IMAPState(remote),folders);pending=states.complete()
                     if errors or pending:
                         code=errors[0] if errors else 'state_operation_pending'
                         report={'account':account.key,'state':'error','error':code}

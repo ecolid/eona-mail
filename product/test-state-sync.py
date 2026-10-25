@@ -138,5 +138,17 @@ class Cases(unittest.TestCase):
     def test_configuration_change_refuses_old_proof(self):
         with self.assertRaisesRegex(RuntimeError,'state_folder_unconfigured'):
             self.sync.observe('one', self.remote,[{'name':'Other','kind':'inbox'}])
+    def test_discovered_directory_removed_retains_original_and_other_folders_keep_syncing(self):
+        with self.db:
+            self.db.execute("UPDATE product_source_copies SET folder='Removed project',kind='archive'")
+            self.db.execute("INSERT INTO emails VALUES(2,0,0,'inbox')")
+            self.db.execute("INSERT INTO product_source_copies(account,folder,validity,uid,email_id,raw_key,raw_sha,source_at,kind,seen) VALUES('one','INBOX','9','1',2,'other-original','sha','now','inbox',0)")
+            self.db.execute('DELETE FROM product_copy_state')
+        self.remote.data['INBOX']['1']['seen']=True
+        self.sync.observe('one',self.remote,FOLDERS,discovered=True)
+        self.assertEqual(self.db.execute('SELECT raw_key FROM product_source_copies WHERE email_id=1').fetchone()[0],'original')
+        self.assertEqual(self.db.execute('SELECT folder FROM emails WHERE id=1').fetchone()[0],'inbox')
+        self.assertEqual(self.db.execute("SELECT present FROM product_copy_state WHERE folder='Removed project'").fetchone()[0],0)
+        self.assertEqual(self.db.execute('SELECT is_read FROM emails WHERE id=2').fetchone()[0],1)
 
 if __name__ == '__main__': unittest.main()

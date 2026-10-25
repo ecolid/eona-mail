@@ -32,16 +32,19 @@ class StateSync:
     def rows(self, sql, args=()):
         return [dict(row) for row in self.db.execute(sql, args)]
 
-    def observe(self, account, remote, folders):
+    def observe(self, account, remote, folders, discovered=False):
         copies = self.rows("SELECT c.*,s.restore_folder,s.present AS was_present,s.flagged AS was_flagged FROM product_source_copies c LEFT JOIN product_copy_state s USING(account,folder,validity,uid) WHERE c.account=? AND c.kind NOT IN ('sent','drafts')", (account,))
         allowed = {f['name'] for f in folders}
-        if any(c['folder'] not in allowed for c in copies):
+        if not discovered and any(c['folder'] not in allowed for c in copies):
             raise RuntimeError('state_folder_unconfigured')
-        observations = {folder: remote.inventory(folder) for folder in {c['folder'] for c in copies}}
+        observations = {folder: remote.inventory(folder) for folder in {c['folder'] for c in copies} & allowed}
         changes = {}
         with self.db:
             for copy in copies:
-                validity, items = observations[copy['folder']]
+                # A successful, fresh LIST can prove a discovered directory was
+                # removed. Retain its original and retire only its presence;
+                # other directories must continue synchronizing.
+                validity, items = observations.get(copy['folder'], (copy['validity'], {}))
                 item = items.get(int(copy['uid'])) if validity == str(copy['validity']) else None
                 migrated=self.db.execute('SELECT 1 FROM product_migrated_emails WHERE email_id=?',(copy['email_id'],)).fetchone()
                 first=copy['was_present'] is None
