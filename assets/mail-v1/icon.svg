@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Eona Mail</title>
+  <rect width="1024" height="1024" fill="#17364D"/>
+  <path d="M708 318H318C267 318 226 359 226 410V614C226 665 267 706 318 706" fill="none" stroke="#FFF1DC" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M318 706H706C757 706 798 665 798 614V410C798 359 757 318 706 318" fill="none" stroke="#F6846A" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M260 350L467 509Q512 544 557 509L764 350" fill="none" stroke="#FFF1DC" stroke-width="76" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

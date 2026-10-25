@@ -1,0 +1,35 @@
+// The sticky heading is not part of the visible scroll track. Keep the viewport
+// identity so history, pagination and touch range selection retain one owner.
+export function mailScrollTrack(box,heading){
+ const top=Math.min(box.bottom,Math.max(box.top,heading?.bottom||box.top));
+ return {top,height:Math.max(0,box.bottom-top)};
+}
+// Preserve each existing scroll element: reader history and touch controllers own it.
+export function installMailOverlayScrollbars(OverlayScrollbars){
+ if(typeof OverlayScrollbars!=='function')return;
+ const ports=new Map(),selector='#side,#list,#view,#mail-settings-form,.mail-settings-page>.mail-layout-settings,.mail-compose';let frame=0;
+ const place=(element,instance)=>{
+  const box=element.getBoundingClientRect(),mobile=matchMedia('(max-width:860px)').matches;
+  const obscured=mobile&&(element.id==='side'&&!document.body.classList.contains('sideopen')||element.id==='list'&&document.body.classList.contains('viewing')||element.id==='view'&&!document.body.classList.contains('viewing'))||document.body.classList.contains('mail-composing')&&['list','view'].includes(element.id);
+  const bar=instance.elements().scrollbarVertical.scrollbar,heading=element.id==='list'?element.querySelector('.mail-workspace-title,.mail-results-bar'):null,track=mailScrollTrack(box,heading?.getBoundingClientRect());
+  bar.classList.add('mail-overlay-scrollbar');bar.dataset.mailScrollFor=element.id||'workspace';
+  Object.assign(bar.style,{top:track.top+'px',left:(box.right-10)+'px',height:track.height+'px',width:'10px',zIndex:element.id==='side'&&mobile?'105':'65',visibility:!obscured&&box.width>0&&box.height>0&&box.right>0&&box.left<innerWidth?'visible':'hidden'});
+ };
+ const sync=()=>{frame=0;
+  for(const [element,instance] of ports)if(!element.isConnected){instance.destroy();ports.delete(element);sizes?.unobserve(element)}
+  for(const element of document.querySelectorAll(selector)){
+   if(!ports.has(element)&&element.getBoundingClientRect().width>0){
+    const instance=OverlayScrollbars({target:element,elements:{viewport:element},scrollbars:{slot:document.body}},{overflow:{x:'hidden',y:'scroll'},scrollbars:{theme:'os-theme-eona',autoHide:'leave',autoHideDelay:450,dragScroll:true}});
+    if(instance.elements().viewport!==element){instance.destroy();throw Error('Mail scroll owner changed')}
+    ports.set(element,instance);sizes?.observe(element);
+   }
+  }
+  for(const [element,instance] of ports)place(element,instance);
+ };
+ const schedule=()=>{if(!frame)frame=requestAnimationFrame(sync)};
+ const sizes=typeof ResizeObserver==='function'?new ResizeObserver(schedule):null;
+ const changes=new MutationObserver(records=>{if(records.some(record=>!record.target.closest?.('.os-scrollbar')))schedule()});
+ changes.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
+ window.addEventListener('resize',schedule);document.addEventListener('scroll',schedule,true);document.addEventListener('transitionend',schedule);sync();
+ return {refresh:schedule,dispose(){changes.disconnect();sizes?.disconnect();cancelAnimationFrame(frame);window.removeEventListener('resize',schedule);document.removeEventListener('scroll',schedule,true);document.removeEventListener('transitionend',schedule);for(const instance of ports.values())instance.destroy();ports.clear()}};
+}

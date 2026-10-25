@@ -1,0 +1,68 @@
+name: Mail product checks and development release
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: node scripts/verify-release.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - run: python3 product/test-imap.py
+      - run: python3 product/test-source-inventory.py
+      - run: python3 product/test-state-sync.py
+      - run: python3 product/test-workspace-folders.py
+      - name: Start the independent demo
+        run: |
+          set -euo pipefail
+          node product/cli.mjs init --mode demo --directory "$RUNNER_TEMP/mail-demo" --origin http://127.0.0.1:8799 --email demo@example.test
+          node product/cli.mjs serve --config "$RUNNER_TEMP/mail-demo/mail.json" > "$RUNNER_TEMP/mail-demo.log" 2>&1 &
+          MAIL_DEMO_PID=$!
+          trap 'kill "$MAIL_DEMO_PID"' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8799/health > "$RUNNER_TEMP/mail-health.json"; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/mail-health.json")); assert d["ok"] and d["mode"]=="demo"'
+          curl --fail --silent http://127.0.0.1:8799/ > "$RUNNER_TEMP/mail-page.html"
+  development:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: mail-development-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Publish the checked development channel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "$GITHUB_SHA" || exit 0
+          node scripts/verify-release.mjs
+          git push origin "$GITHUB_SHA:refs/heads/channels/development"
+          MAIL_TAG="dev-${GITHUB_SHA:0:12}"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz" "$GITHUB_SHA"
+          if ! gh release view "$MAIL_TAG" > /dev/null 2>&1; then
+            gh release create "$MAIL_TAG" --target "$GITHUB_SHA" --prerelease --title "$MAIL_TAG" --notes '通过独立检查的开发版本。来源与文件散列见 PRODUCT-RELEASE.json。' "$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz"
+          fi

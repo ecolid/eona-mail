@@ -1,0 +1,12 @@
+// Shared by the web transaction owner and the IMAP reconciler. Keep SQL here.
+export const MAIL_SYNC_SCHEMA=/* SQL */`
+CREATE TABLE IF NOT EXISTS mail_sync_drafts(owner TEXT NOT NULL,id TEXT NOT NULL,account TEXT NOT NULL,sync_id TEXT NOT NULL,base_rev INTEGER NOT NULL DEFAULT 0,content_hash TEXT NOT NULL DEFAULT '',state TEXT NOT NULL DEFAULT 'pending',conflict_of TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL,PRIMARY KEY(owner,id),UNIQUE(owner,sync_id));
+CREATE TABLE IF NOT EXISTS mail_sync_copies(owner TEXT NOT NULL,account TEXT NOT NULL,kind TEXT NOT NULL,folder TEXT NOT NULL,validity TEXT NOT NULL,uid INTEGER NOT NULL,record_id TEXT NOT NULL,raw_key TEXT NOT NULL,raw_sha TEXT NOT NULL,content_hash TEXT NOT NULL,message_id TEXT NOT NULL DEFAULT '',operation_id TEXT NOT NULL DEFAULT '',removed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(owner,account,kind,folder,validity,uid));
+CREATE INDEX IF NOT EXISTS mail_sync_copy_record ON mail_sync_copies(owner,kind,record_id,removed);
+CREATE TABLE IF NOT EXISTS mail_sync_ops(owner TEXT NOT NULL,id TEXT NOT NULL,kind TEXT NOT NULL,record_id TEXT NOT NULL,account TEXT NOT NULL,revision INTEGER NOT NULL,raw_key TEXT NOT NULL,raw_sha TEXT NOT NULL,state TEXT NOT NULL,folder TEXT NOT NULL DEFAULT '',validity TEXT NOT NULL DEFAULT '',uid INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(owner,id));
+CREATE TABLE IF NOT EXISTS mail_draft_editors(owner TEXT NOT NULL,draft_id TEXT NOT NULL,editor_id TEXT NOT NULL,expires_at INTEGER NOT NULL,PRIMARY KEY(owner,draft_id,editor_id));
+CREATE TABLE IF NOT EXISTS mail_sync_tombstones(owner TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,payload_json TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(owner,kind,id));
+CREATE TABLE IF NOT EXISTS mail_sync_status(owner TEXT NOT NULL,account TEXT NOT NULL,state TEXT NOT NULL,checked_at TEXT NOT NULL,last_success TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '',PRIMARY KEY(owner,account));
+CREATE TABLE IF NOT EXISTS mail_sync_missing(owner TEXT NOT NULL,account TEXT NOT NULL,kind TEXT NOT NULL,folder TEXT NOT NULL,validity TEXT NOT NULL,uid INTEGER NOT NULL,first_seen INTEGER NOT NULL,PRIMARY KEY(owner,account,kind,folder,validity,uid));
+`;
+export async function initializeMailSync(db){for(const sql of MAIL_SYNC_SCHEMA.split(';').filter(s=>s.trim()))await db.prepare(sql).run();}

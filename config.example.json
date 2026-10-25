@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "mode": "personal",
+  "origin": "http://127.0.0.1:8799",
+  "data_root": "./data",
+  "secrets_file": "./credentials.json",
+  "owner": {
+    "id": "owner",
+    "email": "owner@example.test"
+  },
+  "auth": {
+    "mode": "local"
+  },
+  "accounts": [
+    {
+      "id": "example",
+      "address": "owner@example.test",
+      "name": "个人邮箱",
+      "imap": {
+        "discovery": "all",
+        "host": "imap.example.test",
+        "port": 993,
+        "user": "owner@example.test",
+        "password_env": "MAIL_ACCOUNT_PASSWORD",
+        "folders": [
+          {
+            "name": "INBOX",
+            "kind": "inbox"
+          },
+          {
+            "name": "Sent",
+            "kind": "sent"
+          },
+          {
+            "name": "Drafts",
+            "kind": "drafts"
+          },
+          {
+            "name": "Trash",
+            "kind": "trash"
+          }
+        ]
+      },
+      "smtp": {
+        "host": "smtp.example.test",
+        "port": 465,
+        "user": "owner@example.test",
+        "password_env": "MAIL_ACCOUNT_PASSWORD"
+      }
+    }
+  ],
+  "sync": {
+    "enabled": false
+  }
+}

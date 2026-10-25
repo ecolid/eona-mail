@@ -1,0 +1,24 @@
+{
+  "name": "eona-mail-product",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "start": "node product/cli.mjs serve",
+    "worker": "node product/cli.mjs worker",
+    "test": "node --test product/test-product.mjs product/test-demo-lifecycle.mjs product/test-migration.mjs product/test-secret-files.mjs product/test-source-health.mjs"
+  },
+  "dependencies": {
+    "jose": "6.2.12",
+    "nodemailer": "10.1.2",
+    "openid-client": "6.8.8",
+    "parse5": "8.0.1",
+    "postal-mime": "2.7.5"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

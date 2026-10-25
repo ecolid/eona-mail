@@ -1,0 +1,8 @@
+node_modules/
+*.db
+*.db-wal
+*.db-shm
+credentials.json
+mail.json
+data/
+.env
