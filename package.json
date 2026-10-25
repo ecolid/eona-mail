@@ -1,6 +1,6 @@
 {
   "name": "eona-mail-product",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,7 +9,10 @@
   "scripts": {
     "start": "node product/cli.mjs serve",
     "worker": "node product/cli.mjs worker",
-    "test": "node --test product/test-product.mjs product/test-demo-lifecycle.mjs product/test-migration.mjs product/test-secret-files.mjs product/test-source-health.mjs"
+    "test": "node --test test-mail-*.mjs test-inline-translation.mjs test-readonly.mjs test-routes.mjs sv/test-*.mjs product/test-*.mjs",
+    "build:assets": "python3 scripts/build-mail-editor-assets.py && node scripts/build-mail-experience-assets.mjs",
+    "check:assets": "python3 scripts/build-mail-editor-assets.py --check && node scripts/build-mail-experience-assets.mjs --check",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "jose": "6.2.12",
@@ -19,6 +22,12 @@
     "postal-mime": "2.7.5"
   },
   "devDependencies": {
-    "esbuild": "0.28.1"
+    "motion": "14.4.0",
+    "overlayscrollbars": "2.17.0",
+    "quill": "2.0.3",
+    "sortablejs": "1.15.7",
+    "split.js": "1.6.5",
+    "esbuild": "0.28.1",
+    "lucide-static": "1.60.0"
   }
 }

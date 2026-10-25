@@ -1,3 +1,4 @@
+import {serviceAPI} from './service-api.mjs';
 import {sourceAPI} from './source-api.mjs';
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
@@ -86,6 +87,7 @@ export async function openProduct(input,options={}){
     const icon=icons(request);if(icon)return icon;
     if(assets.has(path))return new Response(assets.get(path),{headers:{'content-type':'text/css','cache-control':'public,max-age=3600'}});
     if(!['GET','HEAD'].includes(request.method)&&((request.headers.has('origin')&&request.headers.get('origin')!==config.origin)||request.headers.get('sec-fetch-site')==='cross-site'))return json({error:'forbidden'},403);
+    if(path==='/v1'||path.startsWith('/v1/'))return serviceAPI(request,personal,config,{secrets});
     if(path.startsWith('/internal/'))return internal(request,path);
     if(path.startsWith('/api/import')||path.startsWith('/api/icloud-repair')||path.startsWith('/api/notifications'))return json({error:'integration_not_configured'},404);
     if(config.mode==='personal'&&request.headers.has('authorization')){

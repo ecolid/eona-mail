@@ -1,0 +1,457 @@
+@import url("./eona-foundation.css?v=1.14.9");
+/* ═══════════ Eona UI · Filament 底座上的伴生层 ═══════════
+   原则:凡 Filament 官方主题(filament-theme.css,MIT)有的部件,一律用它的
+   真类(fi-section/fi-btn/fi-badge/fi-input/fi-wi-stats…),本文件不做仿制品。
+   这里只放它没有的自制件:板块路由、健康状态点、条目/设置行、兴趣条、
+   toast、换肤点、移动端抽屉胶水。亮暗跟官方 .dark 机制。 */
+
+:root {
+  --e-surface: #ffffff;
+  --e-soft: var(--gray-50, #f6f7f9);
+  --e-line: var(--gray-200, #e5e7eb);
+  --e-ink: var(--gray-900, #111827);
+  --e-muted: var(--gray-500, #6b7280);
+}
+.dark {
+  --e-surface: var(--gray-900, #111827);
+  --e-soft: var(--gray-800, #1f2937);
+  --e-line: color-mix(in srgb, #fff 12%, transparent);
+  --e-ink: var(--gray-100, #f3f4f6);
+  --e-muted: var(--gray-400, #9ca3af);
+}
+
+/* 保险丝:主题里有一条 opacity:0 的加载态规则(靠它家 JS 点亮),我们不用它家 JS */
+.fi-main-ctn { opacity: 1; }
+
+/* ── 板块路由:一次只显示一个板块;板块内区块间距 ── */
+.board { display: none; }
+.board.current { display: block; }
+.board .fi-header { margin: 14px 0 20px; }
+.board .fi-section { margin-bottom: 18px; }
+.fi-page-content { padding: 0 24px 48px; }
+.fi-breadcrumbs { display: block; padding: 16px 0 0; }
+.eona-crumb-center { color: var(--e-muted); font-size: 13.5px; }
+.eona-crumb-sep { color: var(--e-line); margin: 0 8px; }
+.fi-breadcrumbs b { color: var(--e-ink); font-size: 13.5px; font-weight: 600; }
+
+/* ── 侧栏细节:健康状态点(代替图标,顺带当状态灯)+ 折叠箭头 + 脚部 ── */
+.fi-sidebar .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--e-line); flex-shrink: 0; }
+.fi-sidebar .dot.good { background: var(--success-600, #16a34a); }
+.fi-sidebar .dot.warn { background: var(--warning-600, #d97706); }
+.fi-sidebar .dot.bad { background: var(--danger-600, #dc2626); }
+.fi-sidebar-group-collapse-btn.rotated svg { transform: rotate(-90deg); }
+.fi-sidebar-footer { margin-top: auto; padding: 12px 8px; border-top: 1px solid var(--e-line); }
+
+/* ── KPI 指标带:刻意独立于内容卡的 340px 轨道(两层节奏:读数带 + 内容网格)。
+   协调靠视觉等级,不靠同轨:标签小而灰,数字大而粗,一眼读成仪表盘读数。 ── */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.fi-wi-stats-overview-stat {
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--e-surface); border: 1px solid var(--e-line);
+  border-radius: 12px; padding: 15px 18px;
+}
+.fi-wi-stats-overview-stat-label { font-size: 12px; color: var(--e-muted); letter-spacing: .02em; }
+.fi-wi-stats-overview-stat-value { font-size: 26px; font-weight: 700; color: var(--e-ink); line-height: 1.15; }
+
+/* ── 条目列表(预警/地震/最近一刊) ── */
+.item { padding: 12px 0; border-top: 1px solid var(--e-line); }
+.item:first-of-type { border-top: 0; padding-top: 0; }
+
+/* 宽屏自动分栏:全站共享一套 340px 列轨,上下各节的分界线永远对齐;
+   重型卡不换网格而是横跨两轨(span2),疏密不同、秩序一致。 */
+.grid-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 10px; align-items: start; }
+.grid-items.wide { grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); }
+.grid-items .item, .grid-items .item:first-of-type,
+.grid-items .setting, .grid-items .setting:first-of-type {
+  border: 1px solid var(--e-line); border-radius: 10px; padding: 12px 14px; margin: 0;
+  background: var(--e-surface); border-top: 1px solid var(--e-line);
+}
+.grid-items .item.span2 { grid-column: span 2; }
+@media (max-width: 780px) { .grid-items .item.span2 { grid-column: auto; } }
+/* 长文限行 + 点开展开:默认 8 行截断,点正文切换全文(壳里有开关逻辑) */
+.grid-items .item .body {
+  display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical;
+  overflow: hidden; cursor: pointer;
+}
+.grid-items .item .body.expanded { -webkit-line-clamp: unset; display: block; }
+
+/* 配置项 = 字段网格(标准解法):每个设置项一张小卡,标签在上、控件在下,
+   与内容卡共用 340px 轨道流成 1→4 列——全站只说一种版式语言。 */
+.fi-section-content:has(> .setting),
+.fi-section-content:has(> form > .setting) {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+  gap: 10px; align-items: stretch; /* 字段网格行内等高,格子感 */
+}
+/* 设置卡的解剖结构固定三行:标题 / 说明 / 控件 —— 新板块照此写 */
+/* 表单不自己占格:display:contents 化骨,字段直接进外层网格 */
+.fi-section-content > form:has(> .setting) { display: contents; }
+.fi-section-content > .setting, .fi-section-content > form > .setting {
+  display: flex; align-items: center; gap: 14px; 
+  border: 1px solid var(--e-line); border-radius: 10px;
+  padding: 12px 14px; margin: 0; background: var(--e-surface);
+}
+/* 基类的 first-of-type 去顶白(横排行遗产)会削掉每节第一张卡的顶部内边距——提权还原 */
+.fi-section-content > .setting:first-of-type,
+.fi-section-content > form > .setting:first-of-type {
+  padding-top: 12px; border-top: 1px solid var(--e-line);
+}
+.fi-section-content > .setting .actions,
+.fi-section-content > form > .setting .actions { margin: 0; padding: 0; justify-content: flex-end; }
+.fi-section-content > .setting .actions.input-group > .fi-input { width: 200px; }
+
+.eona-interact > .setting {
+  flex-direction: column; align-items: stretch;
+}
+.eona-interact > .setting .actions {
+  justify-content: flex-start; margin-top: 10px;
+}
+.eona-interact > .setting .actions.input-group > .fi-input { width: auto; flex: 1; }
+
+/* 网格里的说明行横跨全轨 */
+.fi-section-content:has(> .setting) > p.empty,
+.fi-section-content > form:has(> .setting) > p.empty { grid-column: 1 / -1; }
+
+
+.board-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -6px 0 18px; }
+.board-toolbar .fi-input { flex: 1; min-width: 240px; max-width: 440px; }
+.toolbar-sep { width: 1px; height: 22px; background: var(--e-line); margin: 0 10px; }
+
+/* 动作带:动作类(按钮/入口)与字段分居——字段安静排格,动作横带收尾 */
+.action-band {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px 36px;
+  border-top: 1px dashed var(--e-line); padding-top: 14px; margin-top: 4px;
+}
+.action-band .setting {
+  border: 0; background: none; padding: 0; margin: 0; display: block; flex: 0 1 auto;
+}
+.action-band .setting .actions { margin-top: 8px; padding-top: 0; }
+
+/* 板块脚注:能改区没实际控件时,降级成一行说明,不再占一整节 */
+.board-note { margin: 2px 2px 0; color: var(--e-muted); font-size: 12.5px; }
+.item h4 { font-size: 14.5px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--e-ink); }
+/* 长路径与 URL 内部没有空格,不给断点就会被容器边缘齐腰切掉半截 */
+.item .meta { color: var(--e-muted); font-size: 12.5px; margin: 0 0 6px; overflow-wrap: anywhere; }
+.item .body { font-size: 13.5px; margin: 0 0 8px; color: var(--e-ink); overflow-wrap: anywhere; }
+.empty { color: var(--e-muted); font-size: 13.5px; margin: 0; }
+
+/* ── 设置行(说明左、控件右) ── */
+.setting { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--e-line); }
+.setting:first-of-type { border-top: 0; padding-top: 0; }
+.setting .info { flex: 1; min-width: 150px; }
+.setting .info b { font-size: 13.5px; color: var(--e-ink); }
+.setting .info p { margin: 2px 0 0; font-size: 12px; color: var(--e-muted); }
+.setting .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* ── 天气严重度色签(蓝黄橙红是气象台的色,不归 Filament 管) ── */
+.badge { color: #fff; font-size: 11.5px; padding: 2px 9px; border-radius: 99px; }
+
+/* ── 换肤点(亮/暗),住侧栏脚部 ── */
+.eona-skins { display: flex; gap: 8px; align-items: center; padding: 10px 12px 2px; }
+.eona-skin-dot {
+  width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--e-line); padding: 0;
+}
+.eona-skin-dot.light { background: #fff; }
+.eona-skin-dot.dark { background: #111827; }
+.eona-skin-dot.active { border-color: var(--primary-600, #d97706); }
+
+/* ── 顶条右侧三件套:弹层定位胶水(官方靠 floating-ui JS,我们用 CSS 锚定) ── */
+.fi-topbar-end { position: relative; display: flex; align-items: center; gap: 12px; }
+.eona-pop-wrap { position: relative; }
+.eona-pop {
+  display: none; position: absolute; top: calc(100% + 10px); right: 0; z-index: 55;
+  min-width: 300px; max-width: 380px; max-height: 70vh; overflow-y: auto;
+  background: var(--e-surface); border: 1px solid var(--e-line); border-radius: 12px;
+  box-shadow: 0 10px 34px rgb(16 24 40 / .14); padding: 6px;
+}
+.eona-pop.open { display: block; }
+/* 搜索框 = 官方 fi-input-wrp 原样(1:1),只限定顶栏里的宽度 */
+.fi-topbar .fi-global-search-ctn { width: 300px; }
+.fi-topbar .fi-global-search { flex: 1; position: relative; }
+.fi-global-search-result-group-header {
+  font-size: 11.5px; font-weight: 600; color: var(--e-muted);
+  background: var(--e-soft); padding: 6px 12px; border-radius: 8px; margin: 4px 0;
+}
+.fi-global-search-result-group-results { list-style: none; margin: 0; padding: 0; }
+.fi-global-search-result-link { display: block; padding: 9px 12px; border-radius: 8px; text-decoration: none; }
+.fi-global-search-result-link:hover { background: var(--e-soft); }
+.fi-global-search-result-heading { display: block; font-size: 13.5px; font-weight: 600; color: var(--e-ink); }
+.fi-global-search-result-detail { font-size: 12px; color: var(--e-muted); margin-top: 2px; }
+.fi-global-search-no-results-message { padding: 14px 12px; font-size: 13px; color: var(--e-muted); }
+.eona-bell { position: relative; }
+.eona-bell-badge {
+  position: absolute; top: -7px; right: -9px;
+  background: var(--danger-600, #dc2626); color: #fff;
+  border-radius: 99px; padding: 1px 6px; font-size: 10.5px; line-height: 1.4; font-weight: 600;
+}
+.fi-no-notification { padding: 10px 12px; border-bottom: 1px solid var(--e-line); }
+.fi-no-notification:last-child { border-bottom: 0; }
+.fi-no-notification-title { font-size: 13.5px; font-weight: 600; color: var(--e-ink); }
+.fi-no-notification-text { font-size: 12.5px; color: var(--e-muted); margin-top: 2px; }
+
+.eona-avatar.fi-avatar {
+  width: 34px; height: 34px; border-radius: 99px; border: 0; cursor: pointer;
+  background: var(--gray-950, #0a0a0a); color: #fff; font-weight: 700; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.dark .eona-avatar.fi-avatar { background: var(--gray-200, #e5e7eb); color: var(--gray-900, #111827); }
+.eona-account-head { padding: 10px 12px; font-size: 13px; color: var(--e-ink); border-bottom: 1px solid var(--e-line); }
+.eona-account-head small { color: var(--e-muted); }
+.fi-dropdown-list-item { display: block; padding: 9px 12px; border-radius: 8px; text-decoration: none; font-size: 13.5px; color: var(--e-ink); }
+.fi-dropdown-list-item:hover { background: var(--e-soft); }
+dialog { border: 0; border-radius: 14px; padding: 0; max-width: 560px; width: 92vw;
+  margin: auto; inset: 0; position: fixed; background: var(--e-surface); color: var(--e-ink);
+  box-shadow: 0 24px 64px rgb(10 12 16 / .25); }
+dialog::backdrop { background: rgb(10 12 16 / .5); }
+.eona-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--e-line); }
+.eona-detail-body { padding: 14px 18px; font-size: 13.5px; line-height: 1.8; white-space: pre-wrap; max-height: 55vh; overflow-y: auto; }
+#eona-detail > .fi-btn { margin: 0 18px 16px; }
+/* 表单弹层的主操作要常驻可见:2026-08-06 实测「接入新能力」的保存钮被内容挤到
+   视口外,手机上只露出 3 个像素,不往下滚根本点不着。带这个类的弹层把 body 撑成
+   可滚区、动作行钉在底部。 */
+.eona-form-dialog { display: flex; flex-direction: column; max-height: 88dvh; }
+.eona-form-dialog .eona-detail-body { flex: 1; min-height: 0; max-height: none; }
+.eona-form-dialog .eona-dialog-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--e-line); background: var(--e-surface);
+}
+/* 长格式的输入框(如 服务器名:工具名)要能读全提示 */
+.eona-form-dialog .setting .actions { flex: 1; justify-content: flex-end; }
+.eona-form-dialog .setting .actions > .fi-input { width: 100%; max-width: 320px; }
+
+/* 复杂配置卡 2×1:排序类/长说明卡横跨两轨,窄屏回落单轨 */
+.setting.span2 { grid-column: span 2; }
+@media (max-width: 780px) { .setting.span2 { grid-column: span 1; } }
+
+
+.masonry { display: block; columns: 3; column-gap: 12px; }
+.masonry > .item { break-inside: avoid; margin: 0 0 12px; display: block; }
+@media (max-width: 1200px) { .masonry { columns: 2; } }
+@media (max-width: 780px) { .masonry { columns: 1; } }
+
+/* ═══ 交互规范(2026-08-02 盘点后统一)═══
+   开关=拨杆(状态切换);勾选框只用于多选;按钮 主=实心蓝/次=描边/危险=红字;
+   输入统一带框+聚焦环,宽度三档;表单动作横跨整行。 */
+
+
+.fi-switch {
+  appearance: none; -webkit-appearance: none; width: 82px; height: var(--e-ui-control); flex-shrink: 0;
+  border: 1px solid var(--e-line); border-radius: 8px; background: var(--e-surface);
+  position: relative; cursor: pointer; padding: 0; margin: 0;
+}
+.fi-switch::before, .fi-switch::after {
+  position: absolute; top: 0; bottom: 0; width: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; color: var(--e-muted); transition: background .12s, color .12s;
+}
+.fi-switch::before { content: "开"; left: 0; border-radius: 7px 0 0 7px; }
+.fi-switch::after { content: "关"; right: 0; border-radius: 0 7px 7px 0; }
+.fi-switch:checked::before { background: var(--primary-600, #2563eb); color: #fff; font-weight: 600; }
+.fi-switch:not(:checked)::after { background: var(--gray-200, #e5e7eb); color: var(--e-ink); font-weight: 600; }
+.dark .fi-switch:not(:checked)::after { background: var(--gray-700, #374151); }
+
+/* 按钮色阶:官方色变体在我们这兜不住,显式定死 */
+.fi-btn { cursor: pointer; }
+a.fi-btn { text-decoration: none; }
+.fi-btn.fi-color-primary { background: var(--primary-600, #2563eb); color: #fff; }
+.fi-btn.fi-color-primary:hover { background: var(--primary-500, #3b82f6); }
+.fi-btn.fi-color-danger { color: var(--danger-600, #dc2626); }
+
+/* 输入统一:带框 + 聚焦环;宽度三档 */
+.fi-input {
+  background: var(--e-surface); border: 1px solid var(--e-line); border-radius: 8px;
+  padding: 7px 10px; font-size: 13.5px; color: var(--e-ink);
+}
+.fi-input:focus {
+  outline: none; box-shadow: none;
+  border-color: var(--primary-600, #2563eb);
+}
+.w-90 { width: 90px; } .w-160 { width: 160px; } .w-260 { min-width: 260px; }
+
+/* 控件等高:按钮与输入统一 34px——同行控件永远齐线 */
+/* 等高只管卡片与对话框里的控件,不碰顶栏搜索(官方原высота) */
+.fi-page-content .fi-btn.fi-size-sm, dialog .fi-btn.fi-size-sm { height: var(--e-ui-control); display: inline-flex; align-items: center; padding-top: 0; padding-bottom: 0; white-space: nowrap; }
+.fi-page-content .fi-input, dialog .fi-input { height: var(--e-ui-control); box-sizing: border-box; padding: 0 10px; font-size: 12.5px; }
+.fi-page-content textarea.fi-input, dialog textarea.fi-input { height: auto; min-height: 54px; padding: 6px 10px; }
+.fi-switch { height: var(--e-ui-control); }
+
+
+.input-group { display: flex; gap: 8px; flex-wrap: nowrap; align-items: center; }
+.input-group .fi-input { flex: 1; min-width: 0; }
+
+
+.fi-section-header { display: flex; align-items: center; gap: 12px; }
+.fi-section-header .fi-btn { margin-left: 0; }
+.fi-section-header .eona-header-hint { margin-left: auto; color: var(--e-muted); font-size: 12px; }
+
+/* 表单动作条:横跨整行,不再立"按钮卡" */
+.form-actions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+
+/* ── 全局提示 ── */
+#eona-toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(80px);
+  background: var(--e-ink); color: var(--e-surface); font-size: 13px; padding: 9px 20px;
+  border-radius: 99px; opacity: 0; transition: .25s; pointer-events: none; z-index: 60;
+}
+#eona-toast.show { opacity: 1; transform: translateX(-50%); }
+#eona-auth-alert {
+  display: none; background: color-mix(in srgb, var(--danger-600, #dc2626) 10%, var(--e-surface));
+  border: 1px solid var(--danger-600, #dc2626); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 16px; font-size: 13.5px; color: var(--e-ink);
+}
+#eona-auth-alert.show { display: block; }
+
+/* ── 移动端:侧栏抽屉(自管 mob-open,不与主题的 Alpine 状态纠缠) ── */
+.fi-sidebar-close-overlay { display: none; }
+@media (max-width: 1023px) {
+  .fi-sidebar { transform: translateX(-102%); transition: transform .2s; }
+  .fi-sidebar.mob-open { transform: none; box-shadow: 0 0 50px rgb(0 0 0 / .35); z-index: 45; background: var(--color-white, #fff); }
+  .fi-sidebar-close-overlay.show { display: block; position: fixed; inset: 0; background: rgb(10 12 16 / .45); z-index: 40; }
+}
+@media (min-width: 1024px) {
+  .eona-burger { display: none; }
+}
+
+
+/* ══ 工坊皮:暖米手作感。非分层选择器必压 @layer theme 的变量 ══ */
+html.skin-workshop {
+  --gray-50: #f2ead8; --color-white: #fffdf6; --gray-200: #c9b892;
+  --gray-950: #4a3f2e; --gray-500: #9a8c70;
+  --primary-500: #f0a24d; --primary-600: #e8973c; --primary-700: #c97d26;
+  --success-600: #6ab04c; --danger-600: #e05f4e;
+  --radius-md: 14px; --radius-lg: 14px; --radius-xl: 14px;
+  --e-surface: #fffdf6; --e-soft: #e5dcc5; --e-line: #c9b892;
+  --e-ink: #4a3f2e; --e-muted: #9a8c70;
+}
+html.skin-workshop .fi-body {
+  background-image: radial-gradient(#e5dcc5 1.2px, transparent 1.2px);
+  background-size: 26px 26px;
+}
+html.skin-workshop .fi-btn.fi-color-primary { color: #5b3a10; box-shadow: 0 3px 0 #b8721f; }
+html.skin-workshop .fi-section-content-ctn { box-shadow: 0 4px 0 #d5c9a8; }
+
+/* ══ 像素皮:硬边直角厚投影 ══ */
+html.skin-pixel {
+  --gray-50: #e8e0cd; --color-white: #f7f2e3; --gray-200: #2b2420;
+  --gray-950: #2b2420; --gray-500: #857a68;
+  --primary-500: #e8664f; --primary-600: #e0533c; --primary-700: #c0392b;
+  --success-600: #4a8a3c; --danger-600: #c0392b;
+  --radius-md: 0px; --radius-lg: 0px; --radius-xl: 0px;
+  --e-surface: #f7f2e3; --e-soft: #d5cbb2; --e-line: #2b2420;
+  --e-ink: #2b2420; --e-muted: #857a68;
+}
+html.skin-pixel .fi-body {
+  background-image: radial-gradient(#dcd2b8 1.5px, transparent 1.5px);
+  background-size: 26px 26px;
+}
+html.skin-pixel .fi-section-content-ctn { box-shadow: 6px 6px 0 rgba(43, 36, 32, .25); border: 2px solid #2b2420; }
+html.skin-pixel .fi-btn { box-shadow: 3px 3px 0 #2b2420; }
+html.skin-pixel .grid-items .item { border-width: 2px; }
+
+/* 换肤圆点:两张新皮的取色 */
+.eona-skin-dot.workshop { background: linear-gradient(135deg, #f2ead8 50%, #e8973c 50%); }
+.eona-skin-dot.pixel { background: linear-gradient(135deg, #f7f2e3 50%, #e0533c 50%); border-style: dashed; }
+
+
+.eona-search-toggle { display: none; }
+@media (min-width: 861px) { .fi-topbar .fi-global-search-ctn { display: flex; } }
+
+/* 铃铛卡点行:可点直达对应板块 */
+.eona-bell-row { display: block; padding: 10px 14px; text-decoration: none; color: var(--e-ink); border-bottom: 1px solid var(--e-line); }
+.eona-bell-row:hover { background: var(--e-soft); }
+.eona-bell-row b { display: block; font-size: 12.5px; }
+.eona-bell-row span { display: block; font-size: 11.5px; color: var(--e-muted); margin-top: 3px; line-height: 1.5; }
+
+/* 资料勾选:选中卡加深 */
+.masonry .item:has(.pro-pick:checked) { border-color: var(--primary-600, #2563eb); background: var(--e-soft); }
+.pro-pick { width: 15px; height: 15px; accent-color: var(--primary-600, #2563eb); margin-right: 6px; vertical-align: -2px; }
+
+
+
+@media (max-width: 640px) {
+  /* 手机上正文原来只剩 290/390(单边被 .fi-main 16 + 页面 10 + 区块 24 吃掉 50px,
+     约 26% 宽度),长标识符被硬拆行。三层各让一点,正文回到 350 左右。 */
+  .fi-main { padding-left: 6px !important; padding-right: 6px !important; }
+  .fi-page-content { padding: 10px 4px 32px; }
+  .fi-section-content { padding-left: 10px !important; padding-right: 10px !important; }
+  .fi-section-header { padding-left: 10px !important; padding-right: 10px !important; }
+  .item { padding-left: 10px !important; padding-right: 10px !important; }
+  /* 手机控件沿用公共触摸尺寸。 */
+  .fi-page-content .fi-btn.fi-size-sm, dialog .fi-btn.fi-size-sm { height: 40px; padding-left: 14px; padding-right: 14px; }
+  .fi-page-content .fi-input, dialog .fi-input { height: 40px; font-size: 15px; }
+  .fi-header-heading { font-size: 22px; }
+  .fi-header-subheading { font-size: 12.5px; }
+  .fi-section-header { flex-wrap: wrap; row-gap: 8px; }
+  .fi-section-header > span[style*="margin-left:auto"] { margin-left: 0 !important; width: 100%; flex-wrap: wrap !important; }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px; }
+  .fi-wi-stats-overview-stat-value { font-size: 20px; }
+  /* 顶栏单行制(照 Filament 移动端):汉堡 + 五个紧凑图标;搜索收成放大镜 */
+  .fi-topbar { flex-wrap: nowrap; padding: 0 8px; gap: 4px; }
+  .fi-topbar-start { flex-shrink: 0; display: flex; align-items: center; }
+  .eona-burger { display: inline-flex !important; }
+  .fi-logo { display: none; }
+  .fi-topbar-end { gap: 2px; min-width: 0; margin-left: auto; align-items: center; }
+  .fi-topbar .fi-global-search .fi-input { min-width: 0; }
+  /* 设置卡两行在窄屏纵排,控件顶满 */
+  .setting { flex-direction: column; align-items: stretch !important; gap: 8px; }
+  .setting .actions { justify-content: flex-start !important; flex-wrap: wrap; }
+  .setting .actions.input-group > .fi-input { width: auto; flex: 1; }
+  /* 对话框全屏化 */
+  dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; margin: 0; }
+  .eona-detail-body { max-height: calc(100dvh - 64px); }
+  /* 面包屑与脚注 */
+  .fi-breadcrumbs { font-size: 12px; }
+  .board-note { font-size: 12px; }
+  /* 大厅观察窗小人名牌缩小 */
+  #hall-stage .tag { font-size: 8.5px; padding: 1px 6px; }
+  #hall-stage .bubble { min-width: 90px; max-width: 140px; font-size: 10px; }
+  /* 长表格类内容自滚 */
+  .fi-section-content { overflow-x: auto; }
+}
+@media (max-width: 640px) {
+  /* 弹层小屏固定定位:账户/铃铛贴右上(锚在头像下),搜索结果整宽在搜索行下 */
+  .eona-pop { position: fixed !important; top: 52px !important; right: 8px !important; left: auto !important; width: min(320px, calc(100vw - 16px)) !important; max-width: none !important; max-height: 70dvh; overflow-y: auto; z-index: 60; }
+}
+@media (max-width: 400px) {
+  .tiles { grid-template-columns: 1fr !important; }
+}
+
+/* 跨站工作台适配：保持 Filament 内容组件，公共外壳固定在相同位置。 */
+.e-ui {--e-surface:var(--e-ui-surface);--e-soft:var(--e-ui-soft);--e-line:var(--e-ui-line);--e-ink:var(--e-ui-ink);--e-muted:var(--e-ui-muted)}
+.e-ui .fi-topbar {min-height:var(--e-ui-topbar);height:var(--e-ui-topbar);padding-inline:22px;gap:12px}
+.e-ui .fi-topbar-ctn {position:sticky;top:0;z-index:35;background:var(--e-surface)}
+.e-ui .fi-topbar-start,.e-ui .fi-topbar-end {display:flex;align-items:center;gap:8px;min-width:0}
+.e-ui .fi-topbar-end {margin-left:auto}
+.e-ui .fi-topbar .fi-logo {font-size:21px;font-weight:650;letter-spacing:-.03em}
+.e-ui .e-product {font-size:13px;color:var(--e-muted);border-left:1px solid var(--e-line);padding-left:14px;margin-left:6px;white-space:nowrap}
+.e-ui .fi-topbar-item-btn,.e-ui .eona-burger {min-width:var(--e-ui-control);min-height:var(--e-ui-control);display:inline-flex;align-items:center;justify-content:center}
+.e-ui .fi-topbar .fi-input-wrp {height:var(--e-ui-control)}
+.e-ui .fi-topbar .fi-input {border:0;box-shadow:none;height:100%;background:transparent}
+.e-ui .fi-page-content :where(.fi-btn,.fi-input),.e-ui dialog :where(.fi-btn,.fi-input) {min-height:var(--e-ui-control);height:auto}
+.e-ui .fi-input {color:var(--e-ink)}
+.e-ui .fi-sidebar-item-btn {min-height:36px}
+.e-ui .fi-sidebar-group-collapse-btn {min-width:36px;min-height:36px}
+.e-auth-expired .board {display:none!important}
+@media (max-width:1023px) {.e-ui .fi-sidebar {max-height:100dvh;overflow:auto;padding-bottom:env(safe-area-inset-bottom)}.e-ui .fi-sidebar.mob-open {background:var(--e-surface)}}
+@media (max-width:860px) {
+ .e-ui .fi-topbar {padding-inline:12px;gap:4px}.e-ui .fi-topbar-end {gap:2px}
+ .e-ui .fi-sidebar-item-btn,.e-ui .fi-sidebar-group-collapse-btn {min-height:44px}
+ .e-ui .fi-page-content :where(.fi-btn,.fi-input),.e-ui dialog :where(.fi-btn,.fi-input) {min-height:44px}
+ .e-ui .fi-page-content {padding-inline:16px}
+ .e-ui .eona-search-toggle,.e-ui .eona-burger {width:44px;padding:0}
+}
+@media (max-width:640px) {.e-ui .e-product {display:none}.e-ui .eona-bell {width:44px;padding:0}.e-ui .eona-refresh-btn {display:none}}
+
+@media(min-width:1024px){.e-ui .eona-burger{display:none}}
+
+.e-ui .fi-main {padding:0!important}
+.e-ui .fi-page-content {display:block;padding:24px 24px 48px}
+.e-ui .fi-breadcrumbs {margin:0;padding:0}
+@media(max-width:860px){.e-ui .fi-page-content{padding:20px 16px 32px}.e-ui .tiles{grid-template-columns:repeat(2,minmax(0,1fr))!important}.e-ui .eona-refresh{display:none}}
+@media(min-width:380px) and (max-width:640px){.e-ui .fi-logo{display:flex}.e-ui .e-product{display:none}}
+
+@media(min-width:861px){.e-ui .eona-search-toggle{display:none}}
+@media(max-width:860px){.e-ui .eona-search-toggle{display:inline-flex}.e-ui .fi-global-search .eona-pop{position:fixed!important;top:calc(var(--e-ui-topbar) + 56px + 4px)!important;left:12px!important;right:12px!important;width:auto!important;min-width:0;max-width:none}}
+@media(max-width:380px){.e-ui .fi-topbar{padding-inline:8px;gap:0}.e-ui .fi-topbar-end{gap:0}.e-ui .e-tools{gap:0}}
+
+.eona-search-record summary{display:flex;flex-direction:column;gap:5px;list-style:none;cursor:pointer;padding:10px 12px}.eona-search-record summary::-webkit-details-marker{display:none}.eona-search-record-body{padding:0 12px 12px;overflow-wrap:anywhere}.eona-search-record-body p{margin:0 0 8px;white-space:pre-wrap;line-height:1.6}.eona-search-record-body small{color:var(--e-ui-muted)}.eona-search-record-actions{display:flex;align-items:center;gap:16px;margin-top:8px}.eona-search-record-actions button{border:0;background:transparent;padding:0;color:var(--e-ui-accent);font:inherit;cursor:pointer}

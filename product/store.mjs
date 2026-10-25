@@ -1,3 +1,4 @@
+import {initializeServiceAPI} from './service-api.mjs';
 import {initializeSourceHealth,sourceFolders,sourceHealth,SOURCE_KINDS} from './source-health.mjs';
 import {readFile,mkdir} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -43,7 +44,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
     for(const account of config.accounts)await db.prepare("INSERT INTO mailbox_routes(mailbox,alias,role,note) VALUES(?,?,'main','') ON CONFLICT(mailbox) DO UPDATE SET alias=excluded.alias").bind(account.address,account.address).run();
     if(config.sync?.enabled)await db.exec(await readFile(new URL('./state-schema.sql',import.meta.url),'utf8'));
     if(config.sync?.enabled)for(const account of config.accounts)for(const folder of account.imap?.folders||[])if(['sent','drafts'].includes(folder.kind))await db.prepare('DELETE FROM product_source_status WHERE account=? AND folder=?').bind(account.id,folder.name).run();
-    await initializeSourceHealth(db);
+    await initializeSourceHealth(db);await initializeServiceAPI(db);
     const jobs=await openJobs(db,{clock});
     let chain=Promise.resolve();
     const serialize=run=>{const task=chain.then(run);chain=task.catch(()=>{});return task;};

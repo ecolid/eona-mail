@@ -6,3 +6,6 @@ credentials.json
 mail.json
 data/
 .env
+
+__pycache__/
+*.py[cod]

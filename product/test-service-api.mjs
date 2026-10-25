@@ -1,0 +1,54 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
+import {openProduct} from './runtime.mjs';import {passwordHash} from './local-auth.mjs';import {validateConfig} from './config.mjs';
+const tokens={READ:'r'.repeat(48),WRITE:'w'.repeat(48),DRAFT:'d'.repeat(48),SEND:'s'.repeat(48),STATUS:'h'.repeat(48),EVENT:'e'.repeat(48)};
+const scope={READ:'mail.read',WRITE:'mail.write',DRAFT:'mail.drafts',SEND:'mail.send',STATUS:'mail.status',EVENT:'mail.events'};
+async function fixture(t){
+ const root=await mkdtemp(join(tmpdir(),'mail-api-'));t.after(()=>rm(root,{recursive:true,force:true}));let calls=0,unknown=false;
+ const config={schema:1,mode:'personal',origin:'http://127.0.0.1:18789',owner:{id:'owner',email:'owner@example.test'},auth:{mode:'local'},data_root:root,accounts:[{id:'one',address:'owner@example.test',smtp:{host:'smtp.example.test',port:465,user:'owner',password_env:'SMTP_PASSWORD'}}],service_clients:Object.keys(tokens).map(id=>({id,token_env:id,scopes:[scope[id]],...(id==='SEND'?{allowed_from_ids:['one']}: {})}))};
+ const values={...tokens,MAIL_PASSWORD_HASH:await passwordHash('synthetic-password'),SMTP_PASSWORD:'synthetic'};const options={secrets:name=>values[name],fetcher:()=>{throw Error('unexpected_network')},createTransport:()=>({sendMail:async()=>{calls++;if(unknown)throw Error('timeout');return {accepted:['target@example.test'],rejected:[]}},close(){}})};
+ let app=await openProduct(config,options);t.after(()=>app.close());
+ const api=(role,path,{method='GET',body,headers={}}={})=>app.handle(new Request(config.origin+path,{method,headers:{authorization:'Bearer '+(tokens[role]||role),...(body===undefined?{}:{'content-type':'application/json'}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})}));
+ return {config,api,get app(){return app},values,calls:()=>calls,setUnknown:()=>{unknown=true},restart:async()=>{await app.close();app=await openProduct(config,options)}};
+}
+test('scope boundary, forged browser identity, read side effects and token rotation',async t=>{
+ const f=await fixture(t);const raw=Buffer.from('From: author@example.test\r\nTo: owner@example.test\r\nSubject: API isolation\r\nDate: Mon, 26 Oct 2026 01:00:00 +0000\r\nMessage-ID: <api@example.test>\r\n\r\nSynthetic body');
+ const {archiveRaw}=await import('../src/index.js');const saved=await archiveRaw(f.app.store.env,raw,{alias:'owner@example.test',imported:true,skipAI:true});const id=saved.emailId;
+ assert.equal((await f.api('READ','/v1/messages/'+id)).status,200);assert.equal((await f.app.store.db.prepare('SELECT is_read FROM emails WHERE id=?').bind(id).first()).is_read,0);
+ assert.equal((await f.api('READ','/v1/messages/'+id+'/star',{method:'POST'})).status,403);
+ assert.equal((await f.api('WRITE','/v1/messages')).status,403);
+ for(const action of ['read','unread','star','unstar','trash','restore'])assert.equal((await f.api('WRITE','/v1/messages/'+id+'/'+action,{method:'POST'})).status,200,action);
+ assert.equal((await f.api('READ','/v1/messages',{headers:{cookie:'forged=1'}})).status,403);
+ assert.equal((await f.api('READ','/v1/messages',{headers:{origin:f.config.origin}})).status,403);
+ assert.equal((await f.api('x'.repeat(48),'/v1/messages',{headers:{'x-eona-owner':'owner'}})).status,401);
+ const first=await(await f.api('EVENT','/v1/events')).json();assert.equal(first.events[0].kind,'message.created');assert.ok(first.events.length>=7);
+ await f.restart();assert.equal((await(await f.api('EVENT','/v1/events?after='+first.next)).json()).events.length,0);
+ assert.equal((await f.api('EVENT','/v1/events?after=999999')).status,409);
+ assert.equal((await f.api('STATUS','/v1/status')).status,200);f.app.store.env.MAIL_SOURCE_HEALTH=()=>{throw Error('offline')};assert.equal((await f.api('STATUS','/v1/status')).status,503);
+ f.values.READ='z'.repeat(48);assert.equal((await f.api('READ','/v1/messages')).status,401);assert.equal((await f.api('z'.repeat(48),'/v1/messages')).status,200);
+ f.config.service_clients=f.config.service_clients.filter(c=>c.id!=='READ');await f.restart();assert.equal((await f.api('z'.repeat(48),'/v1/messages')).status,401);
+ await assert.rejects(()=>openProduct({...f.config,owner:{id:'other',email:'other@example.test'}},{secrets:name=>f.values[name]}),/identity_or_schema/);
+});
+test('draft revisions, restricted sender, durable send intent, retries and unknown outcomes',async t=>{
+ const f=await fixture(t),draft={rev:0,to:'target@example.test',subject:'Synthetic',body:'Synthetic body',from_id:'one'};
+ assert.equal((await f.api('DRAFT','/v1/drafts/first',{method:'PUT',body:draft})).status,200);
+ assert.equal((await f.api('DRAFT','/v1/drafts/first',{method:'PUT',body:draft})).status,409);
+ assert.equal((await(await f.api('DRAFT','/v1/drafts/first')).json()).draft.rev,1);
+ assert.equal((await f.api('SEND','/v1/send',{method:'POST',body:{draft_id:'first',rev:1}})).status,400);
+ const intent={method:'POST',body:{draft_id:'first',rev:1},headers:{'idempotency-key':'one-request'}};
+ const sent=await(await f.api('SEND','/v1/send',intent)).json();assert.equal(sent.message.state,'sent');assert.equal(f.calls(),1);
+ assert.equal((await(await f.api('SEND','/v1/send',intent)).json()).message.id,sent.message.id);assert.equal(f.calls(),1);
+ assert.equal((await f.api('SEND','/v1/send',{...intent,body:{draft_id:'first',rev:2}})).status,409);
+ assert.equal((await f.api('SEND','/v1/send/'+sent.message.id)).status,200);
+ f.config.service_clients.push({id:'other-send',token_env:'OTHER',scopes:['mail.send']});f.values.OTHER='o'.repeat(48);await f.restart();
+ assert.equal((await f.api('o'.repeat(48),'/v1/send/'+sent.message.id)).status,404);
+ assert.equal((await f.api('DRAFT','/v1/drafts/second',{method:'PUT',body:draft})).status,200);f.setUnknown();
+ const second={...intent,body:{draft_id:'second',rev:1},headers:{'idempotency-key':'second-request'}};
+ const receipt=await(await f.api('SEND','/v1/send',second)).json();assert.equal(receipt.message.state,'unknown');assert.equal(f.calls(),2);
+ await f.restart();assert.equal((await(await f.api('SEND','/v1/send',second)).json()).message.state,'unknown');assert.equal(f.calls(),2);
+ assert.equal((await f.api('DRAFT','/v1/drafts/third',{method:'PUT',body:draft})).status,200);
+ assert.equal((await f.api('DRAFT','/v1/drafts/third',{method:'DELETE',body:{rev:0}})).status,409);
+ assert.equal((await f.api('DRAFT','/v1/drafts/third',{method:'DELETE',body:{rev:1}})).status,200);
+ assert.equal((await f.api('DRAFT','/v1/drafts/third')).status,404);
+ assert.throws(()=>validateConfig({...f.config,service_clients:[{id:'bad',token_env:'BAD',scopes:['*']}]}),/client_invalid/);
+});

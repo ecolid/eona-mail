@@ -32,6 +32,11 @@ export function validateConfig(input,{base=process.cwd()}={}){
   if(input.mode==='demo'&&input.sync?.enabled)throw Error('demo_external_connections_forbidden');
   if(input.mode==='demo'&&(accounts.length||input.ai||input.notifications||input.readonly_token_env||input.auth?.mode==='oidc'))throw Error('demo_external_connections_forbidden');
   if(input.mode==='personal'&&!['local','oidc'].includes(input.auth?.mode))throw Error('product_auth_required');
+  if(input.service_clients!==undefined){
+    const clients=input.service_clients, scopes=['mail.read','mail.write','mail.drafts','mail.send','mail.status','mail.events'];
+    if(input.mode!=='personal'||!Array.isArray(clients)||clients.length>32||new Set(clients.map(c=>c?.id)).size!==clients.length)throw Error('product_service_clients_invalid');
+    for(const c of clients)if(!identifier(c.id)||!secretRef(c.token_env)||!Array.isArray(c.scopes)||!c.scopes.length||c.scopes.some(x=>!scopes.includes(x))||c.allowed_from_ids!==undefined&&(!Array.isArray(c.allowed_from_ids)||c.allowed_from_ids.some(id=>!accounts.some(a=>a.id===id&&a.smtp))))throw Error('product_service_client_invalid');
+  }
   if(input.readonly_token_env!==undefined&&!secretRef(input.readonly_token_env))throw Error('product_readonly_token_invalid');
   if(input.auth?.mode==='oidc'){
     if(!input.origin.startsWith('https:')||!input.auth.issuer?.startsWith('https:')||!input.auth.client_id||!secretRef(input.auth.client_secret_env))throw Error('product_oidc_invalid');

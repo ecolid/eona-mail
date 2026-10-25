@@ -83,10 +83,16 @@ def main():
             run(git+['fetch','--no-tags','--prune',config['repository'],'+refs/heads/main:refs/heads/upstream-main','+refs/heads/channels/development:refs/heads/checked'],env=env)
             channel=run(git+['rev-parse','refs/heads/checked']);revision=pin or channel
             # A pin may only select a previously checked ancestor, never a raw main.
-            run(git+['merge-base','--is-ancestor',revision,channel]);run(git+['merge-base','--is-ancestor',channel,'refs/heads/upstream-main'])
+            run(git+['merge-base','--is-ancestor',revision,channel])
             if not pin and state.get('installed'):run(git+['merge-base','--is-ancestor',state['installed'],revision])
             root=pathlib.Path(temporary.name);archive=root/'bundle.tar'
             run(git+['archive','--format=tar','--output',str(archive),revision]);target=root/'code';target.mkdir();extract(archive,target)
+            meta=verify(target)
+            if meta.get('releaseModel')=='source-main':
+                if meta.get('sourceRepository')!='ecolid/eona-mail':raise ValueError('release_source_repository_invalid')
+                run(git+['merge-base','--is-ancestor',meta['sourceCommit'],'refs/heads/upstream-main'])
+                run(git+['merge-base','--is-ancestor',meta['sourceCommit'],revision])
+            else:run(git+['merge-base','--is-ancestor',revision,'refs/heads/upstream-main'])
             return revision,target
         def adapter_call(*args):return json.loads(run([*adapter,*map(str,args)]))
         try:

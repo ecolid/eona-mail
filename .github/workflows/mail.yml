@@ -19,14 +19,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: node scripts/verify-release.mjs
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check:assets
       - run: npm test
       - run: python3 product/test-imap.py
       - run: python3 product/test-source-inventory.py
       - run: python3 product/test-state-sync.py
       - run: python3 product/test-workspace-folders.py
       - run: python3 scripts/test-follow.py
+      - run: node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
+      - run: cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs
       - name: Start the independent demo
         run: |
           set -euo pipefail
@@ -53,6 +55,9 @@ jobs:
       - uses: actions/checkout@v4.2.2
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Publish the checked development channel
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,10 +65,12 @@ jobs:
           set -euo pipefail
           git fetch origin main
           test "$(git rev-parse origin/main)" = "$GITHUB_SHA" || exit 0
-          node scripts/verify-release.mjs
-          git push origin "$GITHUB_SHA:refs/heads/channels/development"
+          node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
+          (cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs)
+          MAIL_RELEASE=$(node scripts/publish-development.mjs "$RUNNER_TEMP/mail-bundle")
+          test -n "$MAIL_RELEASE" || exit 0
           MAIL_TAG="dev-${GITHUB_SHA:0:12}"
-          git archive --format=tar.gz --output="$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz" "$GITHUB_SHA"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz" "$MAIL_RELEASE"
           if ! gh release view "$MAIL_TAG" > /dev/null 2>&1; then
-            gh release create "$MAIL_TAG" --target "$GITHUB_SHA" --prerelease --title "$MAIL_TAG" --notes '通过独立检查的开发版本。来源与文件散列见 PRODUCT-RELEASE.json。' "$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz"
+            gh release create "$MAIL_TAG" --target "$MAIL_RELEASE" --prerelease --title "$MAIL_TAG" --notes '通过独立检查的开发版本。来源与文件散列见 PRODUCT-RELEASE.json。' "$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz"
           fi
