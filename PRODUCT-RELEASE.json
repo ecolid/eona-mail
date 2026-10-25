@@ -1,16 +1,29 @@
 {
-  "sourceTree": "7313ab10578966add3f6a00ab544e692ef74c6fc",
+  "sourceTree": "bc001468b140a5c46aa43024e480170305b1c4a3",
   "schema": 1,
   "product": "eona-mail",
   "version": "0.2.0",
-  "sourceCommit": "fe6c5af9da5dc07b2266e1d277e86bcc64ddab2c",
+  "sourceCommit": "5d35fbb7d69724f0c2ea4f9d69ee3b67000fe01c",
   "workingTree": false,
   "databaseSchema": 1,
+  "compatibility": {
+    "adapterApi": 1,
+    "nodeMajor": 24,
+    "databaseSchema": 1,
+    "foundation": {
+      "files": {
+        "eona-foundation.css": "43f923a2572a21d4020ed244abf22fbe46a8b7adbf24f09cb4a5bc1cdc4caa36",
+        "eona-foundation.js": "f22edd9a88ed5e5d4d32c48c149601f3ce895931f1c89d340925a378baaf34d4"
+      },
+      "schema": 1,
+      "version": "1.14.9"
+    }
+  },
   "files": {
-    ".github/workflows/mail.yml": "0e2f0dde9d2328a2c1aba93ac0633533c11513282106214bf5aa36ee819db1b3",
+    ".github/workflows/mail.yml": "05a38aabb490beb325ee2a710e0fd74de330901d64ee4ee80d4d417e7b0cfb31",
     ".gitignore": "fc4c2aa44b648a1f5b0798a80cd1307ce082bf09ebbded46b09702a662317805",
     "AGENTS.md": "aa8b5277c8126621f9467b871a3780b458fd01b716d429948fc7e62627e2ea40",
-    "README.md": "9d387d5b04370cbb6f85baa7edb5114921e281b9556eaac01eeccb1a479abe5f",
+    "README.md": "cec0daee0b64dbab00b09f0eca9ef1386c2411c6b835183195ecfa6be33aa430",
     "assets/mail-v1/favicon.ico": "bbe3cf298ffc517d3f500072d076596691b453ace56eda62eca921cd0c926736",
     "assets/mail-v1/icon-180.png": "72b2e7a8d25db2de411d9af21e94715e0c75b05bc40162463e5027a1af8cd22d",
     "assets/mail-v1/icon-192.png": "ecf3357600d85fa7e52a33d1096efba3fed10733df6ec89ceb95269528c76e63",
@@ -65,6 +78,8 @@
     "product/test-workspace-folders.py": "c17ea5176bf21a4ebd59c1fd10c0deded57ab9c64440723e220d313dff2b5a91",
     "product/workspace-worker.py": "c497387e70866e7113c7b7fec09e3fc3fd8f8eb4649de871c850e0d092beabc5",
     "schema.sql": "d7fce0817d18f8248dff0ee30d0e24ac6c8c006d5d227b2365f7046b0dae49c0",
+    "scripts/follow.py": "7ed01e8ba577077df90cd1ca5fdf5c3bc1a486670fc0a420e37adce2aadc8f91",
+    "scripts/test-follow.py": "ef2a82412bfd4948577aa8fd6ef1cc59c5cf779255bd1653f07233fe79d102ba",
     "scripts/verify-release.mjs": "033249a8b73a100ba323539b4ddf75088240b97728d9e29a1fa520d6cfc49cbd",
     "src/eona-foundation-assets.js": "b1c868e89bc3f8babed54a518b90de7ef76830268a40ef41ab74c278d39fda9f",
     "src/index.js": "fd6f169548bbe63c321568502b8399ce80eaff06609fea35e0a628c1c45b1475",

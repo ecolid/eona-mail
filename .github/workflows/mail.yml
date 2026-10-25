@@ -26,6 +26,7 @@ jobs:
       - run: python3 product/test-source-inventory.py
       - run: python3 product/test-state-sync.py
       - run: python3 product/test-workspace-folders.py
+      - run: python3 scripts/test-follow.py
       - name: Start the independent demo
         run: |
           set -euo pipefail
