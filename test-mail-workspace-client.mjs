@@ -84,3 +84,10 @@ test('sent row identity and subject survive a later ID-only compact refresh',asy
  assert.equal(s.store.row('sent','sent-one').subject,'Preserved subject');
  const refresh=s.store.load(true);s.requests[2].resolve(compact);await refresh;assert.equal(s.store.data.sent[0].subject,undefined);assert.equal(s.store.row('sent','sent-one').subject,'Preserved subject');
 });
+
+test('a failed sent filter keeps the previous visible result and its recovery context',async()=>{
+ const s=await loaded(),list={scrollTop:80,setAttribute(){},innerHTML:'existing-sent-rows',querySelector:()=>null},notices=[];
+ s.context.state.folder='sent';s.context.state.q='has:attachment';s.context.URLSearchParams=URLSearchParams;s.context.document.getElementById=()=>list;s.context.activeMailPage={markup:'existing-sent-rows'};s.context.mailListHeading=title=>title;s.context.showMailListFailure=(message,heading)=>notices.push({message,heading});
+ const pending=s.context.renderMailWorkspace();await new Promise(setImmediate);s.requests[1].reject(Error('offline'));await pending;
+ assert.equal(list.innerHTML,'existing-sent-rows');assert.equal(list.scrollTop,80);assert.deepEqual(notices,[{message:'offline',heading:'已发送'}]);
+});

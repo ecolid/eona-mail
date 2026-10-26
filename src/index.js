@@ -1812,17 +1812,20 @@ async function loadSide(){
 }
 const mailPages=new Map();let activeMailPage=null;
 function mailPageKey(){return JSON.stringify([state.folder,state.starred,state.alias,state.box,state.origin,state.category,state.actionOnly,state.q,state.searchOrder])}
+// A query changes the data inside this surface, not the page itself. Keep the
+// current rows and controls until its authoritative result can commit.
+function mailSurfaceKey(){return JSON.stringify([state.folder,state.starred,state.alias,state.box,state.origin,state.category,state.actionOnly])}
 function updateMailNavigation(){const plain=!state.starred&&!state.alias&&!state.box&&!state.origin&&!state.category&&!state.actionOnly;for(const node of $('#side').querySelectorAll('.item')){const d=node.dataset,on=d.pick?(d.pick==='starred'?state.starred:state.folder===d.pick&&plain):d.cat?state.category===d.cat:d.box?state.box===d.box:d.origin?state.origin===d.origin:d.alias?state.alias===d.alias:node.hasAttribute('onclick')&&state.actionOnly;node.classList.toggle('on',!!on);for(const target of [node,node.querySelector('.mail-nav-action')].filter(Boolean)){if(on)target.setAttribute('aria-current','page');else target.removeAttribute('aria-current')}}MailExperience.navigationChanged();}
 function activateMailPage(){
  window.MailNavigation?.visit();
- const key=mailPageKey(),host=$('#list');if(activeMailPage?.key===key)return activeMailPage;
+ const key=mailPageKey(),surface=mailSurfaceKey(),host=$('#list');if(activeMailPage?.surface===surface){activeMailPage.key=key;return activeMailPage;}
  document.dispatchEvent?.(new Event('mail:surface'));
  if(activeMailPage){activeMailPage.scroll=host.scrollTop;activeMailPage.page=listMore;activeMailPage.nodes=document.createDocumentFragment();while(host.firstChild)activeMailPage.nodes.append(host.firstChild)}
- let entry=mailPages.get(key);if(!entry){entry={key,markup:'',scroll:0,page:{offset:0,done:false,loading:false}};mailPages.set(key,entry)}
+ let entry=mailPages.get(surface);if(!entry){entry={key,surface,markup:'',scroll:0,page:{offset:0,done:false,loading:false}};mailPages.set(surface,entry)}entry.key=key;
  activeMailPage=entry;host.replaceChildren();if(entry.nodes)host.append(entry.nodes);else{const title=state.folder==='settings'?'邮件设置':state.folder==='sent'?'已发送':state.folder==='drafts'?'草稿箱':state.folder==='contacts'?'通讯录':state.folder==='important'?'重要联系人':state.folder==='subscriptions'?'订阅来源':state.folder==='trash'?'垃圾箱':state.starred?'星标':state.category||state.box||state.origin||state.alias||'收件箱';host.innerHTML=mailLoadingMarkup(['settings','routes'].includes(state.folder)?'settings':['contacts','important','subscriptions'].includes(state.folder)?'contacts':'messages',title)}host.scrollTop=entry.scroll;listMore=entry.page;
  document.body.classList.toggle('mail-workspace-page',['contacts','important','subscriptions'].includes(state.folder));document.body.classList.toggle('mail-workspace-messages',['drafts','sent','contacts','important','subscriptions'].includes(state.folder));document.body.classList.toggle('mail-settings',state.folder==='settings');
  MailExperience.pageChanged(key,!!entry.nodes);
- while(mailPages.size>24){const old=[...mailPages.keys()].find(k=>k!==key);mailPages.delete(old)}return entry;
+ while(mailPages.size>24){const old=[...mailPages.keys()].find(k=>k!==surface);mailPages.delete(old)}return entry;
 }
 function reset(){state.alias=null;state.box=null;state.origin=null;state.category=null;state.actionOnly=false;state.starred=false;state.folder='inbox'}
 function pickBox(b){visitMailbox(b);reset();state.box=b;after()}
@@ -1851,8 +1854,8 @@ function mailResultsBar(count,complete,total){if(!state.q)return mailListHeading
 
 document.addEventListener('change',event=>{if(event.target.matches('[data-mail-search-order]')){state.searchOrder=event.target.value;loadList()}});
 
-function showMailListFailure(message){
- const host=$('#list');if(host.querySelector(':scope>.mail-page-skeleton'))host.innerHTML=mailResultsBar(null,false);let notice=host.querySelector('.mail-list-error');const added=!notice;
+function showMailListFailure(message,heading=mailResultsBar(null,false)){
+ const host=$('#list');if(host.querySelector(':scope>.mail-page-skeleton'))host.innerHTML=heading;let notice=host.querySelector('.mail-list-error');const added=!notice;
  if(!notice){notice=document.createElement('div');notice.className='mail-list-error';notice.setAttribute('role','alert')}
  notice.textContent=message;const retry=document.createElement('button');retry.className='btn';retry.textContent='重试';retry.onclick=()=>refresh(true,{feedback:'inline'});notice.append(retry);
  if(added)mailAnimateListCommit(host,()=>{const heading=host.querySelector('.mail-workspace-title,.mail-results-bar');if(heading)heading.after(notice);else host.prepend(notice)});
@@ -1870,7 +1873,8 @@ async function loadList(options={}){
   if(['drafts','contacts','important','subscriptions','sent'].includes(state.folder))return renderMailWorkspace();
   if(state.folder==='settings'){$('#list').setAttribute('aria-busy','false');return loadMailSettings(options.fresh?'refresh':'');}
   if(state.folder==='routes'){$('#list').setAttribute('aria-busy','false');return loadRoutes()}
-  const previousPage=listMore;const page=listMore={offset:0,done:false,loading:false};
+  const queryKey=JSON.stringify([state.q,state.searchOrder]),queryChanged=entry.queryKey!==undefined&&entry.queryKey!==queryKey;
+  const previousPage=entry.queryKey===queryKey?entry.page||listMore:{offset:0};const page=listMore={offset:0,done:false,loading:false};
   $('#list').setAttribute('aria-busy','true');
   const oldError=$('#list').querySelector('.mail-list-error');if(oldError)mailAnimateListCommit($('#list'),()=>oldError.remove());
 
@@ -1896,7 +1900,8 @@ async function loadList(options={}){
   const anchor=selected_matches&&selected_email&&!page.ids.includes(String(selected_email.id))?'<div data-mail-selection-anchor><div class="mail-anchor-label">当前邮件</div>'+mailRow(selected_email)+'</div>':'';
   const markup=mailResultsBar(emails.length,listMore.done,total)+anchor+(emails.length?emails.map(mailRow).join(''):'<div class="empty">'+(state.q?'未找到相关邮件':state.folder==='sent'?'尚无发送记录':'没有邮件')+'</div>')+
     '<div id="list-tail" class="tail">'+(listMore.done?(emails.length?'— 到底了,共 '+emails.length+' 封 —':''):'往下滚加载更多…')+'</div>';
-  if(entry.markup!==markup){if(!options.fresh&&previousPage.offset>PAGE_SIZE){listMore=previousPage;const changedIDs=JSON.stringify(previousPage.ids)!==JSON.stringify(page.ids);const currentRows=new Map(emails.map(email=>[String(email.id),email]));for(const row of $('#list').querySelectorAll('[data-mail-id]')){const email=currentRows.get(String(row.dataset.mailId));if(email){const nextRow=mailRow(email);if(row.outerHTML!==nextRow)row.outerHTML=nextRow}else row.classList.toggle('on',String(row.dataset.mailId)===String(state.cur))}entry.markup=markup;let notice=$('#list').querySelector('[data-new-results]');if(changedIDs&&!notice){notice=document.createElement('button');notice.className='btn mail-results-bar';notice.setAttribute('data-new-results','');notice.textContent='列表有更新';notice.onclick=()=>loadList({fresh:true});$('#list').prepend(notice)}}else{const scroll=$('#list').scrollTop;if(options.transition)await mailAnimateListCommit($('#list'),()=>mailReconcileList($('#list'),markup));else $('#list').innerHTML=markup;if(ticket!==mailListIntent)return;$('#list').scrollTop=scroll;entry.markup=markup}}else if(previousPage.offset>page.offset)listMore=previousPage;
+  if(entry.markup!==markup){if(!options.fresh&&previousPage.offset>PAGE_SIZE){listMore=previousPage;const changedIDs=JSON.stringify(previousPage.ids)!==JSON.stringify(page.ids);const currentRows=new Map(emails.map(email=>[String(email.id),email]));for(const row of $('#list').querySelectorAll('[data-mail-id]')){const email=currentRows.get(String(row.dataset.mailId));if(email){const nextRow=mailRow(email);if(row.outerHTML!==nextRow)row.outerHTML=nextRow}else row.classList.toggle('on',String(row.dataset.mailId)===String(state.cur))}entry.markup=markup;let notice=$('#list').querySelector('[data-new-results]');if(changedIDs&&!notice){notice=document.createElement('button');notice.className='btn mail-results-bar';notice.setAttribute('data-new-results','');notice.textContent='列表有更新';notice.onclick=()=>loadList({fresh:true});$('#list').prepend(notice)}}else{const scroll=$('#list').scrollTop;entry.markup=markup;entry.queryKey=queryKey;entry.page=page;if(options.transition||queryChanged)await mailAnimateListCommit($('#list'),()=>mailReconcileList($('#list'),markup));else $('#list').innerHTML=markup;if(ticket!==mailListIntent)return;$('#list').scrollTop=scroll;entry.markup=markup}}else if(previousPage.offset>page.offset)listMore=previousPage;
+  entry.queryKey=queryKey;entry.page=listMore;
   return {ok:true,ids:page.ids,count:emails.length};
 }
 // 列表一页 100 封，按滚动位置加载下一页。

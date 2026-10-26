@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {testHooks} from './src/index.js';
 const page=testHooks().PAGE;
 const invalidate=page.slice(page.indexOf('function invalidateMailSearch(){'),page.indexOf('let mailSearchTimer'));
-const load=page.slice(page.indexOf('function showMailListFailure(message){'),page.indexOf('async function loadRoutes(){'))+page.slice(page.indexOf('async function loadList(options={}){'),page.indexOf('// 列表一页'));
+const load=page.slice(page.indexOf('function showMailListFailure('),page.indexOf('async function loadRoutes(){'))+page.slice(page.indexOf('async function loadList(options={}){'),page.indexOf('// 列表一页'));
 const more=page.slice(page.indexOf('async function loadMore(){'),page.indexOf("$('#list').addEventListener('scroll'"));
 function fixture(){
  const requests=[],notices=[],appended=[],entries=new Map(),events={};
@@ -12,7 +12,7 @@ function fixture(){
  const query={value:'old'};
  const attributes=new Map();const list={innerHTML:'',setAttribute(k,v){attributes.set(k,v)},getAttribute:k=>attributes.get(k),querySelector(){return null},querySelectorAll(){return []},prepend(value){if(value.className==='mail-search-pending'||value.className==='mail-results-bar mail-search-pending')return;notices.push(value)}};
  const selection=[],refreshes=[];
- const context={mailAnimateListCommit:(_host,commit)=>{commit();return Promise.resolve()},window:{addEventListener:(name,fn)=>events[name]=fn},activateMailPage(){const key=JSON.stringify([context.state.folder,context.state.q]);if(!entries.has(key))entries.set(key,{markup:''});return entries.get(key)},setMailSelectionPending:(...args)=>selection.push(args),clearMailReader(){context.state.cur=null;context.state.curMail=null;selection.push(['cleared'])},state:{folder:'inbox',q:'old'},document:{body:{classList:{toggle(){}}},createElement(){return {className:'',textContent:'',children:[],setAttribute(k,v){this[k]=v},append(value){this.children.push(value)}}}},refresh:(manual,options)=>{refreshes.push({manual,options});return context.loadList({fresh:manual})},$:key=>key==='#q'?query:key==='#list-tail'?tail:list,esc:String,mailRow:email=>email.subject,listUrl:offset=>context.state.q+':'+offset,mailResultsBar:()=>'',loadMailSettings:()=>{list.innerHTML='settings'},loadRoutes:()=>{list.innerHTML='routes'},api:(url,options)=>new Promise((resolve,reject)=>requests.push({url,options,resolve,reject}))};
+ const context={mailReconcileList:(host,markup)=>{host.innerHTML=markup},mailAnimateListCommit:(_host,commit)=>{commit();return Promise.resolve()},window:{addEventListener:(name,fn)=>events[name]=fn},activateMailPage(){const key=JSON.stringify([context.state.folder]);if(!entries.has(key))entries.set(key,{markup:''});return entries.get(key)},setMailSelectionPending:(...args)=>selection.push(args),clearMailReader(){context.state.cur=null;context.state.curMail=null;selection.push(['cleared'])},state:{folder:'inbox',q:'old'},document:{body:{classList:{toggle(){}}},createElement(){return {className:'',textContent:'',children:[],setAttribute(k,v){this[k]=v},append(value){this.children.push(value)}}}},refresh:(manual,options)=>{refreshes.push({manual,options});return context.loadList({fresh:manual})},$:key=>key==='#q'?query:key==='#list-tail'?tail:list,esc:String,mailRow:email=>email.subject,listUrl:offset=>context.state.q+':'+offset,mailResultsBar:()=>'',loadMailSettings:()=>{list.innerHTML='settings'},loadRoutes:()=>{list.innerHTML='routes'},api:(url,options)=>new Promise((resolve,reject)=>requests.push({url,options,resolve,reject}))};
  vm.createContext(context);vm.runInContext('let mailListIntent=0,listMore={};const PAGE_SIZE=2;'+invalidate+load+more+page.slice(page.indexOf("window.addEventListener('mail:resource-error'"),page.indexOf('setInterval(()=>',page.indexOf("window.addEventListener('mail:resource-error'"))),context);
  return {refreshes,context,requests,list,tail,notices,appended,query,selection,resourceError:()=>events['mail:resource-error']({detail:{path:context.listUrl(0)}}),invalidate:()=>vm.runInContext('invalidateMailSearch()',context),load:()=>vm.runInContext('loadList()',context),more:()=>vm.runInContext('loadMore()',context)};
 }
@@ -83,4 +83,23 @@ test('one foreground failure has one visible owner even when the cache also emit
 test('failure stays below the fixed heading and uses the existing animated row commit',()=>{
  const s=fixture(),placed=[];const heading={after:n=>placed.push(n)};s.list.querySelector=selector=>selector==='.mail-workspace-title,.mail-results-bar'?heading:null;
  s.context.showMailListFailure('offline');assert.equal(placed.length,1);assert.equal(s.notices.length,0,'failure cannot push the fixed heading down');assert.equal(placed[0].className,'mail-list-error');
+});
+
+
+test('a new filter replaces previous pagination only after its result arrives',async()=>{
+ const s=fixture();let pending=s.load();s.requests[0].resolve({emails:[{id:1,subject:'old-one'},{id:2,subject:'old-two'}],total:6});await pending;
+ pending=s.more();s.requests[1].resolve({emails:[{id:3,subject:'old-three'},{id:4,subject:'old-four'}],total:6});await pending;
+ const before=s.list.innerHTML;s.context.state.q='has:attachment';pending=s.load();assert.equal(s.list.innerHTML,before);
+ s.requests[2].resolve({emails:[{id:9,subject:'only-attachment'}],total:1});await pending;
+ assert.match(s.list.innerHTML,/only-attachment/);assert.doesNotMatch(s.list.innerHTML,/old-one/);
+ await s.more();assert.equal(s.requests.length,3,'filtered pagination is complete, never resumes the old folder cursor');
+});
+
+
+test('reversing a filter during its row animation commits the latest cached result',async()=>{
+ const s=fixture();let pending=s.load();s.requests[0].resolve(emails('original'));await pending;
+ const finish=[],commits=[Promise.withResolvers(),Promise.withResolvers()];s.context.mailAnimateListCommit=(_host,commit)=>{commit();commits[finish.length].resolve();return new Promise(resolve=>finish.push(resolve))};
+ s.context.state.q='has:attachment';const filtered=s.load();s.requests[1].resolve(emails('attachment'));await commits[0].promise;assert.match(s.list.innerHTML,/attachment/);
+ s.context.state.q='old';const restored=s.load();s.requests[2].resolve(emails('original'));await commits[1].promise;assert.match(s.list.innerHTML,/original/,'visible commit metadata must advance before its animation completes');
+ finish[1]();await restored;finish[0]();await filtered;assert.match(s.list.innerHTML,/original/);assert.doesNotMatch(s.list.innerHTML,/attachment/);
 });
