@@ -20,7 +20,7 @@ function fixture(){
 test('first-time filter and search changes keep the actual surface and visible nodes',()=>{
  const f=fixture(),entry=f.activate();f.list.replaceChildren();const row=f.row();f.list.append(row);f.list.scrollTop=180;const writes=f.list.writes;
  for(const q of ['is:unread','is:unread has:attachment','has:attachment','','subject:project']){f.state.q=q;assert.equal(f.activate(),entry);assert.equal(f.list.firstChild,row);assert.equal(f.list.writes,writes);assert.equal(f.list.scrollTop,180)}
- f.state.searchOrder='relevance';assert.equal(f.activate(),entry);assert.equal(f.list.firstChild,row);
+ f.state.searchOrder='relevance';assert.equal(f.activate(),entry);assert.equal(f.list.firstChild,row);assert.equal(f.events.filter(type=>type==='mail:surface').length,7,'each query change immediately clears gestures and selection scope without replacing the content');
 });
 test('different mailbox scopes stay isolated and a cached folder restores its own nodes',()=>{
  const f=fixture(),entry=f.activate();f.list.replaceChildren();const row=f.row();f.list.append(row);

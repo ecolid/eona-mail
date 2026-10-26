@@ -1818,7 +1818,7 @@ function mailSurfaceKey(){return JSON.stringify([state.folder,state.starred,stat
 function updateMailNavigation(){const plain=!state.starred&&!state.alias&&!state.box&&!state.origin&&!state.category&&!state.actionOnly;for(const node of $('#side').querySelectorAll('.item')){const d=node.dataset,on=d.pick?(d.pick==='starred'?state.starred:state.folder===d.pick&&plain):d.cat?state.category===d.cat:d.box?state.box===d.box:d.origin?state.origin===d.origin:d.alias?state.alias===d.alias:node.hasAttribute('onclick')&&state.actionOnly;node.classList.toggle('on',!!on);for(const target of [node,node.querySelector('.mail-nav-action')].filter(Boolean)){if(on)target.setAttribute('aria-current','page');else target.removeAttribute('aria-current')}}MailExperience.navigationChanged();}
 function activateMailPage(){
  window.MailNavigation?.visit();
- const key=mailPageKey(),surface=mailSurfaceKey(),host=$('#list');if(activeMailPage?.surface===surface){activeMailPage.key=key;return activeMailPage;}
+ const key=mailPageKey(),surface=mailSurfaceKey(),host=$('#list');if(activeMailPage?.surface===surface){if(activeMailPage.key!==key)document.dispatchEvent?.(new Event('mail:surface'));activeMailPage.key=key;return activeMailPage;}
  document.dispatchEvent?.(new Event('mail:surface'));
  if(activeMailPage){activeMailPage.scroll=host.scrollTop;activeMailPage.page=listMore;activeMailPage.nodes=document.createDocumentFragment();while(host.firstChild)activeMailPage.nodes.append(host.firstChild)}
  let entry=mailPages.get(surface);if(!entry){entry={key,surface,markup:'',scroll:0,page:{offset:0,done:false,loading:false}};mailPages.set(surface,entry)}entry.key=key;
