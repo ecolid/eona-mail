@@ -62,5 +62,22 @@ test('Gmail SMTP unknown outcome resolves from the source Sent copy without dupl
  await store.ingest(captured,source('All',21,'999',['\\Sent']));await store.ingest(captured,source('Sent',22,'999',['\\Sent']));
  const rows=(await store.db.prepare('SELECT id,state FROM mail_outbox').all()).results;assert.deepEqual(rows.map(row=>({...row})),[{id:'gmail-once',state:'sent'}]);
  assert.equal((await(await req('/api/mail-workspace/send',intent)).json()).message.state,'sent');assert.equal(submissions,1);
+ assert.equal((await store.db.prepare("SELECT COUNT(*) n FROM mail_drafts WHERE id='gmail-send'").first()).n,0);
  assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM product_source_copies').first()).n,2);
+});
+
+
+test('source Sent confirmation before a late SMTP disconnect stays final and preserves newer draft edits',async t=>{
+ const {store,c}=await fixture(t);c.accounts=[{...account,smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}];
+ const {productSender}=await import('./connectors.mjs');const {fetchWithIdentity}=await import('../src/index.js');
+ const trusted={authenticated:true,subject:c.owner.id,email:c.owner.email};
+ const save=async(rev,body)=>fetchWithIdentity(new Request(c.origin+'/api/mail-workspace/drafts/gmail-race',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({rev,to:'recipient@example.test',subject:'SMTP race',body,from_id:'google'})}),store.env,trusted);
+ store.env.MAIL_SENDER=productSender(c,()=> 'synthetic-password',{createTransport:()=>({sendMail:async message=>{
+  assert.equal((await save(1,'Newer unsent edit')).status,200);
+  await store.ingest(message.raw,source('All',31,'777',['\\Sent']));throw Error('late SMTP disconnect');
+ }})});
+ assert.equal((await save(0,'Original submitted content')).status,200);
+ const response=await fetchWithIdentity(new Request(c.origin+'/api/mail-workspace/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({draft_id:'gmail-race',rev:1,attempt_id:'race-once'})}),store.env,trusted);
+ assert.equal((await response.json()).message.state,'sent');
+ const draft=await store.db.prepare("SELECT rev,body FROM mail_drafts WHERE id='gmail-race'").first();assert.equal(draft.rev,2);assert.equal(draft.body,'Newer unsent edit');
 });

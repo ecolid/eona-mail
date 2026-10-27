@@ -93,8 +93,10 @@ export async function mailSendRequest(request,env,owner,input){
  }catch(cause){state=cause.definitelyNotSent?'failed':'unknown';error=state==='failed'?'邮件未发出，草稿已保留。请检查发信账号或稍后重试。':'发送结果尚未确认，请核对发送记录，避免重复发送。'}
  // Receipt and draft removal commit together. A failed commit leaves a durable
  // sending intent, so the browser cannot accidentally send it a second time.
- const finish=env.MAILDB.prepare('UPDATE mail_outbox SET state=?,accepted_json=?,rejected_json=?,error=?,updated_at=? WHERE owner=? AND id=?').bind(state,JSON.stringify(accepted),JSON.stringify(rejected),error,new Date().toISOString(),owner,attempt_id);
- const commands=[finish];if(state==='sent'||state==='partial')commands.push(env.MAILDB.prepare('DELETE FROM mail_drafts WHERE owner=? AND id=? AND rev=?').bind(owner,draft_id,rev));
+ // A source Sent original may resolve the intent while SMTP is still waiting
+ // for its final reply. A late disconnect cannot overwrite that confirmation.
+ const finish=env.MAILDB.prepare("UPDATE mail_outbox SET state=?,accepted_json=?,rejected_json=?,error=?,updated_at=? WHERE owner=? AND id=? AND state IN ('sending','unknown')").bind(state,JSON.stringify(accepted),JSON.stringify(rejected),error,new Date().toISOString(),owner,attempt_id);
+ const commands=[finish,env.MAILDB.prepare("DELETE FROM mail_drafts WHERE owner=? AND id=? AND rev=? AND EXISTS(SELECT 1 FROM mail_outbox WHERE owner=? AND id=? AND state IN ('sent','partial'))").bind(owner,draft_id,rev,owner,attempt_id)];
  await env.MAILDB.batch(commands);
  return json({message:projectSent(await env.MAILDB.prepare('SELECT * FROM mail_outbox WHERE owner=? AND id=?').bind(owner,attempt_id).first())});
 }

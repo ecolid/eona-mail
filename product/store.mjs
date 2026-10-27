@@ -106,7 +106,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
 async function sourceProjection(db,objects,owner,parsed,input,emailId,rawKey,proof,at,gmailIdentity=null){
   if(!['sent','drafts'].includes(input.kind))return [];
   if(gmailIdentity&&input.kind==='sent'&&parsed.messageId){
-    const candidates=(await db.prepare("SELECT id,state,payload_json FROM mail_outbox WHERE owner=? AND message_id=? AND json_extract(payload_json,'$.from_id')=?").bind(owner,parsed.messageId,input.account).all()).results,matches=[];
+    const candidates=(await db.prepare("SELECT id,state,draft_id,draft_rev,payload_json FROM mail_outbox WHERE owner=? AND message_id=? AND json_extract(payload_json,'$.from_id')=?").bind(owner,parsed.messageId,input.account).all()).results,matches=[];
     for(const row of candidates){
       const key=JSON.parse(row.payload_json).raw_key;if(!key)continue;
       const object=await objects.get(key);if(!object)continue;
@@ -114,7 +114,7 @@ async function sourceProjection(db,objects,owner,parsed,input,emailId,rawKey,pro
       if(archiveIdentity(raw,await PostalMime.parse(raw))===gmailIdentity)matches.push(row);
     }
     if(matches.length>1)throw Error('product_gmail_sent_identity_ambiguous');
-    if(matches.length===1)return [db.prepare("UPDATE mail_outbox SET state='sent',error='',updated_at=? WHERE owner=? AND id=? AND state IN ('sending','unknown')").bind(at,owner,matches[0].id)];
+    if(matches.length===1)return [db.prepare("UPDATE mail_outbox SET state='sent',error='',updated_at=? WHERE owner=? AND id=? AND state IN ('sending','unknown')").bind(at,owner,matches[0].id),db.prepare("DELETE FROM mail_drafts WHERE owner=? AND id=? AND rev=? AND EXISTS(SELECT 1 FROM mail_outbox WHERE owner=? AND id=? AND state IN ('sent','partial'))").bind(owner,matches[0].draft_id,matches[0].draft_rev,owner,matches[0].id)];
   }
   const id=sha(JSON.stringify(proof)).slice(0,48),body=String(parsed.text||'').slice(0,50000);
   const address=x=>({address:x.address||'',name:x.name||''});
