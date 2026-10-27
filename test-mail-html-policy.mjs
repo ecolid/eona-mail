@@ -14,3 +14,6 @@ test('first content is the fixed CSP, independent of email policy or API policy 
 test('template contents and SVG/MathML namespaces cannot retain active descendants or handlers',()=>{
  const result=sanitizeMailHTML('<template><script>alert(1)</script><img src=x onerror=alert(1)></template><math><mtext><table><mglyph><style><!--</style><img title="--><img src=x onerror=alert(1)>"></table></mtext></math>');assert.doesNotMatch(result,/<script\b|\sonerror=/i);
 });
+test('script-blocked reader callbacks do not hide noscript fallback content',()=>{
+ const result=sanitizeMailHTML('<html><head><noscript><style>p{line-height:1.6}</style></noscript></head><body><noscript><p>Readable fallback <b>content</b></p><script>unsafe()</script></noscript><p>Normal content</p></body></html>');assert.doesNotMatch(result,/<noscript\b|<script\b/i);assert.match(result,/<p>Readable fallback <b>content<\/b><\/p>/);assert.match(result,/Normal content/);
+});
