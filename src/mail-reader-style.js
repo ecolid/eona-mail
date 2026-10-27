@@ -6,8 +6,9 @@ export const MAIL_READER_CSS = `
 .mail-reader-content[data-mail-body-state=pending] .mail-reader-attachments{display:none}
 [data-mail-body-state=pending]:is(#vbody,.htmlbody){position:relative}
 [data-mail-body-state=pending]:is(#vbody,.htmlbody)>iframe{position:absolute;inset:0 auto auto 0;visibility:hidden}
-.mail-body-placeholder{display:flex;min-height:96px;box-sizing:border-box;padding:20px 0;flex-direction:column;justify-content:space-between;gap:12px}
+.mail-body-placeholder{visibility:hidden;display:flex;min-height:96px;box-sizing:border-box;padding:20px 0;flex-direction:column;justify-content:space-between;gap:12px}
 .mail-body-placeholder[hidden]{display:none}
+[data-mail-body-state=pending]>.mail-body-status:not([hidden])+.mail-body-placeholder{visibility:visible}
 [data-mail-body-state=pending]>.mail-body-status{position:absolute;bottom:0;left:0;padding:0;font-size:12px}
 [data-mail-body-state=failed]:is(#vbody,.htmlbody)>iframe{display:none}
 .mail-reader-content{flex:none;box-sizing:border-box;width:100%;max-width:1048px;margin:0 auto;padding:24px 28px 40px;overflow-anchor:none}

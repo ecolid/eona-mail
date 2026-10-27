@@ -226,7 +226,8 @@ The shared body controller owns the initial layout transaction for Received,
 Sent and draft preview HTML. Pending body geometry uses an inline placeholder;
 attachments remain out of layout until the same task commits the fitted body.
 Failure settles its error/retry surface and exposes independent file downloads;
-retry starts a new pending transaction. Plain text does not wait for an iframe.
+retry starts a new pending transaction. Plain text does not wait for an iframe. Fast HTML reads keep the waiting
+placeholder invisible; slow reads reveal it on the existing feedback clock.
 Disposal prevents late frame work from changing another reader.
 
 The maintenance fixture `/reader-paint-review` samples from intent through body
