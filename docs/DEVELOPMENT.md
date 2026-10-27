@@ -106,3 +106,30 @@ disposal flushes the retired resource exactly once without replacing new content
 Regression covers return, first native vertical input, next open, cancellation,
 browser history flags, late requests, and repeated long HTML readers. Event
 models, browser native scrolling, and physical Safari results remain distinct.
+
+
+### Interactive release continuity
+
+Reader input and release share one progress owner. Pointer move is linear and
+frame-coalesced; release consumes the latest input, including an unpainted final
+move or final up coordinate. The page shell then uses native Web Animations from
+that position, with bounded remaining-distance/signed-velocity timing. Cancellation
+and reversal settle back from the current input. Re-grabbing a settling page keeps
+its visible position. Only the page shell moves; the native scroll host stays put.
+First list input or a browser-owned transition cancels the old animation, and a
+late finish cannot change a newer page. Reduced motion uses the destination
+without a visible travel. Browsers without WAAPI retain the CSS fallback.
+
+The model follows Ionic's [swipe progress and release decision](https://github.com/ionic-team/ionic-framework/blob/main/core/src/utils/gesture/swipe-back.ts)
+and [interactive animation lifecycle](https://github.com/ionic-team/ionic-framework/blob/main/core/src/utils/animation/animation.ts).
+Mail retains its own browser edge, history and input ownership policy.
+
+The maintenance fixture's fast motion suite covers same-task release before rAF,
+HTML-body flick, frame-paced flick, immediate reversal, native cancellation,
+re-grab and first list input. Record actual release geometry and compositor
+keyframes/timing as well as normal-speed trajectories. The slow drag profiler and
+24-round resource check remain separate. Synthetic events prove controller and
+rendering continuity, not physical Safari FPS. Run these against the old package
+first and bind results to the exact release manifest. Product unit tests exercise
+the WAAPI path, final up coordinate, signed direction, bounded timing and stale
+completion cancellation in the normal npm test/CI entry.

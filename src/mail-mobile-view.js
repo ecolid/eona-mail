@@ -85,9 +85,28 @@ export function bindMailReaderSurface({window:win=window,document:doc=document,s
 // One owner covers the shell and every trusted, script-blocked body document.
 // Native pan-y/pinch-zoom may cancel a pointer at any point; it never waits for
 // a touchmove threshold or for the reader's visual exit to finish.
+// Interactive motion is linear; release starts at the latest input position,
+// not the last rAF paint. A bounded distance/velocity budget avoids a second
+// fixed-duration trip after a fast flick. No overshooting spring on page edges.
+export function mailReaderRelease({position,width,velocity=0,commit,reduced=false}){
+ const from=Math.max(0,Math.min(width,position)),to=commit?width:0,distance=Math.abs(to-from),direction=Math.sign(to-from),speed=Math.max(0,velocity*direction);
+ const duration=reduced||distance<.5?0:Math.round(Math.max(90,Math.min(280,speed>.1?distance/speed:100+180*Math.sqrt(distance/width))));
+ const slope=distance?Math.min(.75,Math.max(0,speed*duration/distance*.22)):0;
+ return {from,to,duration,easing:'cubic-bezier(.22,'+slope.toFixed(3)+',.3,1)'};
+}
 export function bindMailReaderPan({root,reader,page=reader,mode,back,document:doc=document,window:win=window}){
- const lifetime=new AbortController(),bindings=new Map(),query=win.matchMedia('(max-width:860px)');let tracking=null,paint=0,serial=0,suppressUntil=0,phaseFrame=0,phaseSerial=0,phaseTimer=0,retired=null,retirementIdle=0,retirementTimer=0,listContact=false;
+ const lifetime=new AbortController(),bindings=new Map(),query=win.matchMedia('(max-width:860px)');let tracking=null,paint=0,serial=0,suppressUntil=0,phaseFrame=0,phaseSerial=0,phaseTimer=0,retired=null,retirementIdle=0,retirementTimer=0,listContact=false,motion=null;
  const clear=()=>{const t=tracking;tracking=null;serial++;win.cancelAnimationFrame(paint);paint=0;delete root.dataset.mailReaderDrag;page.style.removeProperty('--mail-reader-x');try{if(t?.capture?.hasPointerCapture?.(t.id))t.capture.releasePointerCapture(t.id)}catch{}};
+ const cancelMotion=()=>{const previous=motion;motion=null;if(previous){previous.animation.onfinish=null;previous.animation.cancel()}delete root.dataset.mailReaderMotion};
+ const animateRelease=(position,width,velocity,reading)=>{
+  if(!page.animate||!query.matches)return false;
+  const plan=mailReaderRelease({position,width,velocity,commit:!reading,reduced:win.matchMedia('(prefers-reduced-motion:reduce)').matches});
+  cancelMotion();win.cancelAnimationFrame(phaseFrame);phaseFrame=0;win.clearTimeout(phaseTimer);phaseTimer=0;phaseSerial++;
+  root.dataset.mailReaderMotion='settling';root.dataset.mailReaderPhase=reading?'entering':'leaving';
+  const animation=page.animate([{transform:'translate3d('+plan.from+'px,0,0)'},{transform:'translate3d('+plan.to+'px,0,0)'}],{duration:plan.duration,easing:plan.easing,fill:'both'}),owner={animation,reading};motion=owner;
+  const finish=()=>{if(motion!==owner)return;motion=null;animation.onfinish=null;root.dataset.mailReaderPhase=visible()?'active':'list';animation.cancel();delete root.dataset.mailReaderMotion;if(!visible())queueRetirement()};
+  animation.onfinish=finish;return true;
+ };
  const selected=source=>!!(win.getSelection?.()?.toString()||source.defaultView?.getSelection?.()?.toString());
  const listen=(source,frame=null)=>{
   const abort=new AbortController(),signal=abort.signal,point=(event,t)=>{
@@ -99,17 +118,23 @@ export function bindMailReaderPan({root,reader,page=reader,mode,back,document:do
   source.addEventListener('pointerdown',event=>{
    suppressUntil=0;if(tracking)clear();if(!query.matches||mode()!=='reader'||!['touch','pen'].includes(event.pointerType)||event.isPrimary===false||event.button>0||doc.querySelector('dialog[open],:popover-open')||selected(source)||!allowed(event.target))return;
    const p=point(event),width=doc.documentElement.clientWidth;if(p.x<20||p.x>width-20)return;
-   const rect=reader.getBoundingClientRect();tracking={source,frame,id:event.pointerId,capture:event.target,x:p.x,y:p.y,lastX:p.x,lastAt:win.performance.now(),velocity:0,dx:0,dy:0,width:rect.width||width,start:Math.max(0,rect.left),painted:Math.max(0,rect.left),frameLeft:p.left,frameTop:p.top,screen:frame&&Number.isFinite(event.screenX)&&Number.isFinite(event.screenY)&&(event.isTrusted||event.screenX||event.screenY)?{x:event.screenX,y:event.screenY,scale:win.visualViewport?.scale||1}:null,dragging:false,serial:++serial};
+   const rect=reader.getBoundingClientRect(),interrupted=!!motion;if(interrupted){page.style.setProperty('--mail-reader-x',Math.max(0,rect.left)+'px');root.dataset.mailReaderDrag='';cancelMotion()}tracking={source,frame,id:event.pointerId,capture:event.target,x:p.x,y:p.y,lastX:p.x,lastAt:win.performance.now(),velocity:0,dx:0,dy:0,width:rect.width||width,start:Math.max(0,rect.left),painted:Math.max(0,rect.left),frameLeft:p.left,frameTop:p.top,screen:frame&&Number.isFinite(event.screenX)&&Number.isFinite(event.screenY)&&(event.isTrusted||event.screenX||event.screenY)?{x:event.screenX,y:event.screenY,scale:win.visualViewport?.scale||1}:null,dragging:false,interrupted,serial:++serial};
   },{capture:true,passive:true,signal});
   source.addEventListener('pointermove',event=>{
    const t=tracking;if(!t||t.source!==source||t.id!==event.pointerId)return;if(mode()!=='reader'||selected(source)){clear();return}
-   const p=point(event,t),now=win.performance.now();t.dx=p.x-t.x;t.dy=p.y-t.y;t.velocity=(p.x-t.lastX)/Math.max(1,now-t.lastAt);t.lastX=p.x;t.lastAt=now;
+   const p=point(event,t),now=win.performance.now();t.dx=p.x-t.x;t.dy=p.y-t.y;const delta=p.x-t.lastX,elapsed=Math.max(1,now-t.lastAt);if(delta)t.velocity=Math.max(-3.5,Math.min(3.5,delta/elapsed));t.lastX=p.x;t.lastAt=now;
    if(!t.dragging){if(Math.abs(t.dy)>Math.max(8,Math.abs(t.dx)*1.2)||t.dx<-12){clear();return}if(t.dx<12||t.dx<Math.abs(t.dy)*1.6)return;t.dragging=true;try{t.capture.setPointerCapture?.(t.id)}catch{}}
    // Pointer cancellation, rather than touch preventDefault, hands a changed
    // vertical intent back to the browser's declared native axis.
    if(event.cancelable)event.preventDefault();if(!paint)paint=win.requestAnimationFrame(()=>{paint=0;if(tracking!==t||serial!==t.serial||mode()!=='reader')return;if(!Object.hasOwn(root.dataset,'mailReaderDrag'))root.dataset.mailReaderDrag='';t.painted=Math.max(0,Math.min(t.width,t.start+t.dx));page.style.setProperty('--mail-reader-x',t.painted+'px')});
   },{capture:true,passive:false,signal});
-  const end=event=>{const t=tracking;if(!t||t.source!==source||t.id!==event.pointerId)return;const commit=event.type==='pointerup'&&t.dragging&&mode()==='reader'&&!selected(source)&&(t.start+t.dx>=t.width||t.dx>=Math.min(120,t.width*.28)||win.performance.now()-t.lastAt<100&&t.dx>=28&&t.velocity>=.4);if(t.dragging){suppressUntil=win.performance.now()+750;if(event.cancelable)event.preventDefault()}clear();if(commit)back()};
+  const end=event=>{const t=tracking;if(!t||t.source!==source||t.id!==event.pointerId)return;
+   // A release may carry a final coalesced position which never got a move/rAF.
+   if(event.type==='pointerup'){const p=point(event,t),delta=p.x-t.lastX;if(delta){t.dx=p.x-t.x;t.velocity=Math.max(-3.5,Math.min(3.5,delta/Math.max(1,win.performance.now()-t.lastAt)));t.lastAt=win.performance.now()}}
+   const velocity=win.performance.now()-t.lastAt<100?t.velocity:0,commit=event.type==='pointerup'&&t.dragging&&mode()==='reader'&&!selected(source)&&velocity>=-.15&&(t.start+t.dx>=t.width||t.dx>=Math.min(120,t.width*.28)||t.dx>=28&&velocity>=.4);
+   if(t.dragging){suppressUntil=win.performance.now()+750;if(event.cancelable)event.preventDefault()}
+   const animate=t.dragging||t.interrupted,position=t.start+t.dx;if(animate&&!page.animate){root.dataset.mailReaderDrag='';page.style.setProperty('--mail-reader-x',Math.max(0,Math.min(t.width,position))+'px');page.getBoundingClientRect()}clear();if(animate)animateRelease(position,t.width,velocity,!commit);if(commit)back();
+  };
   for(const type of ['pointerup','pointercancel','lostpointercapture'])source.addEventListener(type,end,{capture:true,passive:false,signal});
   source.addEventListener('click',event=>{if(event.detail&&suppressUntil>win.performance.now()){event.preventDefault();event.stopImmediatePropagation()}},{capture:true,signal});
   const dispose=()=>{if(tracking?.source===source)clear();abort.abort();bindings.delete(source)};bindings.set(source,dispose);return dispose;
@@ -118,8 +143,8 @@ export function bindMailReaderPan({root,reader,page=reader,mode,back,document:do
  const flushRetired=()=>{cancelRetirement();const finish=retired;retired=null;finish?.()};
  const queueRetirement=()=>{cancelRetirement();if(!retired||listContact)return;const finish=()=>{retirementIdle=retirementTimer=0;if(!listContact&&!visible())flushRetired()};if(win.requestIdleCallback)retirementIdle=win.requestIdleCallback(finish,{timeout:1000});else retirementTimer=win.setTimeout(finish,100)};
  const visible=()=>doc.body?.classList?.contains('viewing')??mode()==='reader';
- const settle=()=>{win.cancelAnimationFrame(phaseFrame);phaseFrame=0;const reading=visible(),x=page.getBoundingClientRect().left;if(!query.matches||(reading?Math.abs(x)<.5:x>=doc.documentElement.clientWidth)){win.clearTimeout(phaseTimer);phaseTimer=0;root.dataset.mailReaderPhase=reading?'active':'list';if(!reading)queueRetirement();return true}return false};
- const surface=()=>{const previous=root.dataset.mailReaderPhase;clear();win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);const ticket=++phaseSerial,reading=visible();if(!reading&&previous==='list'){queueRetirement();return}if(reading){listContact=false;flushRetired()}
+ const settle=()=>{if(motion)return false;win.cancelAnimationFrame(phaseFrame);phaseFrame=0;const reading=visible(),x=page.getBoundingClientRect().left;if(!query.matches||(reading?Math.abs(x)<.5:x>=doc.documentElement.clientWidth)){win.clearTimeout(phaseTimer);phaseTimer=0;root.dataset.mailReaderPhase=reading?'active':'list';if(!reading)queueRetirement();return true}return false};
+ const surface=()=>{const previous=root.dataset.mailReaderPhase;clear();win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);const ticket=++phaseSerial,reading=visible();if(reading){listContact=false;flushRetired()}if(motion){if(motion.reading===reading){root.dataset.mailReaderPhase=reading?'entering':'leaving';return}const x=page.getBoundingClientRect().left;animateRelease(x,doc.documentElement.clientWidth,0,reading);return}if(!reading&&previous==='list'){queueRetirement();return}
   // A completed reader has no rendered box. Materialize its offscreen starting
   // position once before entering; a new reader during exit keeps its position.
   // Height-only native scroll/chrome changes cannot revive the retired layer.
@@ -129,13 +154,13 @@ export function bindMailReaderPan({root,reader,page=reader,mode,back,document:do
   // A completed browser transition or new list input owns the visual result.
   // Do not leave an
   // offscreen fixed scrolling layer in the compositor during the next pan.
-  phaseSerial++;win.cancelAnimationFrame(phaseFrame);phaseFrame=0;win.clearTimeout(phaseTimer);phaseTimer=0;clear();root.dataset.mailReaderPhase='list';queueRetirement();
+  phaseSerial++;win.cancelAnimationFrame(phaseFrame);phaseFrame=0;win.clearTimeout(phaseTimer);phaseTimer=0;cancelMotion();clear();root.dataset.mailReaderPhase='list';queueRetirement();
  };
  const handoff=event=>{if(!query.matches||visible()||!event.target?.closest?.('#list'))return;listContact=event.type!=='keydown';cancelRetirement();if(root.dataset.mailReaderPhase==='leaving')finishReturn();if(event.type==='wheel')retirementTimer=win.setTimeout(()=>{listContact=false;queueRetirement()},160)};
  for(const type of ['pointerdown','touchstart','wheel','keydown'])doc.addEventListener(type,handoff,{capture:true,passive:true,signal:lifetime.signal});
  for(const type of ['pointerup','touchend','touchcancel'])doc.addEventListener(type,event=>{if(event.touches?.length)return;listContact=false;queueRetirement()},{capture:true,passive:true,signal:lifetime.signal});
- listen(doc);const reset=()=>{clear();listContact=false;queueRetirement()};doc.addEventListener('mail:surface',surface,{capture:true,signal:lifetime.signal});page.addEventListener?.('transitionend',event=>{if(event.target===page)settle()},{signal:lifetime.signal});win.addEventListener('blur',reset,{signal:lifetime.signal});doc.addEventListener('visibilitychange',()=>{if(doc.hidden){reset();flushRetired()}},{signal:lifetime.signal});query.addEventListener('change',surface,{signal:lifetime.signal});surface();
- return {finishReturn,bindDocument(source,frame){bindings.get(source)?.();return listen(source,frame)},retire(finish){flushRetired();retired=finish;if(!query.matches||visible())flushRetired();else if(root.dataset.mailReaderPhase==='list')queueRetirement()},dispose(){clear();phaseSerial++;win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);flushRetired();delete root.dataset.mailReaderPhase;lifetime.abort();for(const dispose of [...bindings.values()])dispose()}};
+ listen(doc);const reset=()=>{clear();cancelMotion();root.dataset.mailReaderPhase=visible()?'active':'list';listContact=false;queueRetirement()};doc.addEventListener('mail:surface',surface,{capture:true,signal:lifetime.signal});page.addEventListener?.('transitionend',event=>{if(event.target===page)settle()},{signal:lifetime.signal});win.addEventListener('blur',reset,{signal:lifetime.signal});doc.addEventListener('visibilitychange',()=>{if(doc.hidden){reset();flushRetired()}},{signal:lifetime.signal});query.addEventListener('change',surface,{signal:lifetime.signal});surface();
+ return {finishReturn,bindDocument(source,frame){bindings.get(source)?.();return listen(source,frame)},retire(finish){flushRetired();retired=finish;if(!query.matches||visible())flushRetired();else if(root.dataset.mailReaderPhase==='list')queueRetirement()},dispose(){cancelMotion();clear();phaseSerial++;win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);flushRetired();delete root.dataset.mailReaderPhase;lifetime.abort();for(const dispose of [...bindings.values()])dispose()}};
 }
 export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,openNavigation,closeNavigation,back,refresh,listActions,document:doc=document,window:win=window}) {
  const feedbackBinding=bindMailTouchFeedback({root,document:doc,window:win}),pullSurface=bindMailPullSurface({list:doc.getElementById('list'),document:doc,window:win});
@@ -259,13 +284,13 @@ export function bindMailGestureDiagnostic({root,document:doc=document,window:win
  const dispose=()=>{abort.abort();for(const {timer}of pending.values())win.clearTimeout(timer);pending.clear();panel.remove()};close.onclick=()=>{dispose();const url=new win.URL(win.location.href);url.searchParams.delete('gesture_check');win.history.replaceState(win.history.state,'',url)};
  return {dispose};
 }
-export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailReturnDiagnostic.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
+export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+mailReaderRelease.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailReturnDiagnostic.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
 function installMailMobile(){
  document.addEventListener('click',event=>{if(event.target.closest('[data-mail-pending-back]'))returnToMailList()});
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';
  if(window.PointerEvent)window.MailReaderPan=bindMailReaderPan({root:document.getElementById('app'),reader:document.getElementById('view'),page:document.getElementById('mail-reader-page'),mode,back:()=>returnToMailList()});
  const listActions=installMailListActions();bindMailGestureDiagnostic({root:document.getElementById('app')});
- window.MailReturnDiagnostic=bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,installMailNavigation,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
+ window.MailReturnDiagnostic=bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,installMailNavigation,mailReaderRelease,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
  bindMailMobileGestures({root:document.getElementById('app'),navigation:document.getElementById('side'),reader:document.getElementById('mail-reader-page'),mode,canRefresh:()=>mode()==='list'&&!listActions.selecting&&!['settings','routes'].includes(state.folder),openNavigation:()=>mailDrawer.open(),closeNavigation:()=>mailDrawer.close(),back:()=>returnToMailList(),refresh:()=>refresh(true,{feedback:'pull'}),listActions});
 }
 export const MAIL_MOBILE_CSS=`
@@ -316,7 +341,8 @@ body.mail-composing #mail-reader-page{display:none!important}
  #list,#view{overscroll-behavior-y:contain}
  #app[data-mail-drawer-drag] #side[data-e-drawer-mobile=true]{transform:translate3d(var(--mail-drawer-x),0,0)!important;visibility:visible!important;transition:none!important;will-change:transform}
  #app[data-mail-drawer-drag] #mask[data-e-drawer-mobile=true]{opacity:var(--mail-drawer-progress)!important;visibility:visible!important;pointer-events:auto!important;transition:none!important}
- body.viewing #app[data-mail-reader-drag] #mail-reader-page{transform:translate3d(var(--mail-reader-x),0,0)!important;transition:none!important;will-change:transform}
+ body.viewing #app[data-mail-reader-drag]:not([data-mail-reader-motion]) #mail-reader-page{transform:translate3d(var(--mail-reader-x),0,0)!important;transition:none!important;will-change:transform}
+ #app[data-mail-reader-motion] #mail-reader-page{transition:none!important;visibility:visible;will-change:transform}
  #app[data-mail-pull]{transition:--mail-pull-y 240ms var(--e-ui-ease)}
  #app[data-mail-pull=dragging]{transition:none}
  #app[data-mail-pull] #list .mail-pull-content{transform:translate3d(0,var(--mail-pull-y),0);transition:none;will-change:transform}

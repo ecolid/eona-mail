@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {bindMailReaderPan,bindMailReaderSurface} from './src/mail-mobile-view.js';
+import {bindMailReaderPan,bindMailReaderSurface,mailReaderRelease} from './src/mail-mobile-view.js';
 import {setMailBodyInputAxes,chainMailReaderDisposers} from './src/mail-body-view.js';
 
 class Surface {
@@ -8,18 +8,19 @@ class Surface {
  addEventListener(type,fn,{signal}={}){const list=this.events.get(type)||[];list.push(fn);this.events.set(type,list);signal?.addEventListener('abort',()=>this.events.set(type,(this.events.get(type)||[]).filter(f=>f!==fn)),{once:true})}
  emit(type,values={}){const e={type,cancelable:true,detail:1,pointerType:'touch',pointerId:1,isPrimary:true,button:0,clientX:160,clientY:80,preventDefault(){this.defaultPrevented=true},stopImmediatePropagation(){this.stopped=true},...values};for(const fn of [...this.events.get(type)||[]]){fn(e);if(e.stopped)break}return e}
 }
-function fixture(separatePage=false){
- const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),idles=new Map(),allFrames=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
+function fixture(separatePage=false,nativeMotion=false){
+ const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),idles=new Map(),allFrames=[],animations=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
  query.matches=true;doc.documentElement={clientWidth:390};doc.querySelector=()=>null;
- Object.assign(win,{PointerEvent:class{},performance:{now:()=>now},matchMedia:()=>query,getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:node.horizontal?'auto':'visible'}),requestAnimationFrame(fn){allFrames.push(fn);frames.set(++id,fn);return id},cancelAnimationFrame(id){frames.delete(id)}});child.defaultView=win;
+ Object.assign(win,{PointerEvent:class{},performance:{now:()=>now},matchMedia:q=>q.includes('reduced-motion')?{matches:false}:query,getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:node.horizontal?'auto':'visible'}),requestAnimationFrame(fn){allFrames.push(fn);frames.set(++id,fn);return id},cancelAnimationFrame(id){frames.delete(id)}});child.defaultView=win;
  win.requestIdleCallback=fn=>{idles.set(++id,fn);return id};win.cancelIdleCallback=id=>idles.delete(id);
  win.setTimeout=fn=>{frames.set(++id,fn);return id};win.clearTimeout=id=>frames.delete(id);
  const root={dataset:{},style:{setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]}},reader={style:root.style,contains:n=>n===shell,getBoundingClientRect:()=>({width:390,left:left+parseFloat(styles['--mail-reader-x']||0)})};
  const node=owner=>({ownerDocument:owner,parentElement:null,closest:()=>null,setPointerCapture(){this.captured=true},hasPointerCapture(){return this.captured},releasePointerCapture(){this.captured=false}}),shell=node(doc),text=node(child),frame={getBoundingClientRect:()=>({left:reader.getBoundingClientRect().left+12,top:300})};
  const readerStyles={},page=separatePage?{style:root.style,getBoundingClientRect:reader.getBoundingClientRect}:reader;if(separatePage)reader.style={setProperty:(k,v)=>readerStyles[k]=v,removeProperty:k=>delete readerStyles[k]};
+ const animate=(frames,options)=>{const a={frames,options,onfinish:null,cancelled:false,cancel(){this.cancelled=true}};animations.push(a);return a};if(nativeMotion)page.animate=animate;
  const binding=bindMailReaderPan({root,reader,page,document:doc,window:win,mode:()=>mode,back:()=>{backs++;mode='list';doc.emit('mail:surface')}}),disposeChild=binding.bindDocument(child,frame);
  const emit=(type,x=160,y=80,more={},source=child,target=text)=>{now+=20;return source.emit(type,{target,clientX:x,clientY:y,...more})},paint=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn())};
- return {idle(){const batch=[...idles.values()];idles.clear();batch.forEach(fn=>fn())},doc,child,win,query,root,styles,reader,readerStyles,page,shell,text,frame,binding,disposeChild,emit,paint,allFrames,backs:()=>backs,mode:value=>mode=value,select:value=>selection=value,left:value=>left=value};
+ return {animations,idle(){const batch=[...idles.values()];idles.clear();batch.forEach(fn=>fn())},doc,child,win,query,root,styles,reader,readerStyles,page,shell,text,frame,binding,disposeChild,emit,paint,allFrames,backs:()=>backs,mode:value=>mode=value,select:value=>selection=value,left:value=>left=value};
 }
 test('a pan starting inside HTML body returns through the same owner and releases input before back',()=>{
  const f=fixture();f.emit('pointerdown');assert(!f.emit('pointermove',163,81).defaultPrevented);f.emit('pointermove',300,82);f.paint();assert.equal(f.styles['--mail-reader-x'],'140px');
@@ -98,4 +99,30 @@ test('the animation page moves while the native reader scroll node has no transf
 
 test('covered list focus redirects without disabling its native scroll host',()=>{
  const f=fixture();let reading=true,focus=0;f.doc.body={classList:{contains:()=>reading}};f.reader.focus=options=>{assert.equal(options.preventScroll,true);focus++};f.doc.getElementById=()=>f.reader;const binding=bindMailReaderSurface({document:f.doc,window:f.win,sync(){}}),target={closest:s=>s==='#list'?{}:null};f.doc.emit('focusin',{target});assert.equal(focus,1);reading=false;f.doc.emit('focusin',{target});assert.equal(focus,1);binding.dispose();reading=true;f.doc.emit('focusin',{target});assert.equal(focus,1);f.binding.dispose();
+});
+
+
+test('fast release carries the final unpainted pointer position into compositor motion',()=>{
+ const f=fixture(true,true);f.paint();f.emit('pointerdown',100,80,{},f.doc,f.shell);f.emit('pointermove',160,80,{},f.doc,f.shell);f.emit('pointerup',220,80,{},f.doc,f.shell);
+ const a=f.animations.at(-1);assert.equal(a.frames[0].transform,'translate3d(120px,0,0)');assert.equal(a.frames[1].transform,'translate3d(390px,0,0)');assert.equal(f.backs(),1);assert.equal(f.root.dataset.mailReaderPhase,'leaving');assert.equal(f.text.captured,undefined);assert.deepEqual(f.readerStyles,{});
+ f.allFrames.slice().forEach(fn=>fn());assert.equal(f.root.dataset.mailReaderPhase,'leaving','a stale rAF cannot settle the native animation');a.onfinish();assert.equal(f.root.dataset.mailReaderPhase,'list');assert(a.cancelled);assert.equal(f.root.dataset.mailReaderMotion,undefined);f.binding.dispose();
+});
+test('fast reversal cancels from the latest input instead of committing the earlier distance',()=>{
+ const f=fixture(true,true);f.paint();f.emit('pointerdown',100,80,{},f.doc,f.shell);f.emit('pointermove',280,80,{},f.doc,f.shell);f.paint();f.emit('pointermove',140,80,{},f.doc,f.shell);f.emit('pointerup',140,80,{},f.doc,f.shell);
+ const a=f.animations.at(-1);assert.equal(f.backs(),0);assert.equal(a.frames[0].transform,'translate3d(40px,0,0)');assert.equal(a.frames[1].transform,'translate3d(0px,0,0)');a.onfinish();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose();
+});
+test('first list input cancels release motion and its late completion cannot hide a new reader',()=>{
+ const f=fixture(true,true);f.paint();f.emit('pointerdown',100,80,{},f.doc,f.shell);f.emit('pointermove',240,80,{},f.doc,f.shell);f.emit('pointerup',240,80,{},f.doc,f.shell);const a=f.animations.at(-1),late=a.onfinish;
+ f.doc.emit('pointerdown',{target:{closest:s=>s==='#list'?{}:null}});assert(a.cancelled);assert.equal(f.root.dataset.mailReaderPhase,'list');f.mode('reader');f.doc.emit('mail:surface');f.paint();late();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose();
+});
+test('release budgets use remaining distance and signed speed, with a reduced-motion endpoint',()=>{
+ const slow=mailReaderRelease({position:120,width:390,velocity:.2,commit:true}),fast=mailReaderRelease({position:120,width:390,velocity:2,commit:true}),near=mailReaderRelease({position:380,width:390,velocity:2,commit:true});assert(fast.duration<slow.duration);assert(near.duration<=fast.duration);
+ for(const velocity of [-10,0,.4,10])for(const position of [-20,100,500])for(const commit of [false,true]){const p=mailReaderRelease({position,width:390,velocity,commit});assert(p.from>=0&&p.from<=390);assert(p.duration>=0&&p.duration<=280);assert.equal(p.to,commit?390:0)}
+ assert.equal(mailReaderRelease({position:100,width:390,velocity:1,commit:true,reduced:true}).duration,0);
+});
+
+
+test('a fresh reader interrupts release and flushes only the suspended previous body',()=>{
+ const f=fixture(true,true);f.paint();f.emit('pointerdown',100,80,{},f.doc,f.shell);f.emit('pointermove',240,80,{},f.doc,f.shell);f.emit('pointerup',240,80,{},f.doc,f.shell);const old=f.animations.at(-1),late=old.onfinish;let disposed=0;f.binding.retire(()=>disposed++);
+ f.mode('reader');f.left(180);f.doc.emit('mail:surface');assert.equal(disposed,1);assert(old.cancelled);const fresh=f.animations.at(-1);assert.notEqual(old,fresh);late();assert.equal(f.root.dataset.mailReaderPhase,'entering');fresh.onfinish();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose();assert.equal(disposed,1);
 });
