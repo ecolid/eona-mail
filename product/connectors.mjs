@@ -1,8 +1,9 @@
 import {createMailSender} from '../sv/mail-sender.mjs';
+import {accountSyncEnabled} from './config.mjs';
 export function productSender(config,secrets,{createTransport}={}){
   const accounts=config.accounts.filter(a=>a.smtp);
   if(!accounts.length)return null;
-  const metadata=()=>accounts.map(a=>({id:a.id,address:a.address,name:a.name||'',available:available(a)}));
+  const metadata=()=>accounts.map(a=>({id:a.id,address:a.address,name:a.name||'',sync:accountSyncEnabled(config,a),available:available(a)}));
   function available(a){try{secrets(a.smtp.password_env);return true;}catch{return false;}}
   const inner=createMailSender({authorized_owners:[config.owner.id],loadAccounts:async()=>accounts.filter(available).map(a=>({id:a.id,address:a.address,name:a.name||'',...a.smtp,password:secrets(a.smtp.password_env)}))},createTransport);
   return {...inner,list:async owner=>owner===config.owner.id?metadata():[]};

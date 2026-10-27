@@ -81,3 +81,14 @@ test('source Sent confirmation before a late SMTP disconnect stays final and pre
  assert.equal((await response.json()).message.state,'sent');
  const draft=await store.db.prepare("SELECT rev,body FROM mail_drafts WHERE id='gmail-race'").first();assert.equal(draft.rev,2);assert.equal(draft.body,'Newer unsent edit');
 });
+
+
+test('SMTP availability does not invent a source-writeback status for a receive-only account',async t=>{
+ const {store,c}=await fixture(t);c.accounts=[{...account,smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}];
+ const {productSender}=await import('./connectors.mjs');const {fetchWithIdentity}=await import('../src/index.js');
+ store.env.MAIL_SENDER=productSender(c,()=> 'synthetic-password');store.env.MAIL_SYNC_ENABLED=true;
+ const read=async()=>{const response=await fetchWithIdentity(new Request(c.origin+'/api/mail-workspace?view=compact',{headers:{'cache-control':'no-cache'}}),store.env,{authenticated:true,subject:c.owner.id,email:c.owner.email});assert.equal(response.status,200);return response.json()};
+ let result=await read();assert.equal(result.senders[0].sync,false);assert.equal(result.send_mode,'smtp');assert.equal(result.sync.configured,false);assert.deepEqual(result.sync.accounts,[]);
+ const gmail=result.senders[0];store.env.MAIL_SENDER={list:async()=>[gmail,{id:'writable',address:'other@example.test',available:true}]};
+ result=await read();assert.equal(result.sync.configured,true);assert.deepEqual(result.sync.accounts.map(a=>a.account),['writable']);assert.equal(result.sync.accounts[0].state,'starting','unknown writable source status is retained');
+});
