@@ -43,13 +43,13 @@ export function mailReconcileList(host,markup){
  const next=document.createElement('div');next.innerHTML=markup;
  const current=new Map([...host.querySelectorAll('[data-mail-id]')].map(row=>[row.dataset.mailId,row]));
  for(const row of next.querySelectorAll('[data-mail-id]')){const old=current.get(row.dataset.mailId);if(!old)continue;old.className=row.className;if(old.innerHTML!==row.innerHTML)old.innerHTML=row.innerHTML;row.replaceWith(old.closest('.mail-action-row')||old)}
- host.replaceChildren(...next.childNodes);
+ mailCommitListContent(host,[...next.childNodes]);
 }
 export async function mailAnimateListCommit(host,commit){
  const motions=host.mailCommitMotions||[];for(const motion of motions)motion.cancel();
  const rows=()=>[...host.querySelectorAll('[data-mail-id]')].map(row=>({id:row.dataset.mailId,node:row.closest('.mail-action-row')||row}));
- const before=new Map(rows().map(({id,node})=>[id,node.getBoundingClientRect().top]));const scroll=host.scrollTop;
- commit();host.scrollTop=scroll;document.dispatchEvent(new Event('mail:list-actions'));
+ const before=new Map(rows().map(({id,node})=>[id,node.getBoundingClientRect().top]));const scroll=mailListScrollElement(host).scrollTop;
+ commit();mailListScrollElement(host).scrollTop=scroll;document.dispatchEvent(new Event('mail:list-actions'));
  host.mailCommitMotions=[];if(matchMedia('(prefers-reduced-motion:reduce)').matches)return;
  for(const {id,node} of rows()){const rect=node.getBoundingClientRect();if(rect.bottom<0||rect.top>document.documentElement.clientHeight)continue;const previous=before.get(id),delta=previous===undefined?-8:previous-rect.top;if(previous!==undefined&&Math.abs(delta)<.5||!node.animate)continue;
   const motion=node.animate([{transform:'translateY('+delta+'px)',opacity:previous===undefined?0:1},{transform:'translateY(0)',opacity:1}],{duration:240,easing:'cubic-bezier(.16,1,.3,1)'});host.mailCommitMotions.push(motion);
@@ -193,17 +193,17 @@ export function installMailListActions(){
  const cancel=()=>{rowPainter.cancel();const consumed=!!(gesture?.owned||gesture?.reserved);if(gesture?.two&&gesture.owned){selected.clear();for(const id of gesture.base)selected.add(id);selecting=gesture.wasSelecting;paintSelection()}gesture=null;range=null;contactStart=null;cancelAnimationFrame(scrollFrame);scrollFrame=0;if(opened?.hasAttribute('data-dragging')){opened.removeAttribute('data-dragging');closeRow()}clearFeedback();return consumed};
  // Check controls are siblings of the row; both surfaces resolve one identity.
  const rowAt=(x,y)=>{const hit=document.elementFromPoint(x,y);return hit?.closest(selector)||hit?.closest('.mail-action-row')?.querySelector(selector)};
- const updateRange=()=>{if(!gesture?.two||!range)return;const visible=rows(),r=list.getBoundingClientRect(),hit=rowAt(range.x,Math.max(r.top+2,Math.min(r.bottom-2,range.y))),item=identity(hit);if(item&&item.kind===kind())gesture.last=item.id;const next=mailRangeSelection(visible.map(r=>identity(r).id),gesture.base,gesture.anchor,gesture.last,true);selected.clear();for(const id of next)selected.add(id);paintSelection();const delta=range.y<r.top+48?-10:range.y>r.bottom-56?10:0;if(delta){list.scrollTop+=delta;scrollFrame=requestAnimationFrame(updateRange)}};
+ const updateRange=()=>{if(!gesture?.two||!range)return;const visible=rows(),r=mailListScrollElement(list).getBoundingClientRect(),hit=rowAt(range.x,Math.max(r.top+2,Math.min(r.bottom-2,range.y))),item=identity(hit);if(item&&item.kind===kind())gesture.last=item.id;const next=mailRangeSelection(visible.map(r=>identity(r).id),gesture.base,gesture.anchor,gesture.last,true);selected.clear();for(const id of next)selected.add(id);paintSelection();const delta=range.y<r.top+48?-10:range.y>r.bottom-56?10:0;if(delta){mailListScrollElement(list).scrollTop+=delta;scrollFrame=requestAnimationFrame(updateRange)}};
  const pointerInput=bindMailRowPointerInput({list,readGesture:()=>gesture,move:event=>binding.move(event),cancel:()=>cancel()});
  const binding={
   get selecting(){return selecting},
   start(event,mode){
-   const firstId=gesture?.firstId??contactStart?.firstId,previousContact=contactStart;cancel();multiContact=false;if(mode!=='list'||busy){event.mailGestureDecision=busy?'list-busy':'surface-'+mode;return false}const points=[...event.touches],row=event.target.closest?.(selector)||event.target.closest?.('.mail-action-row')?.querySelector(selector)||(points.length===2&&list.contains(event.target)?rowAt(points[0].clientX,points[0].clientY):null);if(!row){event.mailGestureDecision='outside-row';return false}const item=identity(row);multiContact=points.length>1;contactStart=points.length>1?previousContact:{top:list.scrollTop,firstId:points[0]?.identifier,anchor:item.id};
+   const firstId=gesture?.firstId??contactStart?.firstId,previousContact=contactStart;cancel();multiContact=false;if(mode!=='list'||busy){event.mailGestureDecision=busy?'list-busy':'surface-'+mode;return false}const points=[...event.touches],row=event.target.closest?.(selector)||event.target.closest?.('.mail-action-row')?.querySelector(selector)||(points.length===2&&list.contains(event.target)?rowAt(points[0].clientX,points[0].clientY):null);if(!row){event.mailGestureDecision='outside-row';return false}const item=identity(row);multiContact=points.length>1;contactStart=points.length>1?previousContact:{top:mailListScrollElement(list).scrollTop,firstId:points[0]?.identifier,anchor:item.id};
    // Vertical intent is not proof of native ownership: the shell may own an
    // uncommitted pull. A joining finger can take that cancellable stream over.
    // Passive touchstart can be non-cancellable even when the first move is
    // available. Admit the pair here; only a move proves native ownership.
-   if(points.length===2){if(previousContact&&Math.abs(list.scrollTop-previousContact.top)>1){event.mailGestureDecision='native-scroll';return false;}const first=points.find(p=>firstId!==undefined&&p.identifier===firstId)||points[0],anchor=rows().find(r=>identity(r).id===previousContact?.anchor)||rowAt(first.clientX,first.clientY);if(!anchor||identity(anchor)?.kind!==item.kind||points.some(p=>identity(rowAt(p.clientX,p.clientY))?.kind!==item.kind)){event.mailGestureDecision='outside-pair-scope';return false;}const id=identity(anchor).id;gesture={two:true,firstId:first.identifier,start:points.map(p=>({identifier:p.identifier,clientX:p.clientX,clientY:p.clientY})),anchor:id,last:id,base:new Set(selected),wasSelecting:selecting,owned:false,reserved:false};event.mailGestureDecision='pair-pending';return true}
+   if(points.length===2){if(previousContact&&Math.abs(mailListScrollElement(list).scrollTop-previousContact.top)>1){event.mailGestureDecision='native-scroll';return false;}const first=points.find(p=>firstId!==undefined&&p.identifier===firstId)||points[0],anchor=rows().find(r=>identity(r).id===previousContact?.anchor)||rowAt(first.clientX,first.clientY);if(!anchor||identity(anchor)?.kind!==item.kind||points.some(p=>identity(rowAt(p.clientX,p.clientY))?.kind!==item.kind)){event.mailGestureDecision='outside-pair-scope';return false;}const id=identity(anchor).id;gesture={two:true,firstId:first.identifier,start:points.map(p=>({identifier:p.identifier,clientX:p.clientX,clientY:p.clientY})),anchor:id,last:id,base:new Set(selected),wasSelecting:selecting,owned:false,reserved:false};event.mailGestureDecision='pair-pending';return true}
    if(points.length!==1||event.target.closest('.mail-row-menu,[data-copy]')||!selecting&&event.target.closest('.mail-row-check'))return false;
    const p=points[0],width=document.documentElement.clientWidth;if(p.clientX<20||p.clientX>width-20)return false;gesture={row,wrap:row.parentElement,pointer:pointerInput.primary(),firstId:p.identifier,selectionOnly:selecting,limit:rowLimit(row.parentElement),x:p.clientX,y:p.clientY,start:opened===row.parentElement?-rowLimit(row.parentElement):0,owned:false};return false;
   },
@@ -228,7 +228,7 @@ export function installMailListActions(){
  list.addEventListener('contextmenu',event=>{const row=event.target.closest(selector);if(!row||window.getSelection()?.toString())return;event.preventDefault();showMore(row,event.target)});
  list.addEventListener('pointermove',event=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover');if(event.pointerType==='mouse')event.target.closest('.mail-action-row')?.setAttribute('data-row-hover','')},{passive:true});
  list.addEventListener('pointerleave',()=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover')});
- list.addEventListener('scroll',()=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover');if(!gesture?.owned)closeRow()},{passive:true});
+ list.addEventListener('scroll',()=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover');if(!gesture?.owned)closeRow()},{capture:true,passive:true});
  document.addEventListener('pointerdown',event=>{if(opened&&!opened.contains(event.target))closeRow()},{capture:true,passive:true});
  document.addEventListener('mail:list-actions',enhance);
  bindMailListSurface({document,readScope:()=>mailPageKey()+':'+MailWorkspace.identityGeneration,preparedScope:()=>scope,needsPreparation:()=>{const head=list.querySelector('.mail-workspace-title,.mail-results-bar');return !!head&&!head.closest('.mail-page-skeleton')&&!head.querySelector('[data-mail-select-toggle]')},reading:()=>document.body.classList.contains('viewing'),hasSelection:()=>selecting||selected.size>0,reset:()=>{binding.cancel();closeRow()},exitSelection,enhance});
@@ -347,5 +347,5 @@ body.mail-atlas .mail-action-popover .mail-sheet-actions{padding:0;gap:2px;max-h
 body.mail-atlas .mail-action-popover .e-button{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;height:36px;min-height:36px;padding:6px 10px;border:0;border-radius:8px;background:transparent;font:500 13px/20px var(--e-ui-font);color:var(--e-ui-ink);text-align:left}
 body.mail-atlas .mail-action-popover .e-button[data-danger]{color:var(--e-ui-danger)}
 body.mail-atlas .mail-action-popover .e-button:hover{background:var(--e-ui-soft)}
-#app #list :is(.mail-workspace-title,.mail-results-bar){position:sticky;top:0;z-index:6}
+#app #list :is(.mail-workspace-title,.mail-results-bar){position:relative;z-index:6}
 `;

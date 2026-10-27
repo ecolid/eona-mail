@@ -103,7 +103,7 @@ function mailWorkspaceController(){
   const syncText=mailSyncNotice(data.sync,lastError),syncNotice=(isDraft||isSent)&&data.sync?.configured?'<p class="mail-list-status" role="status" data-mail-sync-status'+(!syncText?' hidden':'')+'>'+syncText+'</p>':'';
   const coverage=!isDraft&&!isSent&&data.source_coverage&&data.source_coverage.indexed_count<data.source_coverage.total?'<p role="status">来源识别尚未完成，已保留当前联系人。</p>':'';
   const markup='<section class="mail-workspace-content">'+mailListHeading(title,isSent?sentTotal:rows.length,isDraft||isSent?'封':isSource?'个':'位',groupFilter)+refreshError+coverage+syncNotice+pending+(rowMarkup||'<div class="empty">'+(query?'未找到匹配项':isDraft?'还没有草稿':isSent?'尚无发送记录':'暂无联系人')+'</div>')+(isSent&&sentNext!==null?'<button class="e-button mail-sent-more" data-sent-more>加载更多</button>':'')+(!isDraft&&!isSent&&rows.length>(entry.directoryLimit||80)?'<button class="e-button mail-sent-more" data-directory-list-more>加载更多</button>':'')+'</section>';
-  if(entry.markup!==markup){contactsDispose?.();contactsDispose=null;const scroll=list.scrollTop;list.innerHTML=markup;EonaUI.bindForms?.(list);list.scrollTop=scroll;entry.markup=markup}
+  if(entry.markup!==markup){contactsDispose?.();contactsDispose=null;const scroll=mailListScrollElement(list).scrollTop;mailCommitListContent(list,markup);EonaUI.bindForms?.(list);mailListScrollElement(list).scrollTop=scroll;entry.markup=markup}
   if(isSent&&state.sentSelected&&rows.some(m=>m.id===state.sentSelected))openMailSent(state.sentSelected);
   const selected=state.workspaceSelected;if(!isSent&&selected?.kind===folder&&!rows.some(r=>(r.id||r.key||r.address)===selected.id)&&!(folder==='important'&&data.directory.some(c=>c.address===selected.id))){clearMailReader()}
   list.setAttribute('aria-busy','false');return {ok:true,ids:rows.map(r=>r.id||r.address),count:rows.length};
@@ -173,7 +173,7 @@ function mailWorkspaceController(){
  // Poll authoritative workspace state without replacing an open editor.
  setInterval(function refreshMailWorkspace(){if(loaded&&!document.hidden)MailWorkspace.load(true).catch(()=>{})},30000);
  window.addEventListener('mail:contact-closed',()=>{if(pendingWorkspaceRender&&!document.querySelector('.mail-contact-menu:popover-open'))update()});
- document.addEventListener('change',event=>{if(!event.target.matches?.('select[data-directory-group]'))return;state.directoryGroup=event.target.value;state.workspaceSelected=null;clearMailReader();activeMailPage.directoryLimit=80;document.getElementById('list').scrollTop=0;renderMailWorkspace()});
+ document.addEventListener('change',event=>{if(!event.target.matches?.('select[data-directory-group]'))return;state.directoryGroup=event.target.value;state.workspaceSelected=null;clearMailReader();activeMailPage.directoryLimit=80;mailListScrollElement(document.getElementById('list')).scrollTop=0;renderMailWorkspace()});
  document.addEventListener('click',async event=>{
   const node=event.target.closest('[data-new-mail],[data-draft-open],[data-contact-write],[data-workspace-retry],[data-sent-open],[data-sent-back],[data-send-check],[data-sent-more],[data-sent-retry],[data-directory-open],[data-directory-retry],[data-directory-group],[data-workspace-edit],[data-workspace-return],[data-directory-message],[data-directory-more],[data-source-toggle],[data-directory-important],[data-source-open],[data-directory-list-more]');if(!node)return;
   if(node.hasAttribute('data-new-mail'))return openMailCompose();

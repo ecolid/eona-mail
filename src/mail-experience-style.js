@@ -8,8 +8,8 @@ export const MAIL_EXPERIENCE_CSS=MAIL_SCROLLBARS_CSS+`
 #app :is([data-overlayscrollbars],[data-overlayscrollbars-viewport]){scrollbar-gutter:auto}
 /* These nodes own scrolling before and after overlay initialization. A newly
    inserted settings form must never reserve a native gutter for one frame. */
-#app :is(#side,#list,#view,#mail-settings-form,.mail-layout-settings,.mail-compose,.mail-settings-pending-form){scrollbar-gutter:auto;scrollbar-width:none}
-#app :is(#side,#list,#view,#mail-settings-form,.mail-layout-settings,.mail-compose,.mail-settings-pending-form)::-webkit-scrollbar{display:none}
+#app :is(#side,#list,#mail-list-scroll,#view,#mail-settings-form,.mail-layout-settings,.mail-compose,.mail-settings-pending-form){scrollbar-gutter:auto;scrollbar-width:none}
+#app :is(#side,#list,#mail-list-scroll,#view,#mail-settings-form,.mail-layout-settings,.mail-compose,.mail-settings-pending-form)::-webkit-scrollbar{display:none}
 .mail-overlay-scrollbar{position:fixed!important;--os-size:10px;--os-padding-perpendicular:3px;--os-handle-border-radius:6px;--os-handle-bg:color-mix(in srgb,var(--e-ui-muted) 42%,transparent);--os-handle-bg-hover:color-mix(in srgb,var(--e-ui-muted) 65%,transparent);--os-handle-bg-active:var(--e-ui-muted)}
 /* Mail's larger, denser feedback stack uses a slower spatial handoff. The
    shared component retains lifetime, focus, pause and node ownership. */

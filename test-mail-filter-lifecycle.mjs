@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ function harness({folder='inbox',query=''}={}){
  const replace=()=>{head={closest:()=>null,querySelector:s=>s==='h1'?{textContent:'收件箱'}:null,insertBefore(node){this.trigger=node}}};replace();
  const list={querySelector:()=>head};
  const ctx={state:{folder,q:query,searchOrder:'recent'},MailWorkspace:{data:{directory:[{group:'other'},{group:'automatic'}]}},listMore:{total:20},activeMailPage:{},parseMailQuery:mailSearchTerms,mailListFilterFields,mailToggleFilter,mailFilterQuery,esc:s=>s,requestAnimationFrame(fn){frames.set(++frame,fn);return frame},cancelAnimationFrame(id){frames.delete(id)},document:{getElementById:id=>id==='list'?list:q,querySelector:()=>null,createElement:element,body:{append:n=>panels.push(n)}},MutationObserver:class{constructor(f){observer=f}observe(){}},EonaUI:{icon:key=>'<svg data-icon="'+key+'"></svg>',positionPopover(){positions.push(head.selectionAttached)},bindPopover(trigger,panel){bindings++;trigger.addEventListener('click',()=>panel.open=!panel.open);return {close(){panel.open=false},dispose(){disposals++}}}},submitMailSearch(){requests++;ctx.state.q=q.value},renderMailWorkspace(){requests++},loadList(){requests++}};
- vm.createContext(ctx);vm.runInContext(installMailListFilters.toString()+';installMailListFilters()',ctx);
+ Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(installMailListFilters.toString()+';installMailListFilters()',ctx);
  return {ctx,panels,positions,refresh(){replace();observer();head.selectionAttached=true},flush(){for(const [id,fn] of frames){frames.delete(id);fn()}},choose(name,value){const panel=panels.at(-1),choice=panel.controls.find(c=>c.dataset.filterName===name&&c.dataset.filterValue===value);panel.onclick({target:choice})},noHeading(){head=null;observer()},get requests(){return requests},get bindings(){return bindings},get disposals(){return disposals},get trigger(){return head.trigger}};
 }
 test('filter result commits retain the open panel, trigger, focused choices and repeated reset',()=>{

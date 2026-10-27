@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -13,7 +14,7 @@ function fixture(){
  }
  const list=new Node('host'),state={folder:'inbox',q:'',searchOrder:'recent'},events=[];
  const ctx={state,$:()=>list,document:{createDocumentFragment(){const n=new Node('fragment');n.fragment=true;return n},dispatchEvent:e=>events.push(e.type),body:{classList:{toggle(){}}}},Event:class{constructor(type){this.type=type}},window:{},MailExperience:{pageChanged(){}},mailLoadingMarkup:()=>'<skeleton>'};
- vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('const mailPages=new Map()'),page.indexOf('function reset(){')).replace(/function updateMailNavigation\(\)\{[^\n]*\}\n/,'' )+'\nlet listMore={};',ctx);
+ Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('const mailPages=new Map()'),page.indexOf('function reset(){')).replace(/function updateMailNavigation\(\)\{[^\n]*\}\n/,'' )+'\nlet listMore={};',ctx);
  const activate=()=>vm.runInContext('activateMailPage()',ctx);
  return {ctx,list,state,activate,events,row:()=>new Node('mail-row')};
 }

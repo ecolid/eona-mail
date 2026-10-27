@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import {projectMailRow,projectMailListRow} from './src/mail-reader-preview.js';
 import assert from 'node:assert/strict';
@@ -22,7 +23,7 @@ const clear=page.slice(page.indexOf('function clearMailReader(){'),page.indexOf(
 function fixture(){
  const requests=[],view={innerHTML:'',dataset:{},querySelectorAll:()=>[]},body={classList:{contains:()=>false,add(){},remove(){}}};
  const context={mailSelectReaderRow,mailReaderAttachments,mailStars:{pending:()=>undefined},addEventListener(){},mailLoadingMarkup,mailResources:{update(){}},mailReaderHeader,mailContactOptions:()=>({}),mailReaderIntent:0,mailActionMenu:null,mailBodyDispose:null,mailContactsDispose:null,setMailSelectionPending(){},installMailContactActions:()=>()=>{},state:{cur:null},matchMedia:()=>({matches:false}),history:{state:null},pushMailReaderHistory(){},location:{href:'https://mail.example.test'},mailDrawer:{close(){}},syncMailReader(){},closeMailReader(){},document:{body,getElementById:()=>view,querySelector:()=>null},$:()=>view,api:url=>new Promise((resolve,reject)=>requests.push({url,resolve,reject})),esc:String,I:{},localTime:String,installMailTextLinks:()=>()=>{},installMailTranslation(){},loadList(){},EonaUI:{bindPopover:()=>({dispose(){}})}};
- context.window=context;vm.createContext(context);vm.runInContext(clear+open,context);
+ context.window=context;Object.assign(context,{mailListScrollElement,mailCommitListContent});vm.createContext(context);vm.runInContext(clear+open,context);
  return {context,requests,view,open:id=>vm.runInContext('openMail('+JSON.stringify(id)+')',context),clear:()=>vm.runInContext('clearMailReader()',context)};
 }
 const mail=id=>({email:{id,subject:'Mail '+id,from_addr:'sender@example.test',attachment_keys:'[]',text_body:'Body '+id}});
@@ -68,7 +69,7 @@ test('Sent selection precedes detail I/O and a superseded failure cannot clear t
  s.requests[1].reject(Error('current failure'));await second;assert(rows[1].selected);assert.match(s.view.innerHTML,/current failure/);
 });
 test('native browser history restores the correct inbox or sent reader without another push',()=>{
- const handlers={},actions=[],c={window:{addEventListener(type,handler){handlers[type]=handler}},openMail:(...args)=>actions.push(['inbox',...args]),openMailSent:(...args)=>actions.push(['sent',...args]),closeMailReader:()=>actions.push(['list'])};vm.createContext(c);
+ const handlers={},actions=[],c={window:{addEventListener(type,handler){handlers[type]=handler}},openMail:(...args)=>actions.push(['inbox',...args]),openMailSent:(...args)=>actions.push(['sent',...args]),closeMailReader:()=>actions.push(['list'])};Object.assign(c,{mailListScrollElement,mailCommitListContent});vm.createContext(c);
  vm.runInContext(page.slice(page.indexOf("window.addEventListener('popstate'"),page.indexOf('const state={')),c);
  handlers.popstate({state:{eonaMail:'1',eonaMailKind:'inbox'}});handlers.popstate({state:{eonaMail:'sent-1',eonaMailKind:'sent'}});handlers.popstate({state:{}});
  assert.deepEqual(actions,[['inbox','1',false],['sent','sent-1',false],['list']]);c.window.MailNavigation={};handlers.popstate({state:{}});assert.equal(actions.length,3,'legacy history cannot close the current reader before the installed owner handles popstate');
@@ -85,19 +86,19 @@ test('same-id retries use the latest request identity, not just matching mail id
 
 test('switching to an incompatible folder or star view clears the previous reader before its list request',()=>{
  const prepare=page.slice(page.indexOf('function prepareMailSelection(){'),page.indexOf('function clearMailReader(){'));
- const c={state:{folder:'trash',q:'',cur:1,curMail:{id:1,folder:'inbox'}},cleared:0,parseMailQuery:q=>q?[{field:'in',value:'any'}]:[],clearMailReader(){c.cleared++}};vm.createContext(c);vm.runInContext(prepare,c);
+ const c={state:{folder:'trash',q:'',cur:1,curMail:{id:1,folder:'inbox'}},cleared:0,parseMailQuery:q=>q?[{field:'in',value:'any'}]:[],clearMailReader(){c.cleared++}};Object.assign(c,{mailListScrollElement,mailCommitListContent});vm.createContext(c);vm.runInContext(prepare,c);
  vm.runInContext('prepareMailSelection()',c);assert.equal(c.cleared,1);c.state.q='in:any';vm.runInContext('prepareMailSelection()',c);assert.equal(c.cleared,1);c.state.folder='inbox';c.state.q='';c.state.starred=true;vm.runInContext('prepareMailSelection()',c);assert.equal(c.cleared,2);c.state.curMail.is_starred=1;vm.runInContext('prepareMailSelection()',c);assert.equal(c.cleared,2);
 });
 
 test('navigation cleanup and desktop reading preserve list scroll; mobile back restores its own reading origin',()=>{
  const source=page.slice(page.indexOf('function closeMailReader('),page.indexOf('const mailReaderSurface='));
- for(const [mobile,restore,expected]of [[false,true,500],[true,false,500],[true,true,40]]){let reading=true;const list={scrollTop:500},c={mailReaderIntent:0,state:{sentSelected:'sent-1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading,remove(){reading=false}}},getElementById:()=>list},mailListScroll:40,syncMailReader(){}};vm.createContext(c);vm.runInContext(source,c);c.closeMailReader(restore);assert.equal(list.scrollTop,expected);if(mobile&&restore)assert.equal(c.state.sentSelected,null)}
+ for(const [mobile,restore,expected]of [[false,true,500],[true,false,500],[true,true,40]]){let reading=true;const list={scrollTop:500},c={mailReaderIntent:0,state:{sentSelected:'sent-1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading,remove(){reading=false}}},getElementById:()=>list},mailListScroll:40,syncMailReader(){}};Object.assign(c,{mailListScrollElement,mailCommitListContent});vm.createContext(c);vm.runInContext(source,c);c.closeMailReader(restore);assert.equal(list.scrollTop,expected);if(mobile&&restore)assert.equal(c.state.sentSelected,null)}
 });
 
 function folderActionFixture(){
  const requests=[],feedback=[],cleared=[],listReads=[];
  const ctx={Map,Promise,document:{querySelectorAll:()=>[]},state:{cur:'1'},mailPages:new Map(),mailStars:{set(){}},api:path=>new Promise((resolve,reject)=>requests.push({path,resolve,reject})),$:()=>({querySelectorAll:()=>[]}),clearMailReader(){cleared.push(ctx.state.cur);ctx.state.cur=null},loadList:async value=>{listReads.push(value)},MailWorkspace:{load:async()=>{}},loadSide:async()=>{},mailToast:(message,options)=>feedback.push({message,options})};
- vm.createContext(ctx);vm.runInContext(mailRemoveRows.toString()+page.slice(page.indexOf('const mailFolderWrites='),page.indexOf('// 2026-09-02:上面那些按钮')),ctx);
+ Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(mailRemoveRows.toString()+page.slice(page.indexOf('const mailFolderWrites='),page.indexOf('// 2026-09-02:上面那些按钮')),ctx);
  return {ctx,requests,feedback,cleared,listReads,act:(id,op)=>ctx.act(id,op)};
 }
 test('deletion feedback waits for storage and undo restores the same mail without reopening another reader',async()=>{
@@ -118,7 +119,7 @@ test('clearing reading drops only reader highlights immediately, including cache
 test('mobile sync clears cached reading paint without touching independent batch selection',()=>{
  const source=page.slice(page.indexOf('function syncMailReader('),page.indexOf('function setMailSelectionPending('));
  for(const [mobile,reading,expected]of [[true,false,false],[true,true,true],[false,false,true]]){
-  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},attributes=new Map(),list={querySelectorAll:()=>[row],setAttribute:(k,v)=>attributes.set(k,v),removeAttribute:k=>attributes.delete(k)},view={},c={mailReaderSurfaceKey:'',state:{cur:'1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
+  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},attributes=new Map(),list={querySelectorAll:()=>[row],setAttribute:(k,v)=>attributes.set(k,v),removeAttribute:k=>attributes.delete(k)},view={},c={mailReaderSurfaceKey:'',state:{cur:'1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};Object.assign(c,{mailListScrollElement,mailCommitListContent});vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
   assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,false);assert.equal(attributes.get('aria-hidden'),mobile&&reading?'true':undefined);assert.equal(view.inert,mobile&&!reading);
  }
 });

@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mailRangeSelection,mailTwoFingerIntent,mailListActionsBrowserScript,mailActionBackdrop} from './src/mail-list-actions.js';
@@ -32,7 +33,7 @@ import vm from 'node:vm';
 import {mailRemoveRows,mailAnimateListCommit} from './src/mail-list-actions.js';
 test('row removal waits for the actual exit, removes only confirmed IDs and handles cancellation',async()=>{
  const made=[],removed=[],rows=['a','b','c'].map(id=>{const wrap={style:{},remove:()=>removed.push(id),getBoundingClientRect:()=>({height:112}),animate:frames=>{const motion={frames};made.push(motion);return motion}};return {dataset:{mailId:id},closest:()=>wrap}});
- const ctx={document:{querySelectorAll:()=>rows},matchMedia:()=>({matches:false})};vm.createContext(ctx);vm.runInContext(mailRemoveRows.toString(),ctx);
+ const ctx={document:{querySelectorAll:()=>rows},matchMedia:()=>({matches:false})};Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(mailRemoveRows.toString(),ctx);
  const pending=ctx.mailRemoveRows(['a','c']);assert.deepEqual(removed,[]);assert.equal(made.length,2);assert.equal(made[0].frames[1].height,'0px');made[0].onfinish();made[1].oncancel();await pending;assert.deepEqual(removed,['a','c']);
  ctx.matchMedia=()=>({matches:true});await ctx.mailRemoveRows(['b']);assert.deepEqual(removed,['a','c','b']);assert.equal(made.length,2);
 });
@@ -43,7 +44,7 @@ test('restoration moves survivors from their prior positions and reveals only ne
  const row=(id,top)=>({dataset:{mailId:id},closest(){return this},getBoundingClientRect:()=>({top,bottom:top+100}),animate(frames,options){let finish;const finished=new Promise(resolve=>finish=resolve),motion={frames,options,finished,finish,cancel:()=>finish()};motions.push(motion);return motion}});
  const survivor=row('kept',100),restored=row('returned',100),moved=row('kept',200),offscreen=row('far',2000);let rows=[survivor];
  const host={scrollTop:30,querySelectorAll:()=>rows};
- const ctx={document:{documentElement:{clientHeight:740},dispatchEvent:()=>events++},Event:class{},matchMedia:()=>({matches:false})};vm.createContext(ctx);vm.runInContext(mailAnimateListCommit.toString(),ctx);
+ const ctx={document:{documentElement:{clientHeight:740},dispatchEvent:()=>events++},Event:class{},matchMedia:()=>({matches:false})};Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(mailAnimateListCommit.toString(),ctx);
  let completed=false;const pending=ctx.mailAnimateListCommit(host,()=>{committed=true;rows=[restored,moved,offscreen]}).then(()=>completed=true);
  assert(committed);assert.equal(events,1);assert.equal(host.scrollTop,30);assert.equal(motions.length,2);assert.equal(motions[0].frames[0].opacity,0);assert.equal(motions[1].frames[0].transform,'translateY(-100px)');assert.equal(completed,false);
  for(const motion of motions)motion.finish();await pending;assert.equal(completed,true);

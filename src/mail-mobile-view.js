@@ -57,22 +57,40 @@ export function bindMailTouchFeedback({root,document:doc=document,window:win=win
  listen(doc,'visibilitychange',()=>{if(doc.hidden)clear()});listen(win,'blur',clear);
  return {dispose(){clear();abort.abort();hoverPolicy.dispose();delete doc.documentElement.dataset.mailPointer}};
 }
-// Preserve the scroll element and heading identity; only the content moves.
+// The page owns its heading; only its child viewport can scroll or overscroll.
+// Resolve synchronously after a render, before restoring the saved position.
+export function mailListScrollElement(list=document.getElementById('list')){
+ return list?.ownerDocument?.defaultView?.MailListViewport?.scrollElement(list)||list;
+}
+export function mailCommitListContent(list,markup){
+ const viewport=list.ownerDocument?.defaultView?.MailListViewport;
+ if(viewport)viewport.commit(list,markup);else if(typeof markup==='string')list.innerHTML=markup;else list.replaceChildren(...markup);
+}
 export function bindMailPullSurface({list,indicator,document:doc=document,window:win=window}){
  let clip=null,content=null;
  const heading=()=>(list.querySelector?.('.mail-workspace-title')||list.querySelector?.('.mail-results-bar:not([data-new-results])'))||[...(list?.children||[])].find(n=>n.matches?.('.mail-workspace-title,.mail-results-bar'));
  const arrange=()=>{
-  const head=heading();if(!head)return;const host=head.parentElement;
-  if(!clip||clip.parentElement!==host){const cached=[...host.children].find(n=>n.matches?.('.mail-pull-clip'));clip=cached||doc.createElement('div');clip.className='mail-pull-clip';content=cached?.children[0]||doc.createElement('div');content.className='mail-pull-content';if(!cached)clip.append(content)}
+  const head=heading();if(!head){list.removeAttribute?.('data-mail-viewport');return}const host=head.parentElement;
+  if(!clip||clip.parentElement!==host){const cached=[...host.children].find(n=>n.matches?.('.mail-pull-clip'));clip=cached||doc.createElement('div');clip.className='mail-pull-clip';clip.id='mail-list-scroll';content=cached?.children[0]||doc.createElement('div');content.className='mail-pull-content';if(!cached)clip.append(content)}
   const outside=[...host.children].filter(n=>n!==head&&n!==clip);
-  if(outside.length){const ordered=[...host.children].filter(n=>n!==head).flatMap(n=>n===clip?[...content.children]:[n]),scroll=list.scrollTop;content.replaceChildren(...ordered);if(clip.parentElement!==host)host.append(clip);list.scrollTop=scroll}
+  if(outside.length){const ordered=[...host.children].filter(n=>n!==head).flatMap(n=>n===clip?[...content.children]:[n]),scroll=clip.scrollTop;content.replaceChildren(...ordered);if(clip.parentElement!==host)host.append(clip);clip.scrollTop=scroll}
   // Anchor feedback in the same local coordinate space as the moving content.
   // Cached/replaced lists and browser viewport changes cannot stale a fixed y.
   if(indicator&&indicator.parentElement!==clip)clip.append(indicator);
-  const rect=head.getBoundingClientRect();list.style?.setProperty('--mail-pull-heading-height',rect.height+'px');if(Number.isFinite(list.clientHeight))clip.style.setProperty('min-height',Math.max(0,list.clientHeight-rect.height)+'px');
+  list.setAttribute?.('data-mail-viewport','');
  };
  const observer=win.MutationObserver&&list?.children?new win.MutationObserver(arrange):null;observer?.observe(list,{childList:true,subtree:true});arrange();
- return {top:()=>heading()?.getBoundingClientRect().bottom??list.getBoundingClientRect().top,dispose(){observer?.disconnect();if(clip?.parentElement){const scroll=list.scrollTop;clip.before(...content.children);clip.remove();list.scrollTop=scroll}list.style?.removeProperty('--mail-pull-heading-height')}};
+ return {commit(target,markup){
+  if(target!==list){if(typeof markup==='string')target.innerHTML=markup;else target.replaceChildren(...markup);return}
+  const next=doc.createElement('div');if(typeof markup==='string')next.innerHTML=markup;else next.append(...markup);
+  const oldHead=heading(),newHead=next.querySelector('.mail-workspace-title,.mail-results-bar:not([data-new-results])'),oldHost=oldHead?.parentElement,newHost=newHead?.parentElement;
+  // A same-page result commit updates the header and rows in place. Retain the
+  // native scroll node, including an in-flight native pan and its scrollTop.
+  const compatible=clip&&list.contains(clip)&&oldHead&&newHead&&!oldHead.closest?.('.mail-page-skeleton')&&(oldHost===list?newHost===next:newHost!==next&&oldHost.className===newHost.className);
+  if(compatible){oldHead.replaceWith(newHead);content.replaceChildren(...[...newHost.children].filter(n=>n!==newHead));for(const n of [...oldHost.children])if(n!==newHead&&n!==clip)n.remove()}
+  else list.replaceChildren(...next.childNodes);
+  arrange();
+ },scrollElement(){if(!clip||!list.contains(clip))arrange();return clip&&list.contains(clip)?clip:list},top:()=>heading()?.getBoundingClientRect().bottom??list.getBoundingClientRect().top,dispose(){observer?.disconnect();if(clip?.parentElement){const scroll=clip.scrollTop;clip.before(...content.children);clip.remove();list.scrollTop=scroll}list.removeAttribute?.('data-mail-viewport')}};
 }
 // Safari browser chrome changes height during a pan. Only geometry that
 // changes the horizontal surface may invalidate the current input owner.
@@ -170,7 +188,7 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
  const abort=new AbortController(),signal=abort.signal;let tracking=null,refreshing=false,paintFrame=0,finishFrame=0,pullTimer=0,paint=null,ownedTouch=false,suppressClickUntil=0,pullEpoch=0,nativeMovement=false;
  const indicator=doc.createElement('div');indicator.className='mail-pull-status';indicator.hidden=true;indicator.setAttribute('role','status');indicator.setAttribute('aria-live','polite');
  indicator.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span></span>';root.append(indicator);
- const pullSurface=bindMailPullSurface({list:doc.getElementById('list'),indicator,document:doc,window:win});
+ const pullSurface=bindMailPullSurface({list:doc.getElementById('list'),indicator,document:doc,window:win});win.MailListViewport=pullSurface;
  const label=indicator.querySelector('span'),query=win.matchMedia('(max-width:860px)'),clamp=value=>Math.max(0,Math.min(1,value));
  const selected=()=>!!win.getSelection()?.toString();
  // A consumed swipe must not activate the control under its release point.
@@ -267,7 +285,7 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
  root.addEventListener('touchcancel',()=>{listActions?.cancel();reset()},{passive:true,signal});query.addEventListener('change',()=>{listActions?.cancel();reset();clearDrawer();settleReader();if(!refreshing)clearPull()},{signal});
  doc.addEventListener('mail:surface',()=>{reset();clearPull()},{capture:true,signal});
  const suspend=()=>{listActions?.cancel();reset();clearPull()};win.addEventListener('blur',suspend,{signal});doc.addEventListener('visibilitychange',()=>{if(doc.hidden)suspend()},{capture:true,signal});
- return {dispose(){feedbackBinding.dispose();pullSurface.dispose();abort.abort();tracking=null;clearPaint();clearDrawer();settleReader();clearPull();indicator.remove()}};
+ return {dispose(){feedbackBinding.dispose();pullSurface.dispose();if(win.MailListViewport===pullSurface)delete win.MailListViewport;abort.abort();tracking=null;clearPaint();clearDrawer();settleReader();clearPull();indicator.remove()}};
 }
 // Explicit, temporary device diagnostics. Touch data stays in this page until
 // the user presses Copy; no mailbox content, identity, URL or network is read.
@@ -278,7 +296,7 @@ export function bindMailGestureDiagnostic({root,document:doc=document,window:win
  const label=doc.createElement('span');label.textContent='手势记录';const copy=doc.createElement('button');copy.className='btn';copy.textContent='复制诊断';const close=doc.createElement('button');close.className='btn';close.textContent='退出';panel.append(label,copy,close);doc.body.append(panel);
  // Native input can run a microtask checkpoint between capture and bubble.
  // Finalize after the root owners, with a task fallback for stopped propagation.
- const finish=event=>{const entry=pending.get(event);if(!entry)return;pending.delete(event);win.clearTimeout(entry.timer);const {item}=entry;item.prevented=event.defaultPrevented;item.decision=event.mailGestureDecision||'unhandled';item.scroll=doc.getElementById('list')?.scrollTop;item.pull=root.dataset.mailPull||'';item.selecting=root.hasAttribute('data-mail-selecting');if(!contacts)label.textContent='已记录 '+records.length+' 步'};
+ const finish=event=>{const entry=pending.get(event);if(!entry)return;pending.delete(event);win.clearTimeout(entry.timer);const {item}=entry;item.prevented=event.defaultPrevented;item.decision=event.mailGestureDecision||'unhandled';item.scroll=(win.MailListViewport?.scrollElement(doc.getElementById('list'))||doc.getElementById('list'))?.scrollTop;item.pull=root.dataset.mailPull||'';item.selecting=root.hasAttribute('data-mail-selecting');if(!contacts)label.textContent='已记录 '+records.length+' 步'};
  const read=event=>{
   if(!root.contains(event.target)||event.target.closest?.('.mail-gesture-diagnostic'))return;
   if(event.type==='touchstart'&&contacts===0){for(const {timer}of pending.values())win.clearTimeout(timer);pending.clear();records.length=0;started=win.performance.now()}
@@ -291,7 +309,7 @@ export function bindMailGestureDiagnostic({root,document:doc=document,window:win
  const dispose=()=>{abort.abort();for(const {timer}of pending.values())win.clearTimeout(timer);pending.clear();panel.remove()};close.onclick=()=>{dispose();const url=new win.URL(win.location.href);url.searchParams.delete('gesture_check');win.history.replaceState(win.history.state,'',url)};
  return {dispose};
 }
-export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+mailReaderRelease.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailReturnDiagnostic.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
+export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+mailReaderRelease.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailReturnDiagnostic.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+mailCommitListContent.toString()+'\n'+mailListScrollElement.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
 function installMailMobile(){
  document.addEventListener('click',event=>{if(event.target.closest('[data-mail-pending-back]'))returnToMailList()});
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';
@@ -306,8 +324,15 @@ export const MAIL_MOBILE_CSS=`
 #mail-reader-page{display:flex;flex:1;min-width:0;min-height:0}
 body.mail-settings #mail-reader-page,body.routes #mail-reader-page{display:none}
 body.mail-composing #mail-reader-page{display:none!important}
-/* The fixed heading stays in the original scroll viewport. */
-.mail-pull-clip{position:relative;display:flow-root;overflow:clip;min-height:calc(100% - var(--mail-pull-heading-height,56px))}.mail-pull-content{min-height:inherit}
+/* Header and native scroll viewport are siblings, as in a page/content shell.
+   Native rubber banding must never translate the header. Custom refresh owns
+   the only overscroll displacement; ordinary vertical scrolling stays native. */
+#list[data-mail-viewport]{display:flex;flex-direction:column;overflow:hidden}
+#list[data-mail-viewport] :is(.mail-workspace-content,.mail-page-skeleton,.mail-pending-content):has(.mail-pull-clip){display:flex;flex-direction:column;flex:1;min-height:0;padding-block:0}
+#list[data-mail-viewport] :is(.mail-workspace-title,.mail-results-bar){flex:none}
+.mail-pull-clip{position:relative;flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;overflow-anchor:none}
+.mail-pull-content{min-height:100%}
+
 /* One animated length keeps content and feedback on the same timeline. */
 @property --mail-pull-y{syntax:"<length>";inherits:true;initial-value:0px}
 /* Temporary opt-in diagnostic controls do not change the list scroll surface. */
@@ -334,7 +359,7 @@ body.mail-composing #mail-reader-page{display:none!important}
  #mail-reader-page{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;contain:layout size style;overflow:hidden;background:var(--card);transform:translateX(100%);transition:transform 200ms var(--e-ui-ease),visibility 0s linear 200ms}
  #view{position:absolute;inset:0;z-index:0;width:100%;height:100%;transform:none!important;transition:none!important;overflow-x:hidden;overflow-y:auto}
  #list{position:relative;z-index:0;min-height:0;touch-action:pan-x pan-y pinch-zoom}
- #list,#view{-webkit-overflow-scrolling:touch;will-change:scroll-position}
+ #mail-list-scroll,#view{-webkit-overflow-scrolling:touch;will-change:scroll-position}
  body.viewing #list{pointer-events:none}
  /* The exiting reader is visual only; the revealed list owns the next pan. */
  body:not(.viewing) #view,body:not(.viewing) #view *{pointer-events:none!important}

@@ -89,8 +89,14 @@ HTML正文是独立输入文档，父页监听不会跨iframe冒泡。正文、�
 
 The reader has a non-scrolling page (`#mail-reader-page`) and a separate native
 scroll host (`#view`). The page owns translation, containment and visibility;
-the scroll host owns vertical position. The mounted list retains its original
-scroll node and is never made inert during reading. Covered-list semantics use
+the scroll host owns vertical position. The mounted list page retains its heading outside `#mail-list-scroll`, the
+one native viewport. The viewport is never made inert during reading. Same-page
+query/refresh commits preserve that viewport node and update its rows in place.
+Pagination, navigation persistence, filters and range autoscroll resolve this
+same viewport; scroll observation uses capture on the outer page. Native
+overscroll is disabled there because the custom refresher alone owns pull
+displacement. A contact which began inside a scrolled list remains native when
+it reaches the top; it does not acquire a second refresh owner mid-contact. Covered-list semantics use
 `aria-hidden` and a focus guard, with pointer access gated by the active page.
 
 This follows the separation used by Ionic's [page container](https://github.com/ionic-team/ionic-framework/blob/main/core/src/css/core.scss)
@@ -237,3 +243,18 @@ Cover cold and cached opens, body failure/retry, rapid switching, Sent and draft
 preview at desktop/390/320 widths. A final screenshot or a text-only attachment
 sample cannot prove this asynchronous layout handoff. Keep old-source failure
 and exact candidate results, then inspect pending and settled screenshots.
+
+### List boundary lifecycle
+
+The maintenance fixture's `/scroll-review` compares a signed overscroll rendering
+model against the previous product before the candidate. It covers scroll down,
+return to the top in a native-owned contact, continued pull, fresh-contact refresh,
+repeated pending pulls, failure/retry, short/empty directories, cache re-entry and
+viewport identity through refresh. The header must be outside the scrolling
+subtree, not merely sticky inside it. Browser-native scrolling records actual
+trusted input and offsets separately from synthetic touches and the rendering
+model. `MAIL_FIXTURE_JOURNEYS=1` is required for controlled read faults.
+
+The page/content split follows Ionic's [content host and inner scroll element](https://github.com/ionic-team/ionic-framework/blob/main/core/src/components/content/content.scss).
+Only Mail's layout ownership changes; the existing native scroll and refresh
+controllers remain in use.

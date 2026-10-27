@@ -72,7 +72,7 @@ export function installMailNavigation(owner){
  const closeReader=({immediate=false}={})=>{pendingScroll?.();pendingScroll=null;clearMailReader();if(immediate)window.MailReaderPan?.finishReturn()};
  const nav=createMailNavigation({owner,history,url:location.href,readRoute:route,readReader,
   canReuseList:snapshot=>activeMailPage?.key===mailPageKey()&&list.getAttribute('aria-busy')!=='true'&&!list.querySelector('.mail-page-skeleton,.mail-list-error')&&!!list.querySelector('.mail-workspace-title,.mail-results-bar')&&(['contacts','important','subscriptions'].includes(state.folder)?activeMailPage?.directoryLimit||80:listMore.offset||100)>=snapshot.loaded,
-  readScroll:()=>({listScroll:list.scrollTop,readerScroll:view.scrollTop,loaded:['contacts','important','subscriptions'].includes(state.folder)?activeMailPage?.directoryLimit||80:listMore.offset||100}),
+  readScroll:()=>({listScroll:mailListScrollElement(list).scrollTop,readerScroll:view.scrollTop,loaded:['contacts','important','subscriptions'].includes(state.folder)?activeMailPage?.directoryLimit||80:listMore.offset||100}),
   applyRoute:(next,reader)=>{pendingScroll?.();pendingScroll=null;invalidateMailSearch();Object.assign(state,next);state.queryScope=['drafts','contacts','important','subscriptions','sent'].includes(state.folder)?state.folder:'mail';state.queries||={};state.queries[state.queryScope]=next.q;document.getElementById('q').value=next.q;state.cur=reader?.kind==='inbox'?reader.id:null;state.curMail=null;state.sentSelected=reader?.kind==='sent'?reader.id:null;state.readerFolder=state.queryScope;activateMailQueryScope()},
   restoreList:async(snapshot,current)=>{
    mailDrawer.close();EonaUI.dismissPopovers?.();for(const dialog of [...document.querySelectorAll('dialog[open]')].reverse()){const cancel=new Event('cancel',{cancelable:true});dialog.dispatchEvent(cancel);if(!cancel.defaultPrevented)EonaUI.closeDialog(dialog)}if(document.body.classList.contains('mail-composing'))await closeMailComposer();
@@ -81,7 +81,7 @@ export function installMailNavigation(owner){
   },
   openReader:async reader=>{if(reader.kind==='workspace-message'&&reader.parent){await openMailWorkspaceDetail(reader.parent.id,reader.parent.kind,false);await openMailDirectoryMessage(reader.id,reader.messageKind,false)}else if(['drafts','contacts','important','subscriptions'].includes(reader.kind))await openMailWorkspaceDetail(reader.id,reader.kind,false);else if(reader.kind==='sent')await openMailSent(reader.id,false);else await openMail(reader.id,false)},
   applyScroll:(snapshot,reading)=>{
-   list.scrollTop=snapshot.listScroll;mailListScroll=snapshot.listScroll;if(!reading)return;view.scrollTop=snapshot.readerScroll;
+   mailListScrollElement(list).scrollTop=snapshot.listScroll;mailListScroll=snapshot.listScroll;if(!reading)return;view.scrollTop=snapshot.readerScroll;
    const ready=()=>{const frame=view.querySelector('iframe');return !view.querySelector('.mail-page-skeleton')&&(!frame||frame.dataset.mailReady==='true')};if(ready())return;
    const abort=new AbortController(),observer=new MutationObserver(()=>{if(ready()){view.scrollTop=snapshot.readerScroll;stop()}}),stop=()=>{observer.disconnect();abort.abort();if(pendingScroll===stop)pendingScroll=null};pendingScroll=stop;observer.observe(view,{subtree:true,childList:true,attributes:true,attributeFilter:['data-mail-ready']});for(const type of ['pointerdown','touchstart','wheel','keydown'])document.addEventListener(type,stop,{capture:true,passive:true,signal:abort.signal});
   },closeReader,onError:error=>mailToast(error.message||'页面恢复失败，请重试。',{tone:'error'})});
@@ -89,7 +89,7 @@ export function installMailNavigation(owner){
  // Native input takes ownership before its default scroll, even while the
  // previous history read is pending. Do not synthesize a scroll to prove it.
  for(const type of ['pointerdown','touchstart','wheel','keydown'])list.addEventListener(type,()=>nav.input(),{capture:true,passive:true});
- list.addEventListener('scroll',save,{passive:true});view.addEventListener('scroll',save,{passive:true});window.addEventListener('pagehide',()=>scrollPersistence.flush());
+ list.addEventListener('scroll',save,{capture:true,passive:true});view.addEventListener('scroll',save,{passive:true});window.addEventListener('pagehide',()=>scrollPersistence.flush());
  window.addEventListener('popstate',event=>{try{window.MailReturnDiagnostic?.navigation?.(event,'before')}catch{}const handled=nav.pop(event.state,false,event.hasUAVisualTransition===true);try{window.MailReturnDiagnostic?.navigation?.(event,'after')}catch{}if(handled)event.stopImmediatePropagation()},{capture:true});
  document.addEventListener('mail:surface',()=>nav.surface());return nav;
 }

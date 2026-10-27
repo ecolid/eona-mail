@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createMailNavigation,normalizeMailNavigation,createMailScrollPersistence,installMailNavigation} from './src/mail-navigation-state.js';
@@ -42,7 +43,7 @@ import vm from 'node:vm';
 import {testHooks} from './src/index.js';
 test('shared received and sent openers preserve the correspondence history parent',()=>{
  const page=testHooks().PAGE,calls=[],ctx={window:{MailNavigation:{open:(...args)=>calls.push(args)}},state:{workspaceMail:true,workspaceSelected:{id:'friend@test',kind:'contacts'},workspaceMailKind:'received'},$:()=>({scrollTop:20})};
- vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('function pushMailReaderHistory('),page.indexOf('function returnToMailList(')),ctx);
+ Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('function pushMailReaderHistory('),page.indexOf('function returnToMailList(')),ctx);
  vm.runInContext("pushMailReaderHistory('41','workspace-message',true);pushMailReaderHistory('41','inbox',false)",ctx);assert.equal(calls[1][1],'workspace-message');assert.equal(calls[1][3].id,'friend@test');
  ctx.state.workspaceMailKind='sent';vm.runInContext("pushMailReaderHistory('sent-1','sent',false)",ctx);assert.equal(calls[2][1],'workspace-message');assert.equal(calls[2][4],'sent');
 });

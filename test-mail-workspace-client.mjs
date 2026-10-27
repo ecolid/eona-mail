@@ -1,3 +1,4 @@
+import {mailListScrollElement,mailCommitListContent} from './src/mail-mobile-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -6,7 +7,7 @@ import {mailDirectoryFilter} from './src/mail-list-filters.js';
 import {mailWorkspaceBrowserScript} from './src/mail-workspace-view.js';
 function fixture(){
  const requests=[],storage=new Map(),events={},syncNode={textContent:''};
- const ctx={mailReadWrites:{clear(){}},mailDirectoryFilter,mailToast(){},createMailToggleQueue,mailResources:{invalidate(){}},console,Event,Date,setInterval:()=>1,clearInterval(){},setTimeout:callback=>{queueMicrotask(callback);return 1},state:{folder:'inbox'},location:{hostname:'fixture.test'},document:{body:{classList:{contains:()=>false}},querySelector:()=>null,querySelectorAll:selector=>selector==='[data-mail-sync-status]'?[syncNode]:[],addEventListener(){}},addEventListener:(name,callback)=>events[name]=callback,dispatchEvent:event=>events[event.type]?.(event),sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},api:(url,options)=>new Promise((resolve,reject)=>requests.push({url,options,resolve,reject}))};ctx.window=ctx;vm.createContext(ctx);vm.runInContext(mailWorkspaceBrowserScript(),ctx);ctx.MailWorkspace.setOwner('owner@example.test');
+ const ctx={mailReadWrites:{clear(){}},mailDirectoryFilter,mailToast(){},createMailToggleQueue,mailResources:{invalidate(){}},console,Event,Date,setInterval:()=>1,clearInterval(){},setTimeout:callback=>{queueMicrotask(callback);return 1},state:{folder:'inbox'},location:{hostname:'fixture.test'},document:{body:{classList:{contains:()=>false}},querySelector:()=>null,querySelectorAll:selector=>selector==='[data-mail-sync-status]'?[syncNode]:[],addEventListener(){}},addEventListener:(name,callback)=>events[name]=callback,dispatchEvent:event=>events[event.type]?.(event),sessionStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},api:(url,options)=>new Promise((resolve,reject)=>requests.push({url,options,resolve,reject}))};ctx.window=ctx;Object.assign(ctx,{mailListScrollElement,mailCommitListContent});vm.createContext(ctx);vm.runInContext(mailWorkspaceBrowserScript(),ctx);ctx.MailWorkspace.setOwner('owner@example.test');
  return {store:ctx.MailWorkspace,requests,storage,syncNode,context:ctx};
 }
 const initial={id:'draft-one',to:'to@example.test',subject:'A',body:'old',rev:1};
