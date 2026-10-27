@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {bindMailReaderPan} from './src/mail-mobile-view.js';
-import {setMailBodyInputAxes} from './src/mail-body-view.js';
+import {setMailBodyInputAxes,chainMailReaderDisposers} from './src/mail-body-view.js';
 
 class Surface {
  constructor(){this.events=new Map()}
@@ -68,4 +68,8 @@ test('retirement preserves outgoing content until offscreen, then releases exact
 });
 test('a new reading flushes only the previous retirement and has no recurring settlement loop',()=>{
  const f=fixture();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);f.paint();f.mode('reader');f.left(0);f.doc.emit('mail:surface');assert.equal(disposed,1);f.paint();const callbacks=f.allFrames.length;for(let i=0;i<30;i++)f.paint();assert.equal(f.allFrames.length,callbacks);assert.equal(f.root.dataset.mailReaderPhase,'active');
+});
+
+test('sent and draft composite bodies suspend once and dispose each old resource once',()=>{
+ const calls=[],body=Object.assign(()=>calls.push('body-dispose'),{suspend:()=>calls.push('body-pause')}),contacts=()=>calls.push('contacts');const combined=chainMailReaderDisposers(body,contacts);combined.suspend();combined.suspend();assert.deepEqual(calls,['body-pause','contacts']);combined();combined();combined.suspend();assert.deepEqual(calls,['body-pause','contacts','body-dispose']);
 });

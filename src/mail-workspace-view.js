@@ -116,7 +116,7 @@ function mailWorkspaceController(){
   const body=list.querySelector('.mail-sent-body');
   if(message.view_html){body.textContent='';body.classList.add('mail-sent-rich');const holder=document.createElement('div');holder.className='htmlbody';const frame=document.createElement('iframe');frame.setAttribute('sandbox','allow-same-origin');frame.setAttribute('title','已发送邮件正文');holder.append(frame);body.append(holder);sentDispose=installMailBodyFrame(frame);frame.srcdoc='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'; font-src \'none\'"><style>body{margin:0;font:15px/1.65 Arial,sans-serif}img{max-width:100%;height:auto}</style></head><body>'+message.view_html+'</body></html>'}
   if(message.attachments?.length){const files=document.createElement('div');files.className='mail-editor-files';files.innerHTML=message.attachments.map(a=>'<div class="mail-editor-file"><a href="'+esc(a.url)+'" target="_blank" rel="noopener">'+I.clip+'<span>'+esc(a.name)+'</span><small>'+Math.max(1,Math.round(a.size/1024))+' KB</small></a></div>').join('');body.after(files)}
-  const disposeBody=sentDispose,disposeContacts=installMailContactActions(list,mailContactOptions());mailBodyDispose=()=>{disposeBody?.();disposeContacts?.();view.dataset.sentID=''};
+  const disposeBody=sentDispose,disposeContacts=installMailContactActions(list,mailContactOptions());mailBodyDispose=chainMailReaderDisposers(disposeBody,disposeContacts,()=>{if(view.contains(body))view.dataset.sentID=''});
  };
  const paintCorrespondence=(host,page,id,kind,append=false)=>{
   correspondenceRows=append&&correspondenceIdentity===kind+':'+id?[...correspondenceRows,...page.messages]:page.messages;correspondenceIdentity=kind+':'+id;correspondenceNext=page.next;
@@ -142,7 +142,7 @@ function mailWorkspaceController(){
    const from=data.senders.find(s=>s.id===selected.from_id),address=value=>mailAddressParts(value).map(c=>mailContactTrigger(c,'to',esc,I)).join('');
    const envelope=(from?'<div><dt>发件人</dt><dd>'+mailContactTrigger(from,'from',esc,I)+'</dd></div>':'')+'<div><dt>收件人</dt><dd>'+(address(selected.to)||'尚未填写')+'</dd></div>'+(selected.cc?'<div><dt>抄送</dt><dd>'+address(selected.cc)+'</dd></div>':'')+(selected.bcc?'<div><dt>密送</dt><dd>'+address(selected.bcc)+'</dd></div>':'');
    view.innerHTML='<article class="mail-sent-reading mail-reader-content">'+mailMessageHeader({subject:selected.subject,at:selected.updated_at,back:'<button id="back" class="btn" data-workspace-return>'+I.back+'返回</button>',actions:'<button class="btn" data-workspace-edit="'+esc(id)+'">'+I.edit+'继续编辑</button>',envelope},esc,localTime)+'<div class="mail-sent-body">'+esc(selected.body)+'</div></article>';
-   workspaceBody(selected,view.querySelector('.mail-sent-body'));const dispose=mailBodyDispose,contacts=installMailContactActions(view,mailContactOptions());mailBodyDispose=()=>{dispose?.();contacts?.()};return;
+   workspaceBody(selected,view.querySelector('.mail-sent-body'));const dispose=mailBodyDispose,contacts=installMailContactActions(view,mailContactOptions());mailBodyDispose=chainMailReaderDisposers(dispose,contacts);return;
   }
   const isSource=kind==='subscriptions',sourceKey=isSource?id:'sender:'+id,source=data.sources.find(s=>s.key===sourceKey),included=!!source?.included;
   const addresses=isSource?selected.addresses:[selected.address];

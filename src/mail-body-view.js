@@ -1,7 +1,13 @@
 // The parent owns interactive actions and pointer input. WebKit requires the
 // iframe script sandbox flag relaxed for parent callbacks (issue 218086), while
 // the first CSP keeps script-src 'none' and the projection strips active HTML.
-export function mailBodyBrowserScript(){return makeMailResponsive.toString()+'\n'+setMailBodyInputAxes.toString()+'\n('+mailBodyController.toString()+')();';}
+export function mailBodyBrowserScript(){return chainMailReaderDisposers.toString()+'\n'+makeMailResponsive.toString()+'\n'+setMailBodyInputAxes.toString()+'\n('+mailBodyController.toString()+')();';}
+// Composite readers preserve the same suspend/dispose ownership as their body.
+export function chainMailReaderDisposers(...resources){
+ let pending=resources.filter(fn=>typeof fn==='function'),paused=false;
+ const dispose=()=>{const current=pending;pending=[];for(const fn of current)fn()};
+ return Object.assign(dispose,{suspend(){if(paused)return;paused=true;const current=pending;pending=[];for(const fn of current)if(fn.suspend){fn.suspend();pending.push(fn)}else fn()}});
+}
 export function setMailBodyInputAxes(doc,content,frame){
  const nodes=[content,...content.querySelectorAll('*')],native=new Set();let horizontal=false;
  for(const node of nodes)if(/auto|scroll/.test(doc.defaultView.getComputedStyle(node).overflowX)&&node.scrollWidth>node.clientWidth+2){horizontal=true;for(let at=node;at&&at!==doc.body;at=at.parentElement)native.add(at);for(const child of node.querySelectorAll('*'))native.add(child)}
