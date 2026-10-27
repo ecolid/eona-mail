@@ -67,3 +67,12 @@ test('pointer axis input shares row state, native cancellation releases it, and 
  handlers.pointercancel({type:'pointercancel',pointerId:4});assert.equal(cancels,1);assert.equal(g,null);assert.equal(input.primary(),undefined);
  handlers.pointerdown({pointerType:'touch',pointerId:5});handlers.pointerdown({pointerType:'touch',pointerId:6});g={two:true};handlers.pointermove({pointerId:5});assert.equal(moves.length,1);assert.equal(input.primary(),undefined);input.reset();handlers.pointerdown({pointerType:'touch',pointerId:7});assert.equal(input.primary(),7,'a removed surface cannot leave stale pointer contacts');input.dispose();
 });
+
+test('row paint coalesces input bursts, flushes release and rejects cancelled callbacks',async()=>{
+ const {createMailRowPainter}=await import('./src/mail-list-actions.js');const callbacks=new Map(),all=[],writes=[];let id=0;
+ const win={requestAnimationFrame(fn){all.push(fn);callbacks.set(++id,fn);return id},cancelAnimationFrame(id){callbacks.delete(id)}};
+ const paint=createMailRowPainter((wrap,x)=>writes.push([wrap,x]),win);
+ for(let x=0;x<12;x++)paint.queue('row-a',x);assert.equal(callbacks.size,1);[...callbacks.values()][0]();assert.deepEqual(writes,[['row-a',11]]);
+ paint.queue('row-a',30);paint.flush();assert.deepEqual(writes.at(-1),['row-a',30]);paint.queue('row-a',50);paint.cancel();all.forEach(fn=>fn());assert.equal(writes.length,2);
+ paint.queue('row-b',-40);[...callbacks.values()].forEach(fn=>fn());assert.deepEqual(writes.at(-1),['row-b',-40]);
+});

@@ -12,7 +12,7 @@ function fixture(){
  const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),allFrames=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
  query.matches=true;doc.documentElement={clientWidth:390};doc.querySelector=()=>null;
  Object.assign(win,{PointerEvent:class{},performance:{now:()=>now},matchMedia:()=>query,getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:node.horizontal?'auto':'visible'}),requestAnimationFrame(fn){allFrames.push(fn);frames.set(++id,fn);return id},cancelAnimationFrame(id){frames.delete(id)}});child.defaultView=win;
- const root={dataset:{},style:{setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]}},reader={contains:n=>n===shell,getBoundingClientRect:()=>({width:390,left:left+parseFloat(styles['--mail-reader-x']||0)})};
+ const root={dataset:{},style:{setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]}},reader={style:root.style,contains:n=>n===shell,getBoundingClientRect:()=>({width:390,left:left+parseFloat(styles['--mail-reader-x']||0)})};
  const node=owner=>({ownerDocument:owner,parentElement:null,closest:()=>null,setPointerCapture(){this.captured=true},hasPointerCapture(){return this.captured},releasePointerCapture(){this.captured=false}}),shell=node(doc),text=node(child),frame={getBoundingClientRect:()=>({left:reader.getBoundingClientRect().left+12,top:300})};
  const binding=bindMailReaderPan({root,reader,document:doc,window:win,mode:()=>mode,back:()=>{backs++;mode='list';doc.emit('mail:surface')}}),disposeChild=binding.bindDocument(child,frame);
  const emit=(type,x=160,y=80,more={},source=child,target=text)=>{now+=20;return source.emit(type,{target,clientX:x,clientY:y,...more})},paint=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn())};
@@ -54,3 +54,11 @@ test('a native horizontal body region keeps its complete ancestor path while adj
 test('desktop geometry settles without a phone exit animation or a recurring frame loop',()=>{const f=fixture();f.query.matches=false;f.left(600);f.doc.emit('mail:surface');f.paint();assert.equal(f.root.dataset.mailReaderPhase,'active');f.mode('list');f.doc.emit('mail:surface');f.paint();assert.equal(f.root.dataset.mailReaderPhase,'list');f.binding.dispose()});
 
 test('an overlaid navigation surface changes input mode without changing the reader visual identity',()=>{const f=fixture();f.doc.body={classList:{contains:()=>true}};f.mode('navigation');f.doc.emit('mail:surface');f.paint();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose()});
+
+test('body coordinates stay stable through reversal without per-move frame geometry',()=>{
+ const f=fixture();let reads=0;const original=f.frame.getBoundingClientRect;f.frame.getBoundingClientRect=()=>{reads++;return original()};
+ f.emit('pointerdown',160,80,{screenX:500,screenY:400});const before=reads;
+ f.emit('pointermove',200,80,{screenX:540,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'40px');
+ f.emit('pointermove',180,80,{screenX:560,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'60px');
+ f.emit('pointermove',130,80,{screenX:530,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'30px');assert.equal(reads,before);f.emit('pointercancel');assert.equal(f.styles['--mail-reader-x'],undefined);
+});

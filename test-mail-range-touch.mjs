@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
-import {bindMailRowPointerInput,installMailListActions,mailRangeSelection,mailTwoFingerIntent,mailItemActions,mailBatchActions} from './src/mail-list-actions.js';
+import {mailListActionsBrowserScript} from './src/mail-list-actions.js';
 
 // Minimal DOM/event adapter: run the delivered controller, including its real
 // identity slots. The native-scroll model locks after an uncancelled first move.
@@ -34,7 +34,7 @@ function fixture(kind="received"){
  const surfaceListeners=[];const doc={body,documentElement:{clientWidth:390,clientHeight:740},getElementById:id=>id==='list'?list:root,createElement:tag=>new Element(tag),addEventListener(type,fn){if(type==='mail:surface')surfaceListeners.push(fn)},elementFromPoint(x,y){const row=list.querySelectorAll('.mail').find(n=>y>=n.getBoundingClientRect().top&&y<n.getBoundingClientRect().bottom);if(!row)return null;const check=row.parentElement.querySelector('.mail-row-check');return x<53&&y<row.getBoundingClientRect().top+50&&!check?.hidden?check:row.querySelector('.av')}};
  const noop=()=>{},observer=class{observe(){}},frames=new Map();let id=0;
  const context={getComputedStyle:()=>({bottom:'16px'}),document:doc,window:{addEventListener(){},getSelection:()=>({toString:()=>''})},state:{folder:{received:'inbox',sent:'sent',draft:'drafts',contact:'contacts',source:'subscriptions'}[kind]},MailWorkspace:{identityGeneration:1,row:(_,id)=>({id,subject:'邮件'+id}),data:{sources:Array.from({length:5},(_,i)=>({key:String(i+1),included:true})),directory:Array.from({length:5},(_,i)=>({address:String(i+1),name:'联系人'+i,important:false}))}},activeMailPage:{readerPreviews:new Map(Array.from({length:5},(_,i)=>[String(i+1),{subject:'邮件'+(i+1),folder:'inbox'}]))},api:{peek:noop},I:{},EonaUI:{icon:key=>'<svg data-icon="'+key+'"></svg>'},esc:x=>x,mailPageKey:()=> 'inbox',matchMedia:()=>({matches:true}),MutationObserver:observer,ResizeObserver:observer,requestAnimationFrame:fn=>{frames.set(++id,fn);return id},cancelAnimationFrame:id=>frames.delete(id)};
- vm.createContext(context);vm.runInContext([bindMailRowPointerInput,mailRangeSelection,mailTwoFingerIntent,mailItemActions,mailBatchActions,installMailListActions].map(f=>f.toString()).join('\n')+'\nthis.binding=installMailListActions()',context);
+ Object.assign(context.window,{requestAnimationFrame:context.requestAnimationFrame,cancelAnimationFrame:context.cancelAnimationFrame});vm.createContext(context);vm.runInContext(mailListActionsBrowserScript()+'\nthis.binding=installMailListActions()',context);
  let nativeLocked=false;
  const fire=(type,points,{target,modelNative=true,cancelable=!nativeLocked}={})=>{const e={touches:points,target:target||doc.elementFromPoint(points.at(-1)?.clientX||100,points.at(-1)?.clientY||150),cancelable,defaultPrevented:false,preventDefault(){if(this.cancelable)this.defaultPrevented=true}};const result=context.binding[type](e,'list');if(type==='end'&&!points.length)nativeLocked=false;if(type==='move'&&modelNative&&!e.defaultPrevented)nativeLocked=true;return {result,prevented:e.defaultPrevented,cancelable:e.cancelable,decision:e.mailGestureDecision}};
  const p=(identifier,x,y)=>({identifier,clientX:x,clientY:y});
