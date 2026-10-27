@@ -32,4 +32,3 @@ export async function run(page,scenario){
 export async function evidence(info,value,name='evidence'){
   await info.attach(name,{body:JSON.stringify(value,null,2),contentType:'application/json'});
 }
-

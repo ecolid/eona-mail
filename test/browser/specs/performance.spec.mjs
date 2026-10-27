@@ -12,4 +12,3 @@ test('gate-catches-root-invalidation-regression',async({page},info)=>{
   expect(value.checks.localMotionWrites).toBe(false);
   expect(()=>validateEvidence(value,process.env.GITHUB_SHA)).toThrow('browser_scenario_failed');
 });
-

@@ -16,7 +16,7 @@ export default defineConfig({
   outputDir:'test-results',
   reporter:[['line'],['html',{open:'never'}],['json',{outputFile:'test-results/results.json'}]],
   use:{viewport:{width:1440,height:1000},hasTouch:true,actionTimeout:15000,
-    screenshot:'only-on-failure',trace:'retain-on-failure'},
+    screenshot:'only-on-failure',trace:{mode:'retain-on-failure',snapshots:false,screenshots:false,sources:true}},
   projects:[{name:'chromium',use:{browserName:'chromium'}},{name:'webkit',use:{browserName:'webkit'}}],
   webServer:[fixture(8791,{MAIL_FIXTURE_RICH:'1',MAIL_FIXTURE_MOTION:'1'}),
     fixture(8792,{MAIL_FIXTURE_RICH:'1'}),

@@ -7,7 +7,7 @@ export const scenarios=[
   {id:'reading-intent',port:8793,path:'/feedback-review',button:'#run-reader',result:'#result'},
   {id:'body-attachment-commit',port:8793,path:'/reader-paint-review',button:'#run',result:'#result',responsive:true},
   {id:'fast-return',port:8791,path:'/',label:'运行快速动效验收',dataset:'mailFastMotion'},
-  {id:'motion-trajectory',port:8791,path:'/',label:'运行滑动帧验收',dataset:'mailMotionSuite'},
+  {id:'motion-trajectory',port:8791,path:'/',label:'运行滑动帧验收',dataset:'mailMotionSuite',performance:true},
   {id:'return-budget',port:8791,path:'/',label:'运行返回开销定位',dataset:'mailReturnBudget',performance:true},
   {id:'repeat-resources',port:8791,path:'/',label:'运行连续返回帧验收',dataset:'mailRepeatPanSuite'},
   {id:'return-first-input',port:8791,path:'/',label:'运行返回首输入验收',dataset:'mailReturnHandoff'},
