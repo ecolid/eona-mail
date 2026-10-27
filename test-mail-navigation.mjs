@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMailNavigation,normalizeMailNavigation,createMailScrollPersistence} from './src/mail-navigation-state.js';
+import {createMailNavigation,normalizeMailNavigation,createMailScrollPersistence,installMailNavigation} from './src/mail-navigation-state.js';
 const clone=value=>JSON.parse(JSON.stringify(value));
 const route=(folder='inbox',q='')=>({folder,q,searchOrder:'recent'});
 function fixture(saved=null,{reuse=false}={}){
@@ -141,4 +141,19 @@ test('the page never falls through to legacy history while the installed owner i
   const calls=[],context={window:{MailNavigation:{back:()=>{calls.push('owner');return accepted}}},history:{state:{eonaMail:'old'},back:()=>calls.push('legacy-back')},state:{},closeMailReader:()=>calls.push('legacy-close')};
   vm.createContext(context);vm.runInContext(body+';returnToMailList();returnToMailList()',context);assert.deepEqual(calls,['owner','owner']);
  }
+});
+
+test('a completed browser visual transition closes the target list synchronously without author exit',async()=>{
+ const calls=[],history={state:{},length:1,replaceState(value){this.state=value},pushState(value){this.state=value}};let reader={id:'8',kind:'inbox'};
+ const nav=createMailNavigation({owner:'a',history,url:'https://mail.test/',readRoute:()=>route(),readScroll:()=>({listScroll:90,readerScroll:0,loaded:100}),readReader:()=>reader,applyRoute(){},restoreList:async()=>{},openReader:async r=>reader=r,applyScroll(){},closeReader:options=>{calls.push(options);reader=null},onError:assert.fail,canReuseList:()=>true});
+ nav.open('8','inbox');calls.length=0;const list=normalizeMailNavigation({version:1,owner:'a',route:route()},'a');
+ assert(nav.pop({eonaMailPage:list},false,true));assert.equal(calls.length,1);assert.equal(calls[0]?.immediate,true);assert.equal(nav.restoring,false);assert.equal(nav.snapshot.reader,null);
+});
+
+
+test('optional return recording cannot interrupt the real history owner and its browser flag',async()=>{
+ const vm=await import('node:vm'),calls=[];const source=installMailNavigation.toString().match(/window.addEventListener\('popstate',event=>\{(.+)\},\{capture:true\}\);/)[1];
+ const event={state:{page:'target'},hasUAVisualTransition:true,stopImmediatePropagation(){this.stopped=true}};
+ vm.runInNewContext('(event=>{'+source+'})(event)',{event,window:{MailReturnDiagnostic:{navigation(){throw Error('diagnostic-only')}}},nav:{pop(...args){calls.push(args);return true}}});
+ assert.equal(calls.length,1);assert.equal(calls[0][0],event.state);assert.equal(calls[0][2],true);assert.equal(event.stopped,true);
 });

@@ -83,3 +83,9 @@ test('the first list input retires the outgoing render layer before its native d
 test('sent and draft composite bodies suspend once and dispose each old resource once',()=>{
  const calls=[],body=Object.assign(()=>calls.push('body-dispose'),{suspend:()=>calls.push('body-pause')}),contacts=()=>calls.push('contacts');const combined=chainMailReaderDisposers(body,contacts);combined.suspend();combined.suspend();assert.deepEqual(calls,['body-pause','contacts']);combined();combined();combined.suspend();assert.deepEqual(calls,['body-pause','contacts','body-dispose']);
 });
+
+test('a browser-owned return finishes in the same task and cannot hide a fresh reader',()=>{
+ const f=fixture();f.paint();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);
+ assert.equal(f.root.dataset.mailReaderPhase,'leaving');f.binding.finishReturn();assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
+ f.allFrames.slice().forEach(fn=>fn());assert.equal(f.root.dataset.mailReaderPhase,'list');f.mode('reader');f.doc.emit('mail:surface');f.paint();f.binding.finishReturn();assert.equal(f.root.dataset.mailReaderPhase,'active');assert.equal(disposed,1);f.binding.dispose();
+});

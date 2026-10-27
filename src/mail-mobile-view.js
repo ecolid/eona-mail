@@ -119,14 +119,16 @@ export function bindMailReaderPan({root,reader,mode,back,document:doc=document,w
   // Height-only native scroll/chrome changes cannot revive the retired layer.
   if(query.matches&&reading&&previous==='list'){root.dataset.mailReaderPhase='preparing';reader.getBoundingClientRect()}
   root.dataset.mailReaderPhase=reading?'entering':'leaving';phaseFrame=win.requestAnimationFrame(()=>{phaseFrame=0;if(ticket!==phaseSerial)return;if(!settle())phaseTimer=win.setTimeout(()=>{phaseTimer=0;if(ticket===phaseSerial)settle()},250)})};
- const handoff=event=>{if(!query.matches||visible()||root.dataset.mailReaderPhase!=='leaving'||!event.target?.closest?.('#list'))return;
-  // New list input supersedes the remaining visual exit. Do not leave an
+ const finishReturn=()=>{if(visible())return;
+  // A completed browser transition or new list input owns the visual result.
+  // Do not leave an
   // offscreen fixed scrolling layer in the compositor during the next pan.
   phaseSerial++;win.cancelAnimationFrame(phaseFrame);phaseFrame=0;win.clearTimeout(phaseTimer);phaseTimer=0;clear();root.dataset.mailReaderPhase='list';flushRetired();
  };
+ const handoff=event=>{if(!query.matches||visible()||root.dataset.mailReaderPhase!=='leaving'||!event.target?.closest?.('#list'))return;finishReturn()};
  for(const type of ['pointerdown','touchstart','wheel','keydown'])doc.addEventListener(type,handoff,{capture:true,passive:true,signal:lifetime.signal});
  listen(doc);const reset=()=>clear();doc.addEventListener('mail:surface',surface,{capture:true,signal:lifetime.signal});reader.addEventListener?.('transitionend',event=>{if(event.target===reader)settle()},{signal:lifetime.signal});win.addEventListener('blur',reset,{signal:lifetime.signal});doc.addEventListener('visibilitychange',()=>{if(doc.hidden){reset();flushRetired()}},{signal:lifetime.signal});query.addEventListener('change',surface,{signal:lifetime.signal});surface();
- return {bindDocument(source,frame){bindings.get(source)?.();return listen(source,frame)},retire(finish){flushRetired();retired=finish;if(!query.matches||visible()||root.dataset.mailReaderPhase==='list')flushRetired()},dispose(){clear();phaseSerial++;win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);flushRetired();delete root.dataset.mailReaderPhase;lifetime.abort();for(const dispose of [...bindings.values()])dispose()}};
+ return {finishReturn,bindDocument(source,frame){bindings.get(source)?.();return listen(source,frame)},retire(finish){flushRetired();retired=finish;if(!query.matches||visible()||root.dataset.mailReaderPhase==='list')flushRetired()},dispose(){clear();phaseSerial++;win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);flushRetired();delete root.dataset.mailReaderPhase;lifetime.abort();for(const dispose of [...bindings.values()])dispose()}};
 }
 export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,openNavigation,closeNavigation,back,refresh,listActions,document:doc=document,window:win=window}) {
  const feedbackBinding=bindMailTouchFeedback({root,document:doc,window:win}),pullSurface=bindMailPullSurface({list:doc.getElementById('list'),document:doc,window:win});
@@ -256,7 +258,7 @@ function installMailMobile(){
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';
  if(window.PointerEvent)window.MailReaderPan=bindMailReaderPan({root:document.getElementById('app'),reader:document.getElementById('view'),mode,back:()=>returnToMailList()});
  const listActions=installMailListActions();bindMailGestureDiagnostic({root:document.getElementById('app')});
- bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
+ window.MailReturnDiagnostic=bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,installMailNavigation,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
  bindMailMobileGestures({root:document.getElementById('app'),navigation:document.getElementById('side'),reader:document.getElementById('view'),mode,canRefresh:()=>mode()==='list'&&!listActions.selecting&&!['settings','routes'].includes(state.folder),openNavigation:()=>mailDrawer.open(),closeNavigation:()=>mailDrawer.close(),back:()=>returnToMailList(),refresh:()=>refresh(true,{feedback:'pull'}),listActions});
 }
 export const MAIL_MOBILE_CSS=`
