@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {bindMailMobileGestures,mailGestureIntent,bindMailReaderSurface} from './src/mail-mobile-view.js';
+import {bindMailMobileGestures,mailGestureIntent,bindMailReaderSurface,bindMailPullMotion} from './src/mail-mobile-view.js';
 import {mailLoadingMarkup} from './src/mail-loading-view.js';
 
 function fixture({mode='list',pull=true,scroll=0,horizontal=false,excluded=false,selection='',mask=false,readerLeft=0,primaryRow=false,directoryRow=false,nativePanModel=false,releaseInside=true,listActions}={}){
@@ -13,12 +13,23 @@ function fixture({mode='list',pull=true,scroll=0,horizontal=false,excluded=false
  const win={addEventListener(name,fn,options){(windowEvents[name]??=[]).push(fn);if(options?.capture)(windowCapture[name]??=[]).push(fn)},matchMedia(){return {matches:true,addEventListener(){}}},getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:horizontal&&node===panel?'auto':'visible'}),performance:{now:()=>time},requestAnimationFrame(fn){frames.set(++next,fn);return next},cancelAnimationFrame(id){frames.delete(id)},setTimeout(fn){timers.set(++next,fn);return next},clearTimeout(id){timers.delete(id)}};
  const reader={style:root.style,getBoundingClientRect:()=>({width:390,left:readerLeft})};
  const binding=bindMailMobileGestures({root,navigation,reader,listActions,document:doc,window:win,mode:()=>mode,canRefresh:()=>pull,openNavigation:()=>{actions.push('open-navigation');mode='navigation'},closeNavigation:()=>{actions.push('close-navigation');mode='list'},back:()=>{actions.push('back-reader');mode='list'},refresh:()=>{actions.push('refresh');return new Promise(resolve=>finish=resolve)}});
- function event(type,x=150,y=200,n=1,elapsed=50){time+=elapsed;let prevented=false;const e={target,touches:Array.from({length:n},()=>({clientX:x,clientY:y})),cancelable:nativePanModel?(type==='touchstart'?false:!nativeLocked):true,preventDefault(){if(this.cancelable)prevented=true}};(capture[type]||[]).forEach(fn=>fn(e));listeners[type]?.(e);if(nativePanModel&&type==='touchmove'&&!prevented)nativeLocked=true;if(type==='touchend'&&!n)nativeLocked=false;return prevented}
+ function event(type,x=150,y=200,n=1,elapsed=50,final=false){time+=elapsed;let prevented=false;const e={target,touches:Array.from({length:n},()=>({clientX:x,clientY:y})),...(final?{changedTouches:[{clientX:x,clientY:y}]}:{}),cancelable:nativePanModel?(type==='touchstart'?false:!nativeLocked):true,preventDefault(){if(this.cancelable)prevented=true}};(capture[type]||[]).forEach(fn=>fn(e));listeners[type]?.(e);if(nativePanModel&&type==='touchmove'&&!prevented)nativeLocked=true;if(type==='touchend'&&!n)nativeLocked=false;return prevented}
  function click(detail=1,elapsed=10){time+=elapsed;let prevented=false,stopped=false;const event={detail,preventDefault(){prevented=true},stopImmediatePropagation(){stopped=true}};for(const fn of [...windowCapture.click||[],...capture.click||[]]){if(stopped)break;fn(event)}if(!stopped)actions.push('activate');return prevented}
  const frame=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn())};
  function swipe(dx,dy=0,elapsed=50){event('touchstart');event('touchmove',150+dx,200+dy,1,elapsed);frame();return event('touchend')}
  return {actions,event,click,swipe,frame,blur:()=>windowEvents.blur?.forEach(fn=>fn()),styles,root,indicator,label,binding,earlyCapture:fn=>(capture.click??=[]).unshift(fn),finish:result=>finish?.(result),settle:()=>{const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn())},overlay:value=>overlay=value,mode:value=>mode=value,select:value=>selection=value};
 }
+test('pull presentation animates only local transforms on one timeline and resumes its live pose',()=>{
+ const animations=[],make=()=>({values:{},style:{setProperty(k,v){this.owner.values[k]=v},removeProperty(k){delete this.owner.values[k]}},animate(frames,options){const a={frames,options,cancel(){this.cancelled=true}};animations.push(a);return a}}),a=make(),b=make(),indicator=make();for(const n of [a,b,indicator])n.style.owner=n;
+ let node=a,reduced=false;const motion=bindMailPullMotion({surface:{contentElement:()=>node},indicator,window:{document:{timeline:{currentTime:12}},getComputedStyle:()=>({transform:'matrix(1,0,0,1,0,23)'}),matchMedia:()=>({matches:reduced})}});
+ motion.draw(77);assert.equal(a.values.transform,'translate3d(0,77px,0)');assert.equal(indicator.values.transform,'translate3d(0,16.5px,0)');motion.draw(44,true);assert.equal(animations.length,2);assert.equal(animations[0].startTime,animations[1].startTime);assert.deepEqual(animations[0].frames,[{transform:'translate3d(0,77px,0)'},{transform:'translate3d(0,44px,0)'}]);assert.equal(motion.position(),23);
+ motion.draw(30);assert(animations.every(a=>a.cancelled));assert.equal(a.values.transform,'translate3d(0,30px,0)');node=b;motion.sync();assert.equal(a.values.transform,undefined);assert.equal(b.values.transform,'translate3d(0,30px,0)');reduced=true;motion.draw(0,true);assert.equal(animations.length,2);motion.clear();assert.equal(b.values.transform,undefined);
+ assert.match(MAIL_MOBILE_CSS,/@property --mail-pull-y\{[^}]*inherits:false/);assert.doesNotMatch(MAIL_MOBILE_CSS,/height:var\(--mail-pull-y|transition:--mail-pull-y/);
+});
+test('fast touch release uses its final coordinate before choosing refresh or navigation',async()=>{
+ const pull=fixture();pull.event('touchstart');pull.event('touchmove',150,240);pull.frame();pull.event('touchend',150,320,0,10,true);await Promise.resolve();assert.deepEqual(pull.actions,['refresh']);assert.equal(pull.styles['--mail-pull-y'],'44px');
+ const drawer=fixture();drawer.event('touchstart');drawer.event('touchmove',180,200);drawer.frame();drawer.event('touchend',300,200,0,10,true);assert.deepEqual(drawer.actions,['open-navigation']);
+});
 test('a held press and initial finger jitter never claim the following vertical scroll',()=>{
  for(const mode of ['list','reader','navigation'])for(const dy of [-90,90]){
   const f=fixture({mode,scroll:120,pull:false});f.event('touchstart');
