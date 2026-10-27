@@ -274,3 +274,5 @@ controllers remain in use.
 浏览器安装、单 worker 和 trace 方法沿 [Playwright CI](https://playwright.dev/docs/ci) 与 [Trace Viewer](https://playwright.dev/docs/trace-viewer)。不要给性能场景打开 trace/视频后再放宽预算。
 
 完整 DOM 快照 trace 只用于另行诊断，不用于帧时、几何读取与连续性门禁。WebKit Inspector 的快照会同步读取几何并占用帧，采样器记录调用来源，不能把观察工具的副作用算成产品成本或调低断言。
+
+连续性交接直接测量松手任务前后（允许最终尚未绘制输入的8px内增量），并保存动画关键帧、当前时刻、任务耗时及每个后续采样的真实时间。首个 rAF 可能因共享 runner 或浏览器历史处理而晚到，不能仅凭其位移假定经过16.7ms；后续单调性、隐藏后不重现与独立一帧成本门禁继续检查。
