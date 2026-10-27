@@ -47,14 +47,26 @@ export const MAIL_READER_CSS = `
 #vtrans:not([data-translation-busy]):not([data-translation-error]) [role=status]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 #vtrans button{min-height:28px;padding:3px 5px;font-size:12px;line-height:1.5}
 #vtrans .translation-close{margin-left:0;color:var(--sub)}
-#vatts,#vbig{max-width:none;margin:0;width:100%;padding:12px 16px 0}
+#vbig{max-width:none;margin:0;width:100%;padding:12px 16px 0}
 #vbody{position:relative;min-height:0;padding:0;background:var(--card)}
 #vbody iframe{display:block;width:100%;min-height:0;border:0;background:#fff}
-#vbody pre{margin:0 auto;max-width:78ch;padding:24px;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.75 var(--e-ui-font)}
+#vbody pre{margin:0;max-width:78ch;padding:0;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.75 var(--e-ui-font)}
 .mail-selection-pending>.mail-reader-content{visibility:hidden}
 .mail-selection-status{position:absolute;top:36px;left:24px;color:var(--sub);font-size:13px}
 .mail-anchor-label{padding:10px 16px 0;color:var(--sub);font-size:11px}
 ${MAIL_WORKSPACE_CSS}
+.mail-reader-attachments{margin-top:24px;padding-top:16px;border-top:1px solid var(--line);min-width:0}
+.mail-reader-attachments h3{display:flex;align-items:baseline;gap:8px;margin:0 0 10px;font-size:13px;font-weight:600;line-height:1.5;color:var(--ink)}
+.mail-reader-attachments h3 span{font-size:12px;font-weight:400;color:var(--sub);font-variant-numeric:tabular-nums}
+.mail-reader-attachments ul{display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:0;list-style:none}
+.mail-reader-file{display:flex;align-items:center;gap:10px;box-sizing:border-box;flex:0 1 360px;width:100%;max-width:100%;min-width:0;min-height:64px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.mail-reader-file-icon{display:flex;flex:none;color:var(--sub)}.mail-reader-file-icon svg{width:20px;height:20px}
+.mail-reader-file-copy{display:grid;flex:1;gap:2px;min-width:0}.mail-reader-file-name{font-size:13px;line-height:1.5;overflow-wrap:anywhere}.mail-reader-file-copy small{font-size:11px;line-height:1.5;color:var(--sub)}
+.mail-reader-file-download,.mail-reader-file-delete{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;min-height:32px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--sub);box-shadow:none;text-decoration:none}
+.mail-reader-file-download svg,.mail-reader-file-delete svg{width:18px;height:18px}
+.mail-reader-file-download:hover{background:var(--card);color:var(--e-ui-accent)}.mail-reader-file-delete:hover{background:var(--needbg);color:var(--danger)}
+.mail-reader-file-download:focus-visible,.mail-reader-file-delete:focus-visible{outline:2px solid var(--e-ui-accent);outline-offset:2px}
+.mail-reader-file-unavailable .mail-reader-file-name{color:var(--sub)}
 @media(max-width:860px){
  .mail-reader-content{padding:12px 12px 28px}
  #vhead{padding:0 4px 16px}
@@ -75,7 +87,8 @@ ${MAIL_WORKSPACE_CSS}
  .mail-summary p{font-size:13px}
  #vtrans{gap:4px}#vtrans button{min-height:36px;padding-inline:4px}
  #vtrans [role=status]{max-width:200px}
- #vbody pre{padding:16px;font-size:14px}
+ #vbody pre{padding:0;font-size:14px}
+ .mail-reader-file{flex-basis:100%;padding:8px;gap:8px}.mail-reader-file-download,.mail-reader-file-delete{width:44px;height:44px;min-height:44px}
  .mail-address{min-height:32px}.mail-contact-menu button{min-height:44px}
 
 }

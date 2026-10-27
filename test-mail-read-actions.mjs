@@ -1,3 +1,4 @@
+import {mailSelectReaderRow} from './src/mail-reader-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -38,7 +39,7 @@ test('a quick choice applies immediately and the same choice restores its own di
 
 test('reopening the same previously unread reader persists read state again without rebuilding it',async()=>{
  const page=testHooks().PAGE,start=page.indexOf('async function openMail('),end=page.indexOf('  const readerTicket=++mailReaderIntent;',start),calls=[];
- const c={state:{cur:'1',curMail:{is_read:0}},pushMailReaderHistory(){},mailDrawer:{close(){}},document:{body:{classList:{add(){}}}},syncMailReader(){},mailToast(){},act:async(id,op)=>{calls.push([id,op]);c.state.curMail.is_read=1;return true}};vm.createContext(c);vm.runInContext(page.slice(start,end)+'}',c);await c.openMail('1');await c.openMail('1');assert.deepEqual(calls,[['1','read']]);
+ const c={mailSelectReaderRow,$:()=>({querySelectorAll:()=>[]}),state:{cur:'1',curMail:{is_read:0}},pushMailReaderHistory(){},mailDrawer:{close(){}},document:{body:{classList:{add(){}}}},syncMailReader(){},mailToast(){},act:async(id,op)=>{calls.push([id,op]);c.state.curMail.is_read=1;return true}};vm.createContext(c);vm.runInContext(page.slice(start,end)+'}',c);await c.openMail('1');await c.openMail('1');assert.deepEqual(calls,[['1','read']]);
 });
 
 test('every delivered inline bootstrap parses with its actual combined declarations',()=>{

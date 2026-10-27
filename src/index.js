@@ -1452,10 +1452,6 @@ main{flex:1;display:flex;overflow:hidden}
 #vhead .acts{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap}
 #vbig{padding:14px 22px 0}
 #vbig .bigcode{display:inline-block;font-size:22px;font-weight:700;letter-spacing:4px;background:var(--okbg);color:var(--ok);padding:7px 16px;border-radius:var(--r);cursor:pointer;font-variant-numeric:tabular-nums}
-#vatts{padding:10px 22px 0;display:flex;gap:8px;flex-wrap:wrap}
-#vatts a{font-size:12px;border:1px solid var(--line);border-radius:var(--r);padding:5px 9px;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;gap:5px;background:var(--bg)}
-#vatts .att{display:inline-flex;align-items:center;gap:4px}#vatts .att.gone{font-size:12px;color:var(--sub);border:1px dashed var(--line);border-radius:var(--r);padding:5px 9px}
-#vatts button.mini{font-size:11px;padding:3px 6px;color:var(--danger);border-radius:var(--r)}#vatts button.mini:hover{background:var(--needbg)}
 #vtrans{margin:12px 22px 0;padding:10px 12px;display:flex;align-items:center;gap:10px;background:var(--bluebg);color:var(--blueink);font-size:13px;border-radius:var(--r);flex-wrap:wrap}#vtrans [role=status]{color:var(--ink)}#vtrans button{color:var(--blueink);font-size:13px;padding:3px 4px;white-space:nowrap}#vtrans button:disabled{opacity:.6;cursor:wait}#vtrans button:hover{text-decoration:underline}#vtrans button:focus-visible{outline:2px solid var(--blueink);outline-offset:3px}#vtrans .translation-close{margin-left:auto;color:var(--sub)}
 #vbody{flex:1;min-height:300px}
 #vbody iframe{width:100%;height:100%;border:none;background:#fff}
@@ -1505,7 +1501,7 @@ body.routes #view{display:none}
   body.moreacts #vhead .acts{display:flex}
   #vhead{padding:0 16px 10px}#vhead h2{font-size:17px;margin:2px 0 8px}
   #vhead .row{gap:2px 10px;font-size:12px}
-  #vbody pre,#vatts,#vbig{padding-left:16px;padding-right:16px}#vtrans{margin-left:16px;margin-right:16px}
+  #vbody pre,#vbig{padding-left:16px;padding-right:16px}#vtrans{margin-left:16px;margin-right:16px}
   /* 纯文本正文原来是等宽字体,中文看着像代码 */
   #vbody pre{font-family:inherit;font-size:15px;line-height:1.65}
   #vbody{flex:1;overflow:auto}
@@ -1531,7 +1527,7 @@ ${EONA_FOUNDATION_CSS}
  #app>header .search {flex:1;max-width:none;margin-left:0}#app>header .search>svg {display:none}
  #app>header #mail-search-toggle {margin-left:auto}
  #app>header #mail-refresh {display:inline-flex}#side .item {min-height:44px}
- #vbar .btn,.btn,#vtrans button,#vatts a,#vatts button.mini {min-height:44px}
+ #vbar .btn,.btn,#vtrans button, .mail-reader-file-download,.mail-reader-file-delete {min-height:44px}
  #vhead .acts {gap:8px}#vbar {gap:8px}
  #vbody pre {font-family:inherit}
 }
@@ -1563,7 +1559,7 @@ body {font:14px/1.6 var(--e-ui-font)}
 #vbody pre {margin:0 auto;padding:12px var(--e-reader-gutter) 32px;max-width:calc(var(--e-reader-column) + 2 * var(--e-reader-gutter));white-space:pre-wrap;font:var(--e-reader-body)/var(--e-reader-leading) var(--e-ui-font)}
 #vtrans {margin:0 var(--e-reader-gutter) 16px;background:var(--e-ui-selected);color:var(--e-ui-accent)}
 #vtrans button {color:var(--e-ui-accent)}
-#vatts,#vbig {padding:0 var(--e-reader-gutter) 16px;max-width:calc(var(--e-reader-column) + 2 * var(--e-reader-gutter));width:100%;margin-inline:auto}
+#vbig {padding:0 var(--e-reader-gutter) 16px;max-width:calc(var(--e-reader-column) + 2 * var(--e-reader-gutter));width:100%;margin-inline:auto}
 #view .empty {min-height:240px;padding:32px;font-size:14px;color:var(--sub)}
 @media(min-width:861px) and (max-width:1140px){#side {width:184px}#list {width:280px}#vbar .btn {padding-inline:8px;font-size:13px}}
 @media(max-width:860px){
@@ -1589,7 +1585,7 @@ body[data-mail-density="comfortable"] #list .mail{padding-block:18px}
 #vbar.e-reader-toolbar{padding:8px 20px;border-bottom:1px solid var(--line);min-height:56px}#vbar>.btn{box-shadow:none;border-color:transparent;background:transparent;font-size:13px;min-height:36px}#vbar>.btn:hover{background:var(--bg)}
 .mail-reader-content{width:100%;max-width:1008px;margin:0 auto;padding:24px}
 #vhead{padding:0 0 16px;max-width:none}#vhead h2{font-size:24px;line-height:1.35;margin:0 0 10px;text-wrap:pretty}#vhead .row{display:flex;align-items:baseline;gap:4px 16px}#vhead .mail-detail-time{display:block;margin-top:4px;color:var(--sub);font-size:12px;font-variant-numeric:tabular-nums}#vhead .aibox{margin-top:12px;font-size:13px;padding:10px 12px;max-width:none}
-#vtrans{margin:0 0 16px;padding:8px 0;background:transparent;color:var(--sub);border-block:1px solid var(--line);border-radius:0;min-height:44px;font-size:13px;gap:8px}#vtrans button{min-height:32px;font-size:13px}#vtrans svg{width:18px;height:18px}#vatts,#vbig{padding-inline:0}#vbody{position:relative;min-height:0;padding-bottom:0}#vbody pre{padding:0;max-width:none}
+#vtrans{margin:0 0 16px;padding:8px 0;background:transparent;color:var(--sub);border-block:1px solid var(--line);border-radius:0;min-height:44px;font-size:13px;gap:8px}#vtrans button{min-height:32px;font-size:13px}#vtrans svg{width:18px;height:18px}#vbig{padding-inline:0}#vbody{position:relative;min-height:0;padding-bottom:0}#vbody pre{padding:0;max-width:none}
 .mail-body-links{position:absolute;inset:0;pointer-events:none}.mail-body-link-hit{position:absolute;pointer-events:auto;border:0;padding:0;background:transparent;color:transparent;cursor:pointer;touch-action:pan-y}.mail-body-link-hit:focus-visible{outline:2px solid var(--e-ui-accent);outline-offset:2px;border-radius:2px}
 .mail-results-bar [data-mail-result-count]{min-width:0}.mail-results-bar>.e-select{flex:none;width:100px}.mail-results-bar .e-select-trigger{min-height:32px;height:32px;width:100%;border:0;background:transparent;color:var(--sub);font-size:12px;padding:4px 8px;box-shadow:none}.mail-results-bar select{flex:none;border:0;background:transparent;color:var(--sub);font:inherit;width:90px;min-height:32px;padding:4px}
 .mail-other-boxes{margin-top:4px}.mail-other-boxes summary{display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;color:var(--sub);list-style:none}.mail-other-boxes summary::-webkit-details-marker{display:none}.mail-other-boxes summary .n{margin-left:auto}.mail-other-boxes summary svg{width:14px;height:14px}
@@ -1958,6 +1954,7 @@ $('#list').addEventListener('scroll',()=>{const l=$('#list');if(l.scrollTop+l.cl
 function localTime(s){if(!s)return '';const t=String(s);const d=new Date(/[zZ]$|[+-]\\d\\d:?\\d\\d$/.test(t)?t:t.replace(' ','T')+'Z');return isNaN(d)?t:d.toLocaleString('zh-CN',{hour12:false});}
 async function openMail(id,push=true){
   pushMailReaderHistory(id,'inbox',push);
+  mailSelectReaderRow($('#list'),id);
   if(String(state.cur)===String(id)&&state.curMail){if(!state.curMail.is_read)act(id,'read',{quiet:true}).then(ok=>{if(ok===false&&String(state.cur)===String(id))mailToast('已打开邮件，但已读状态更新失败，请重试。',{tone:'error'})});mailDrawer.close();document.body.classList.add('viewing');syncMailReader();return}
   const readerTicket=++mailReaderIntent;
   mailActionMenu?.dispose();mailBodyDispose?.();mailContactsDispose?.();mailActionMenu=null;mailBodyDispose=null;mailContactsDispose=null;
@@ -1978,17 +1975,14 @@ async function openMail(id,push=true){
   '<div class="mail-reader-content">'+mailReaderHeader(e,esc,I,localTime)+
   '<section class="mail-document" aria-label="邮件正文">'+
   (e.verification_code?'<div id="vbig"><button type="button" class="bigcode" aria-label="复制验证码" data-copy="'+esc(e.verification_code)+'">'+esc(e.verification_code)+'</button></div>':'')+
-  (atts.length?'<div id="vatts">'+atts.map(a=>a.key
-      ?'<span class="att"><a data-mail-download="'+esc(a.name||'attachment')+'" href="/api/file?key='+encodeURIComponent(a.key)+'">'+I.clip+esc(a.name)+'</a> <button class="mini" data-att-del="'+esc(a.key)+'" data-id="'+e.id+'" aria-label="删除附件 '+esc(a.name)+'" title="删除附件">'+I.trash+'</button></span>'
-      :'<span class="att gone">'+I.clip+esc(a.name)+' ('+esc(a.deleted?a.deleted+' '+localTime(a.deleted_at):(a.skipped||'未归档'))+')</span>').join('')+'</div>':'')+
   '<div id="vbody">'+(e.html_key
     ?'<iframe title="邮件原文" style="visibility:hidden" sandbox="allow-same-origin allow-scripts" data-html-mail="'+e.id+'"></iframe>'
-    :'<pre class="e-reader-prose">'+esc(e.text_body||'(空正文)')+'</pre>')+'</div></section></div>';
+    :'<pre class="e-reader-prose">'+esc(e.text_body||'(空正文)')+'</pre>')+'</div></section>'+mailReaderAttachments(atts,esc,I,{id:e.id,time:localTime})+'</div>';
 
   mailContactsDispose=installMailContactActions(document.getElementById('vhead'),mailContactOptions());
   const frame=document.querySelector('#vbody iframe');mailBodyDispose=frame?installMailBodyFrame(frame,{reload:()=>loadMailHTML(frame,e.id,readerTicket,true)}):installMailTextLinks(document.querySelector('#vbody pre'));if(frame)loadMailHTML(frame,e.id,readerTicket);
   installMailTranslation(e);
-  for(const row of $('#list').querySelectorAll('[data-mail-id]')){row.classList.toggle('on',String(row.dataset.mailId)===String(id));if(String(row.dataset.mailId)===String(id))row.classList.remove('unread')}
+  for(const row of $('#list').querySelectorAll('[data-mail-id]'))if(String(row.dataset.mailId)===String(id))row.classList.remove('unread');
 }
 ${mailHTMLPolicy.toString()}
 ${mailHTMLDocument.toString()}

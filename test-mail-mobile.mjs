@@ -28,6 +28,23 @@ test('a held press and initial finger jitter never claim the following vertical 
  }
  for(const [x,y] of [[10,2],[8,11],[17,14]])assert.equal(mailGestureIntent(x,y,'list',true),'');
 });
+
+test('repeated pending pulls retain the first native move and never restart or settle their request',async()=>{
+ const f=fixture({nativePanModel:true});f.event('touchstart');assert(f.event('touchmove',150,203));f.event('touchmove',150,320);f.frame();f.event('touchend',150,320,0);await Promise.resolve();
+ assert.deepEqual(f.actions,['refresh']);assert.equal(f.root.dataset.mailPull,'pending');
+ for(let i=0;i<20;i++){
+  f.event('touchstart');assert(f.event('touchmove',150,203),'first cancellable move remains owned while refreshing');f.event('touchmove',150,340);f.frame();f.event('touchend',150,340,0);
+  assert.equal(f.root.dataset.mailPull,'pending');assert.equal(f.styles['--mail-pull-y'],'44px');assert.deepEqual(f.actions,['refresh']);
+ }
+ f.finish({ok:true});for(let i=0;i<20&&f.root.dataset.mailPull==='pending';i++)await Promise.resolve();assert.equal(f.root.dataset.mailPull,'complete');f.settle();f.settle();assert.equal(f.root.dataset.mailPull,undefined);
+ f.event('touchstart');assert(f.event('touchmove',150,203));f.event('touchmove',150,320);f.frame();f.event('touchend',150,320,0);await Promise.resolve();assert.deepEqual(f.actions,['refresh','refresh']);f.binding.dispose();
+});
+
+test('pending refresh ownership still allows a tap-sized row contact and native upward scrolling',async()=>{
+ const f=fixture({primaryRow:true,nativePanModel:true});f.event('touchstart');f.event('touchmove',150,320);f.frame();f.event('touchend',150,320,0);await Promise.resolve();
+ f.event('touchstart');assert.equal(f.event('touchmove',150,190),false);f.event('touchend',150,190,0);assert.deepEqual(f.actions,['refresh']);
+ f.event('touchstart');assert(f.event('touchmove',150,203));f.frame();f.event('touchend',150,203,0);assert.deepEqual(f.actions,['refresh','activate']);assert(f.click(),'compatibility click remains suppressed');f.binding.dispose();
+});
 test('the native keyboard row opener remains the list gesture surface, while nested controls retain ownership',()=>{
  const row=fixture({primaryRow:true});assert(row.swipe(120));assert.deepEqual(row.actions,['open-navigation']);
  const scrolling=fixture({primaryRow:true,scroll:120,pull:false});scrolling.event('touchstart');assert.equal(scrolling.event('touchmove',158,290),false);assert.deepEqual(scrolling.actions,[]);

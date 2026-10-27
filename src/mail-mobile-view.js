@@ -58,14 +58,17 @@ export function bindMailTouchFeedback({root,document:doc=document,window:win=win
  return {dispose(){clear();abort.abort();hoverPolicy.dispose();delete doc.documentElement.dataset.mailPointer}};
 }
 // Preserve the scroll element and heading identity; only the content moves.
-export function bindMailPullSurface({list,document:doc=document,window:win=window}){
+export function bindMailPullSurface({list,indicator,document:doc=document,window:win=window}){
  let clip=null,content=null;
- const heading=()=>list.querySelector?.('.mail-workspace-title,.mail-results-bar')||[...(list?.children||[])].find(n=>n.matches?.('.mail-workspace-title,.mail-results-bar'));
+ const heading=()=>(list.querySelector?.('.mail-workspace-title')||list.querySelector?.('.mail-results-bar:not([data-new-results])'))||[...(list?.children||[])].find(n=>n.matches?.('.mail-workspace-title,.mail-results-bar'));
  const arrange=()=>{
   const head=heading();if(!head)return;const host=head.parentElement;
   if(!clip||clip.parentElement!==host){const cached=[...host.children].find(n=>n.matches?.('.mail-pull-clip'));clip=cached||doc.createElement('div');clip.className='mail-pull-clip';content=cached?.children[0]||doc.createElement('div');content.className='mail-pull-content';if(!cached)clip.append(content)}
   const outside=[...host.children].filter(n=>n!==head&&n!==clip);
   if(outside.length){const ordered=[...host.children].filter(n=>n!==head).flatMap(n=>n===clip?[...content.children]:[n]),scroll=list.scrollTop;content.replaceChildren(...ordered);if(clip.parentElement!==host)host.append(clip);list.scrollTop=scroll}
+  // Anchor feedback in the same local coordinate space as the moving content.
+  // Cached/replaced lists and browser viewport changes cannot stale a fixed y.
+  if(indicator&&indicator.parentElement!==clip)clip.append(indicator);
   const rect=head.getBoundingClientRect();list.style?.setProperty('--mail-pull-heading-height',rect.height+'px');if(Number.isFinite(list.clientHeight))clip.style.setProperty('min-height',Math.max(0,list.clientHeight-rect.height)+'px');
  };
  const observer=win.MutationObserver&&list?.children?new win.MutationObserver(arrange):null;observer?.observe(list,{childList:true,subtree:true});arrange();
@@ -163,10 +166,11 @@ export function bindMailReaderPan({root,reader,page=reader,mode,back,document:do
  return {finishReturn,bindDocument(source,frame){bindings.get(source)?.();return listen(source,frame)},retire(finish){flushRetired();retired=finish;if(!query.matches||visible())flushRetired();else if(root.dataset.mailReaderPhase==='list')queueRetirement()},dispose(){cancelMotion();clear();phaseSerial++;win.cancelAnimationFrame(phaseFrame);win.clearTimeout(phaseTimer);flushRetired();delete root.dataset.mailReaderPhase;lifetime.abort();for(const dispose of [...bindings.values()])dispose()}};
 }
 export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,openNavigation,closeNavigation,back,refresh,listActions,document:doc=document,window:win=window}) {
- const feedbackBinding=bindMailTouchFeedback({root,document:doc,window:win}),pullSurface=bindMailPullSurface({list:doc.getElementById('list'),document:doc,window:win});
+ const feedbackBinding=bindMailTouchFeedback({root,document:doc,window:win});
  const abort=new AbortController(),signal=abort.signal;let tracking=null,refreshing=false,paintFrame=0,finishFrame=0,pullTimer=0,paint=null,ownedTouch=false,suppressClickUntil=0,pullEpoch=0,nativeMovement=false;
  const indicator=doc.createElement('div');indicator.className='mail-pull-status';indicator.hidden=true;indicator.setAttribute('role','status');indicator.setAttribute('aria-live','polite');
  indicator.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg><span></span>';root.append(indicator);
+ const pullSurface=bindMailPullSurface({list:doc.getElementById('list'),indicator,document:doc,window:win});
  const label=indicator.querySelector('span'),query=win.matchMedia('(max-width:860px)'),clamp=value=>Math.max(0,Math.min(1,value));
  const selected=()=>!!win.getSelection()?.toString();
  // A consumed swipe must not activate the control under its release point.
@@ -210,10 +214,10 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
   if(ancestors(target,n=>{const css=win.getComputedStyle(n);return /auto|scroll/.test(css.overflowX)&&n.scrollWidth>n.clientWidth+2}))return;
   const panel=target.closest('#side,#view,#list,#mask');if(!panel&&current!=='navigation')return;
   const rect=navigation.getBoundingClientRect();if(!rect.width)return;clearDrawer();settleReader();if(!refreshing&&root.dataset.mailPull)settlePull();
-  const atTop=!ancestors(target,n=>n.scrollTop>0),now=win.performance.now();if(!root.dataset.mailPull)indicator.style.setProperty('--mail-pull-top',pullSurface.top()+'px');
+  const atTop=!ancestors(target,n=>n.scrollTop>0),now=win.performance.now();
   const readerRect=current==='reader'?reader?.getBoundingClientRect():null;
   const tap=current==='list'?(target.closest('.mail-open,#list .mail-directory-row,#list .mail-workspace-mail')||target.closest('#list .mail')?.querySelector('.mail-open')):null;
-  tracking={tap,maxTravel:0,x:point.clientX,y:point.clientY,dx:0,dy:0,at:now,lastAt:now,lastX:point.clientX,velocity:0,mode:current,pull:atTop&&!refreshing&&canRefresh(),intent:'',width:current==='reader'?(readerRect?.width||width):rect.width,readerStart:Math.max(0,readerRect?.left||0),start:clamp(rect.right/rect.width),progress:clamp(rect.right/rect.width)};
+  tracking={tap,maxTravel:0,x:point.clientX,y:point.clientY,dx:0,dy:0,at:now,lastAt:now,lastX:point.clientX,velocity:0,mode:current,pull:atTop&&canRefresh(),intent:'',width:current==='reader'?(readerRect?.width||width):rect.width,readerStart:Math.max(0,readerRect?.left||0),start:clamp(rect.right/rect.width),progress:clamp(rect.right/rect.width)};
  },{passive:true,signal});
  root.addEventListener('touchmove',event=>{
   if(listActions?.move(event)){tracking=null;clearPaint();ownedTouch=true;return}
@@ -224,7 +228,7 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
   if(!t.intent)t.intent=t.pull&&t.dy>0&&t.dy>Math.abs(t.dx)*1.2?'refresh':mailGestureIntent(t.dx,t.dy,t.mode,t.pull);
   if(t.intent==='ignore'){nativeMovement=true;reset();return}if(!t.intent)return;
   if(event.cancelable){event.preventDefault();ownedTouch=true;if(t.intent==='refresh')event.mailGestureDecision='pull-dragging'}else{if(t.intent==='refresh')event.mailGestureDecision='pull-native-locked';reset();return}
-  if(t.intent==='refresh')queuePaint(()=>drawPull(t.dy,t.dy>=80?'松开刷新':'下拉刷新'));
+  if(t.intent==='refresh'){if(!refreshing)queuePaint(()=>drawPull(t.dy,t.dy>=80?'松开刷新':'下拉刷新'))}
   else if(t.intent==='back-reader')queuePaint(()=>drawReader(t));
   else{t.progress=clamp(t.start+t.dx/t.width);queuePaint(()=>drawDrawer(t))}
  },{passive:false,signal});
@@ -240,6 +244,9 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
    const end=event.changedTouches?.[0],x=end?.clientX??t.x+t.dx,y=end?.clientY??t.y+t.dy;
    const travel=Math.max(t.maxTravel,Math.hypot(x-t.x,y-t.y)),hit=doc.elementFromPoint?.(x,y);
    if(travel<8&&t.tap?.isConnected&&!t.tap.disabled&&!doc.querySelector('dialog[open],:popover-open')&&(hit===t.tap||t.tap.contains(hit))){clearPull();t.tap.click();return}
+   // A repeated pull during the same request owns overscroll but does not
+   // change its waiting slot, enqueue another request or settle it early.
+   if(refreshing)return;
    if(t.dy<80||t.dy<Math.abs(t.dx)*1.4){settlePull();return}
    // Commit the dragged position before easing both content and indicator to
    // the same waiting slot. Their return uses the same geometry and duration.
@@ -300,7 +307,7 @@ export const MAIL_MOBILE_CSS=`
 body.mail-settings #mail-reader-page,body.routes #mail-reader-page{display:none}
 body.mail-composing #mail-reader-page{display:none!important}
 /* The fixed heading stays in the original scroll viewport. */
-.mail-pull-clip{display:flow-root;overflow:clip;min-height:calc(100% - var(--mail-pull-heading-height,56px))}.mail-pull-content{min-height:inherit}
+.mail-pull-clip{position:relative;display:flow-root;overflow:clip;min-height:calc(100% - var(--mail-pull-heading-height,56px))}.mail-pull-content{min-height:inherit}
 /* One animated length keeps content and feedback on the same timeline. */
 @property --mail-pull-y{syntax:"<length>";inherits:true;initial-value:0px}
 /* Temporary opt-in diagnostic controls do not change the list scroll surface. */
@@ -316,7 +323,7 @@ body.mail-composing #mail-reader-page{display:none!important}
 }
 
 .mail-side-error{margin:8px 10px;color:var(--e-ui-danger);font:12px/20px var(--e-ui-font)}.mail-side-error .btn{margin-left:4px}
-.mail-pull-status[hidden]{display:none}.mail-pull-status{position:fixed;top:var(--mail-pull-top,var(--e-ui-topbar));left:50%;height:var(--mail-pull-y,0px);overflow:hidden;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:6px;max-width:calc(100% - 32px);color:var(--sub);font:12px/20px var(--e-ui-font);z-index:44;pointer-events:none;white-space:nowrap}.mail-pull-status svg{width:14px;height:14px;flex:none}.mail-pull-status[data-phase=pending] svg{animation:mail-refresh-spin .8s linear infinite}.mail-pull-status[data-phase=complete] svg{display:none}.mail-pull-status[data-phase=settling]{opacity:0}@keyframes mail-refresh-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.mail-pull-status svg{animation:none!important}}
+.mail-pull-status[hidden]{display:none}.mail-pull-status{position:absolute;inset:0 0 auto;height:var(--mail-pull-y,0px);overflow:hidden;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--sub);font:12px/20px var(--e-ui-font);z-index:1;pointer-events:none;white-space:nowrap}.mail-pull-status svg{width:14px;height:14px;flex:none}.mail-pull-status[data-phase=pending] svg{animation:mail-refresh-spin .8s linear infinite}.mail-pull-status[data-phase=complete] svg{display:none}.mail-pull-status[data-phase=settling]{opacity:0}@keyframes mail-refresh-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.mail-pull-status svg{animation:none!important}}
 @property --mail-reader-x{syntax:"<length>";inherits:false;initial-value:0px}
 @property --mail-drawer-x{syntax:"<length>";inherits:false;initial-value:0px}
 @property --mail-drawer-progress{syntax:"<number>";inherits:false;initial-value:0}

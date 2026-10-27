@@ -44,6 +44,24 @@ export function mailMessageHeader({subject,at,back,actions='',envelope},esc,time
  return '<header id="vhead"><div id="vbar" class="mail-reader-commandbar" aria-label="邮件操作">'+back+'<time class="mail-detail-time">'+esc(time(at))+'</time>'+actions+'</div><h2 class="e-reader-heading">'+esc(subject||'(无主题)')+'</h2><dl class="mail-envelope">'+envelope+'</dl><time class="mail-envelope-time">'+esc(time(at))+'</time></header>';
 }
 
+// Selection acknowledges the current intent, independently of detail I/O.
+export function mailSelectReaderRow(root,id,kind='received'){
+ for(const row of root.querySelectorAll('[data-mail-id],[data-sent-open],[data-directory-message]')){
+  const rowKind=row.dataset.messageKind||(row.dataset.sentOpen?'sent':'received');
+  row.classList.toggle('on',rowKind===kind&&String(row.dataset.mailId??row.dataset.sentOpen??row.dataset.directoryMessage)===String(id));
+ }
+}
+
+export function mailReaderAttachments(files,esc,I,{id,kind='received',time=String}={}){
+ if(!files?.length)return '';
+ const size=value=>!Number.isFinite(value)?'':value<1024?value+' B':value<1048576?Math.max(1,Math.round(value/1024))+' KB':(value/1048576).toFixed(1)+' MB';
+ return '<section class="mail-reader-attachments" aria-label="附件"><h3>附件 <span>'+files.length+'</span></h3><ul>'+files.map(file=>{
+  const name=file.name||'attachment',url=kind==='received'?(file.key?'/api/file?key='+encodeURIComponent(file.key):null):file.url||(file.id?'/api/mail-workspace/assets/'+encodeURIComponent(file.id):null);
+  const metadata=url?size(file.size):file.deleted?'已删除 · '+time(file.deleted_at):file.skipped||'未归档';
+  return '<li class="mail-reader-file'+(url?'':' mail-reader-file-unavailable')+'"><span class="mail-reader-file-icon" aria-hidden="true">'+I.clip+'</span><div class="mail-reader-file-copy"><span class="mail-reader-file-name" title="'+esc(name)+'">'+esc(name)+'</span>'+(metadata?'<small>'+esc(metadata)+'</small>':'')+'</div>'+(url?'<a class="mail-reader-file-download" data-mail-download="'+esc(name)+'" href="'+esc(url)+'" aria-label="下载附件 '+esc(name)+'" title="下载附件">'+I.down+'</a>':'')+(url&&kind==='received'?'<button type="button" class="mail-reader-file-delete" data-att-del="'+esc(file.key)+'" data-id="'+esc(String(id))+'" aria-label="删除附件 '+esc(name)+'" title="删除附件">'+I.trash+'</button>':'')+'</li>';
+ }).join('')+'</ul></section>';
+}
+
 export function mailCanTranslate(mail) {
  const foreign=value=>{const text=String(value||'').slice(0,3000),letters=(text.match(/\p{L}/gu)||[]).length;if(letters<25)return false;const kana=(text.match(/[\u3040-\u30ff\uac00-\ud7af]/g)||[]).length;if(kana/letters>=.05)return true;return (text.match(/[\u4e00-\u9fff]/g)||[]).length/letters<.5};
  return foreign(mail.text_body)||foreign(mail.subject);
@@ -97,4 +115,4 @@ export function showMailContact(trigger,contact){
  trigger.mailContactDispose=installMailContactActions(trigger,mailContactOptions(),true);
 }
 
-export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}
+export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailSelectReaderRow,mailReaderAttachments,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}

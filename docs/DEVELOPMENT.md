@@ -178,3 +178,44 @@ SMTP 由 Gmail 自动保存已发送；回收时按账号、Message-ID 和解析
 ### 验收
 
 `product/test-gmail-sync.py` 与正常 CI 覆盖同一身份多标签、双方状态、快速反向、丢失移动回执、新 revision、跨账号归属、无定位待办隔离、登录后能力以及禁止 EXPUNGE/Sent APPEND；Node 产品回归验证收集器、状态责任和工作区接线。真实验收使用隔离数据库与显式写入 Guard，在写入层限制为既有获准验收信和自用合成草稿，先验证 Guard 进入工作区及状态两条实际路径，禁止其它原件写入。使用真实存储和 SQLite Row 重放“先从 Trash/聚合目录看到旧草稿、从来源只读升级”的迁移；原件存在不能证明 Draft 角色仍在，经过共享缺失确认后留 tombstone，禁止重发旧草稿。分别完成双方已读/星标、删除/恢复、草稿两向更新/丢弃、延迟确认及已发送去重，结束恢复验收信。外发探针仍须单独授权，既有探针不重发。
+
+## Refresh re-entry, reading intent and attachments
+
+A refresh is one operation across all contacts. At the list top its first
+cancellable downward move remains reserved while a request is pending. Repeated
+pulls keep that operation and its waiting position; they neither start another
+request nor settle the existing feedback. Upward pans and an already scrolled
+list retain native scrolling. Completion, failure, cancellation, navigation,
+blur and the next contact are separate lifecycle branches.
+
+The indicator belongs to the active list's stationary content clip, beside its
+translated content, rather than a fixed element positioned using a cached
+viewport coordinate. Cache restoration and list replacement transfer that same
+indicator to the active clip. Header identity and native scroll ownership remain
+unchanged. The header and first content node must both be measured during
+pending re-entry; checking a single completed pull is insufficient.
+
+The list selection acknowledges the latest click synchronously. Received and
+Sent readers use the shared row selector before requesting detail, and retain
+the target through a loading failure and retry. Read/unread remains confirmed
+by its own data operation. A late detail response or failure cannot change a
+newer target. Contacts and draft previews preserve their existing immediate
+selection semantics.
+
+Received, Sent and draft readers share one attachment renderer after the body.
+File name, known size and availability belong together; download is the main
+action and received-file deletion is a separate secondary action using the
+existing confirmation. Long names wrap within the file row; unavailable original
+metadata remains visible without a false download link. Compose upload controls
+keep their editing role.
+
+The maintenance fixture's `/feedback-review` runs controlled slow detail reads,
+rapid target changes, failure/retry, twelve pending refresh contacts, fixed-header
+and local-anchor geometry, and refresh failure/retry. First run against the old
+product, then the exact candidate bundle. Source events establish controller
+ownership; native scrolling and physical Safari input are separate evidence.
+`npm test` covers the native first-move model, pending re-entry, cached clip
+transfer, current-intent selection and the actual delivered icon set.
+
+References: [Ionic refresher lifecycle](https://ionicframework.com/docs/api/refresher)
+and [Gmail's attachment placement](https://support.google.com/mail/answer/30719).

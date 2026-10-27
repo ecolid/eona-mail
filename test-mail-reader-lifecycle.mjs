@@ -3,7 +3,7 @@ import {projectMailRow,projectMailListRow} from './src/mail-reader-preview.js';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {testHooks} from './src/index.js';
-import {mailReaderHeader} from './src/mail-reader-view.js';
+import {mailReaderHeader,mailSelectReaderRow,mailReaderAttachments} from './src/mail-reader-view.js';
 import {mailLoadingMarkup} from './src/mail-loading-view.js';
 import {mailRemoveRows} from './src/mail-list-actions.js';
 
@@ -21,7 +21,7 @@ const open=page.slice(openStart,page.indexOf('(function mailBodyController',open
 const clear=page.slice(page.indexOf('function clearMailReader(){'),page.indexOf('function closeMailReader('));
 function fixture(){
  const requests=[],view={innerHTML:'',dataset:{},querySelectorAll:()=>[]},body={classList:{contains:()=>false,add(){},remove(){}}};
- const context={mailStars:{pending:()=>undefined},addEventListener(){},mailLoadingMarkup,mailResources:{update(){}},mailReaderHeader,mailContactOptions:()=>({}),mailReaderIntent:0,mailActionMenu:null,mailBodyDispose:null,mailContactsDispose:null,setMailSelectionPending(){},installMailContactActions:()=>()=>{},state:{cur:null},matchMedia:()=>({matches:false}),history:{state:null},pushMailReaderHistory(){},location:{href:'https://mail.example.test'},mailDrawer:{close(){}},syncMailReader(){},closeMailReader(){},document:{body,getElementById:()=>view,querySelector:()=>null},$:()=>view,api:url=>new Promise((resolve,reject)=>requests.push({url,resolve,reject})),esc:String,I:{},localTime:String,installMailTextLinks:()=>()=>{},installMailTranslation(){},loadList(){},EonaUI:{bindPopover:()=>({dispose(){}})}};
+ const context={mailSelectReaderRow,mailReaderAttachments,mailStars:{pending:()=>undefined},addEventListener(){},mailLoadingMarkup,mailResources:{update(){}},mailReaderHeader,mailContactOptions:()=>({}),mailReaderIntent:0,mailActionMenu:null,mailBodyDispose:null,mailContactsDispose:null,setMailSelectionPending(){},installMailContactActions:()=>()=>{},state:{cur:null},matchMedia:()=>({matches:false}),history:{state:null},pushMailReaderHistory(){},location:{href:'https://mail.example.test'},mailDrawer:{close(){}},syncMailReader(){},closeMailReader(){},document:{body,getElementById:()=>view,querySelector:()=>null},$:()=>view,api:url=>new Promise((resolve,reject)=>requests.push({url,resolve,reject})),esc:String,I:{},localTime:String,installMailTextLinks:()=>()=>{},installMailTranslation(){},loadList(){},EonaUI:{bindPopover:()=>({dispose(){}})}};
  context.window=context;vm.createContext(context);vm.runInContext(clear+open,context);
  return {context,requests,view,open:id=>vm.runInContext('openMail('+JSON.stringify(id)+')',context),clear:()=>vm.runInContext('clearMailReader()',context)};
 }
@@ -57,6 +57,15 @@ test('sent readers share the same history and return path, including pending fai
  const loading=c.openMailSent('sent-1');assert(s.classes.has('viewing'));assert.deepEqual(s.events,[['push','sent','sent-1']]);
  s.back();assert.equal(c.state.sentSelected,null);s.requests[0].reject(Error('offline'));await loading;assert.equal(s.classes.has('viewing'),false);assert.deepEqual(s.events.at(-1),['back',false]);
  s.view.dataset.sentID='sent-1';await c.openMailSent('sent-1');assert(s.classes.has('viewing'));s.back();assert.equal(c.state.sentSelected,null);
+});
+
+test('Sent selection precedes detail I/O and a superseded failure cannot clear the new detail identity',async()=>{
+ const s=fixture(),c=s.context,rows=['s1','s2'].map(id=>{const row={dataset:{sentOpen:id},selected:false};row.classList={toggle(_name,value){row.selected=value}};return row});
+ const list={querySelectorAll:()=>rows};c.state.folder='sent';c.sentDispose=null;c.data={sent:[]};c.api.peek=()=>null;c.document.getElementById=id=>id==='list'?list:s.view;
+ const sent=page.slice(page.indexOf('window.openMailSent=async'),page.indexOf(' const update=()=>{',page.indexOf('window.openMailSent=async')));vm.runInContext(sent,c);
+ const first=c.openMailSent('s1');assert(rows[0].selected);const second=c.openMailSent('s2');assert(rows[1].selected);assert(!rows[0].selected);
+ s.requests[0].reject(Error('old failure'));await first;assert.equal(s.view.dataset.sentID,'s2');assert(rows[1].selected);
+ s.requests[1].reject(Error('current failure'));await second;assert(rows[1].selected);assert.match(s.view.innerHTML,/current failure/);
 });
 test('native browser history restores the correct inbox or sent reader without another push',()=>{
  const handlers={},actions=[],c={window:{addEventListener(type,handler){handlers[type]=handler}},openMail:(...args)=>actions.push(['inbox',...args]),openMailSent:(...args)=>actions.push(['sent',...args]),closeMailReader:()=>actions.push(['list'])};vm.createContext(c);
@@ -119,4 +128,16 @@ test('mobile return freezes its outgoing content while cleanup cannot overwrite 
  s.context.mailBodyDispose=Object.assign(()=>events.push('dispose'),{suspend:()=>events.push('suspend')});s.clear();assert.deepEqual(events,['suspend']);assert.equal(s.view.innerHTML,content);
  const second=s.open('2');s.requests[1].resolve(mail(2));await second;pending.shift()();assert.deepEqual(events,['suspend','dispose']);assert.match(s.view.innerHTML,/Mail 2/);
  s.clear();pending.shift()();assert.match(s.view.innerHTML,/选择一封邮件/);
+});
+
+
+test('desktop selection commits before I/O and survives failure, retry and a late old response',async()=>{
+ const s=fixture();
+ const rows=['1','2'].map(id=>{const r={dataset:{mailId:id},selected:false};r.classList={toggle(_name,value){r.selected=value},remove(){}};return r});
+ const list={querySelectorAll:()=>rows};s.context.$=selector=>selector==='#list'?list:s.view;
+ const first=s.open('1');assert(rows[0].selected);assert(!rows[1].selected);
+ const second=s.open('2');assert(!rows[0].selected);assert(rows[1].selected);
+ s.requests[1].reject(Error('offline'));await second;assert(rows[1].selected);assert.match(s.view.innerHTML,/重试/);
+ s.requests[0].resolve(mail(1));await first;assert(rows[1].selected);assert.match(s.view.innerHTML,/重试/);
+ const retry=s.open('2');assert(rows[1].selected);s.requests[2].resolve(mail(2));await retry;assert(rows[1].selected);
 });
