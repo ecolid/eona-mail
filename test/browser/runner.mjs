@@ -12,6 +12,7 @@ export async function prepare(page,scenario,width=390,dark=false){
   else await page.setViewportSize({width,height:800});
   if(dark)await target.evaluate(()=>window.EonaUI.setAppearance('dark'));
   await target.evaluate(()=>document.fonts.ready);
+  await target.evaluate(()=>{document.documentElement.dataset.mailInputModel=JSON.stringify(window.MailReviewInput||{})});
   return target;
 }
 export async function run(page,scenario){

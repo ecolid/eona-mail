@@ -7,7 +7,7 @@ for(const scenario of scenarios.filter(s=>!s.performance)){
     // Other scenarios retain a trace on failure; performance records raw JSON.
 
     await prepare(page,scenario);
-    const value=await run(page,scenario);await evidence(info,value);
+    const value=await run(page,scenario);value.inputModel=await page.frames().find(f=>f.parentFrame())?.evaluate(()=>window.MailReviewInput)||await page.evaluate(()=>window.MailReviewInput);await evidence(info,value);
     validateEvidence(value,process.env.GITHUB_SHA);
   });
 }
@@ -34,3 +34,16 @@ test('first-native-scroll-after-return',async({page},info)=>{
   await row.click();await expect(target.locator('#app')).toHaveAttribute('data-mail-reader-phase','active');
 });
 
+
+test('reduced-motion-return-and-next-input',async({page},info)=>{
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const target=await prepare(page,{port:8793,path:'/preview?width=390&height=800'});
+  await target.locator('#list .mail-open').first().click();
+  await expect(target.locator('#app')).toHaveAttribute('data-mail-reader-phase','active');
+  await target.evaluate(()=>window.returnToMailList());
+  await expect(target.locator('#app')).toHaveAttribute('data-mail-reader-phase','list');
+  const state=await target.evaluate(()=>({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,animations:document.getElementById('mail-reader-page').getAnimations().filter(a=>a.playState==='running').length,renderBoxes:document.getElementById('mail-reader-page').getClientRects().length}));
+  await evidence(info,state);expect(state.reduced).toBe(true);expect(state.animations).toBe(0);expect(state.renderBoxes).toBe(0);
+  await target.locator('#mail-list-scroll').hover({position:{x:190,y:160}});await page.mouse.wheel(0,240);
+  await expect.poll(()=>target.locator('#mail-list-scroll').evaluate(n=>n.scrollTop)).toBeGreaterThan(0);
+});

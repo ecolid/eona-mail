@@ -23,7 +23,10 @@ const sourceFiles=release?Object.keys(release.files):ownGit?git('ls-files','--ca
 const files=Object.fromEntries(sourceFiles.map(file=>[file,createHash('sha256').update(readFileSync(join(productRoot,file))).digest('hex')]));
 if(release&&sourceFiles.some(file=>release.files[file]!==files[file]))throw Error('Mail fixture source differs from its release manifest');
 const sourceBinding={sourceCommit:ownGit?git('rev-parse','HEAD'):release?.sourceCommit||null,workingTree:ownGit?!!git('status','--porcelain'):null,manifestVerified:!!release,files};
-const sourceProbe='<script>window.addEventListener("error",event=>{document.documentElement.dataset.mailReviewError=String(event.error?.stack||event.message)});document.documentElement.dataset.mailReviewSource='+JSON.stringify(JSON.stringify(sourceBinding))+';</script>';
+// WebKit desktop does not expose constructible Touch objects. These source-event
+// scenarios use an explicitly labelled Event model there; trusted wheel stays native.
+const touchCompatibility=`(()=>{let constructible=false;try{new Touch({identifier:1,target:document.documentElement,clientX:0,clientY:0});constructible=true}catch{}window.MailReviewInput={method:'synthetic-source-events',nativeTouchConstructor:constructible};if(!constructible){window.Touch=class{constructor(init){Object.assign(this,init)}};window.TouchEvent=class extends Event{constructor(type,init={}){super(type,init);for(const key of ['touches','targetTouches','changedTouches'])Object.defineProperty(this,key,{value:init[key]||[]})}}}})();`;
+const sourceProbe='<script>'+touchCompatibility+'window.addEventListener("error",event=>{document.documentElement.dataset.mailReviewError=String(event.error?.stack||event.message)});document.documentElement.dataset.mailReviewSource='+JSON.stringify(JSON.stringify(sourceBinding))+';</script>';
 const db=new SQLiteD1(':memory:');db.db.exec(readFileSync(join(productRoot,'schema.sql'),'utf8'));await initializeMailWorkspace(db);
 db.db.prepare("INSERT INTO mailbox_routes(mailbox,alias) VALUES('owner@example.test','owner@eona.top')").run();
 for(let i=1;i<Number(process.env.MAIL_FIXTURE_ACCOUNTS||1);i++)db.db.prepare('INSERT INTO mailbox_routes(mailbox,alias) VALUES(?,?)').run('account'+i+'@example.test','account'+i+'@eona.top');

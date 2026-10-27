@@ -25,7 +25,7 @@ export function validateEvidence(value,expectedCommit){
   if(value.error||!(value.status==='passed'||value.pass===true))throw Error('browser_scenario_failed: '+JSON.stringify(value));
   if(!value.source?.sourceCommit||expectedCommit&&value.source.sourceCommit!==expectedCommit)throw Error('browser_source_mismatch');
   if(!value.source.manifestVerified||value.source.workingTree)throw Error('browser_requires_verified_release');
-  const assertions=value.checks||value.cases||value.items;
+  const assertions=value.checks||value.cases||value.items||value.cycles;
   if(!assertions||Object.keys(assertions).length===0)throw Error('empty_browser_assertions');
   if(value.checks&&Object.values(value.checks).some(v=>v===false))throw Error('browser_assertion_failed');
   return value;
