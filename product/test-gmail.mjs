@@ -26,6 +26,19 @@ test('Gmail aggregate-first intake preserves Sent, one logical mail and all orig
  for(const [folder,uids] of [['All',['1']],['Sent',['7']],['INBOX',[]],['Drafts',[]],['Trash',[]]])await sourceHealthAPI('/internal/product/source-coverage',{account:'google',folder,validity:'1',uids},store,c);
  assert.equal((await sourceHealth(store.db,c)).accounts[0].coverage,'complete');assert.equal(publicAccounts(c)[0].send,false);assert.equal(publicAccounts(c)[0].sync,false);
 });
+test('full Gmail sync queues local state, retains full-folder coverage and leaves draft revision ownership to the workspace',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'mail-gmail-full-')),input=config(root);input.accounts=[{...account,sync:{enabled:true}}];const c=validateConfig(input),store=await openStore(c);t.after(async()=>{store.close();await rm(root,{recursive:true,force:true});});
+ await sourceHealthAPI('/internal/product/source-inventory',{account:'google',state:'connected',folders},store,c);
+ const mail=await store.ingest(raw('incoming'),source('INBOX',1,'100',[]));
+ await store.ingest(raw('sent'),source('All',2,'101',['\\Sent']));await store.ingest(raw('sent'),source('Sent',3,'101',[]));
+ await store.ingest(raw('draft'),source('Drafts',4,'102',[]));
+ assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM mail_outbox').first()).n,1);
+ assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM mail_drafts').first()).n,0,'the workspace owns editable draft revisions');
+ await store.db.prepare('UPDATE emails SET is_read=1,is_starred=1 WHERE id=?').bind(mail.id).run();assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM product_state_intents').first()).n,1);
+ await store.db.prepare("INSERT INTO product_source_status(account,folder,state,checked_at) VALUES('google','Sent','ok','now')").run();
+ const again=await openStore(c);assert.equal((await again.db.prepare("SELECT COUNT(*) n FROM product_source_status WHERE account='google' AND folder='Sent'").first()).n,1);again.close();
+ assert.equal(publicAccounts(c)[0].sync,true);
+});
 test('self-sent Inbox is in both Inbox and Sent; a new message alerts once across Gmail label copies',async t=>{
  const {store}=await fixture(t);let arrivals=0;store.env.MAIL_SOURCE_ARRIVAL=async()=>{arrivals++;};
  const message=raw('self','owner@example.test'),labels=['\\Inbox','\\Sent','\\Starred','Projects (2026)'];
@@ -45,7 +58,7 @@ test('historical labels do not become new arrivals; missing metadata and receive
  await store.ingest(raw('old'),source('All',1,'100',['\\Inbox']));
  await store.ingest(raw('old'),source('INBOX',2,'100',['\\Inbox'],{historical:false}));assert.equal(arrivals,0);
  await assert.rejects(()=>store.ingest(raw('missing'),{...source('All',3,'101',[]),gmail:null}),/gmail_metadata_invalid/);
- const bad=config('/tmp/gmail-invalid');assert.throws(()=>validateConfig({...bad,accounts:[{...account,sync:{enabled:true}}]}),/external_sync_forbidden/);
+ const bad=config('/tmp/gmail-invalid');assert.equal(publicAccounts(validateConfig({...bad,accounts:[{...account,sync:{enabled:true}}]}))[0].sync,true);
  assert.equal(publicAccounts(validateConfig({...bad,accounts:[{...account,smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}]}))[0].send,true);
  await store.db.prepare("INSERT INTO product_source_status(account,folder,state,checked_at) VALUES('google','Sent','ok','now')").run();
  const again=await openStore(c);assert.equal((await again.db.prepare("SELECT COUNT(*) n FROM product_source_status WHERE account='google' AND folder='Sent'").first()).n,1);again.close();

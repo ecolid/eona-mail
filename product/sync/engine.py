@@ -173,6 +173,20 @@ class Sync:
         self.db.execute('INSERT INTO mail_sync_drafts VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(owner,id) DO UPDATE SET account=excluded.account,base_rev=excluded.base_rev,content_hash=excluded.content_hash,state=excluded.state,conflict_of=CASE WHEN excluded.conflict_of<>\'\' THEN excluded.conflict_of ELSE mail_sync_drafts.conflict_of END,updated_at=excluded.updated_at',(self.owner,id,account,sync_id(self.owner,'draft',id),rev,fp,state,conflict,now()))
     def adopt(self):
         with self.db:self.db.execute('DELETE FROM mail_draft_editors WHERE expires_at<=?',(int(time.time()),))
+        # Upgrade previously receive-only Gmail draft projections in place.
+        # Their stable Gmail identity must not become a second local/remote draft.
+        if self.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_gmail_copies'"):
+            for account in self.accounts.values():
+                if getattr(account,'config',{}).get('imap',{}).get('provider')!='gmail':continue
+                copies=self.all("SELECT c.*,g.message_id AS gmail_id FROM product_source_copies c JOIN product_gmail_copies g USING(account,folder,validity,uid) WHERE c.account=? AND c.kind='drafts'",(account.key,))
+                for copy in copies:
+                    id='source-'+digest(json.dumps([account.key,'gmail',copy['gmail_id'],'drafts'],separators=(',',':')))[:48]
+                    row=self.draft(id)
+                    if not row or self.entity(id):continue
+                    raw=unpack(self.root,copy['raw_key']);p,files,mid,when,fp=parse(raw,account,kind='draft')
+                    with self.db:
+                        self.remember(account.key,'draft',{**dict(copy),'message_id':mid},id,raw,fp)
+                        self.entity_save(id,account.key,row['rev'],fp)
         # Existing one-time import cursors become reconciliation baselines, not new copies.
         for kind,table in [('sent','mail_sent_sources'),('draft','mail_draft_sources')]:
             for r in self.all('SELECT * FROM '+table+' WHERE owner=?',(self.owner,)):
@@ -310,6 +324,10 @@ class Sync:
         return copy
     def retire(self,account,remote,copy):
         if copy['removed']:return
+        if hasattr(remote,'retire_recoverable'):
+            remote.retire_recoverable(copy)
+            with self.db:self.db.execute('UPDATE mail_sync_copies SET removed=1 WHERE owner=? AND account=? AND kind=? AND folder=? AND validity=? AND uid=?',(self.owner,account.key,copy['kind'],copy['folder'],copy['validity'],copy['uid']))
+            return
         backup_id='retire-'+digest('\0'.join(str(copy[k]) for k in ['account','kind','folder','validity','uid','raw_sha']))
         original=unpack(self.root,copy['raw_key'])
         self.append(account,remote,'backup',backup_id,1,lambda op:stamp_headers(original,sync_id(self.owner,copy['kind'],copy['record_id']),op,'backup'),remote.folders('backup')[0])
@@ -402,6 +420,9 @@ class Sync:
             if (c['folder'],c['validity'],c['uid']) not in present and self.missing(remote,c):
                 with self.db:self.db.execute("UPDATE mail_sync_copies SET removed=1 WHERE owner=? AND account=? AND kind='sent' AND folder=? AND validity=? AND uid=?",(self.owner,account.key,c['folder'],c['validity'],c['uid']))
     def push_sent(self,account,remote):
+        # Gmail SMTP owns its Sent copy. A missing/late source receipt is a
+        # reconciliation responsibility, never permission to append a second.
+        if getattr(remote,'smtp_saves_sent',False):return
         for row in self.all("SELECT * FROM mail_outbox WHERE owner=? AND state IN ('sent','partial') AND json_extract(payload_json,'$.from_id')=?",(self.owner,account.key)):
             copies=self.copies('sent',row['id'],account.key);p=json.loads(row['payload_json'])
             if not copies and not p.get('source') and not self.copies('sent',row['id'],account.key,all=True):

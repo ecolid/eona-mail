@@ -7,6 +7,17 @@ class Connection:
  def select(self,name,readonly):self.selected.append((name,readonly));return 'OK',[b'0']
  def response(self,key):return key,[b'42']
 class FolderCompatibility(unittest.TestCase):
+ def test_gmail_scope_guard_factory_owns_every_workspace_and_state_effect(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=pathlib.Path(directory);db=sqlite3.connect(root/'mail.db');db.execute('CREATE TABLE product_meta(id INTEGER PRIMARY KEY,owner TEXT,mode TEXT)');db.execute("INSERT INTO product_meta VALUES(1,'owner','personal')");db.commit();db.close()
+   settings={'host':'imap.gmail.com','port':993,'user':'owner@example.test','provider':'gmail','password_env':'TEST_PASSWORD','folders':[{'name':'INBOX','kind':'inbox'}]}
+   c={'mode':'personal','sync':{'enabled':True},'owner':{'id':'owner'},'data_root':str(root),'accounts':[{'id':'google','address':'owner@example.test','imap':settings}]}
+   connection=Connection();connection.login=lambda *_:None;connection.logout=lambda:None;guard=object();seen=[]
+   def factory(remote):seen.append(remote);return guard
+   with patch.object(worker.core,'Sync') as engine,patch.object(worker.gmail,'GmailStateSync') as states:
+    engine.return_value.account.return_value={'account':'google','state':'ok'};states.return_value.push.return_value=[];states.return_value.complete.return_value=[]
+    self.assertEqual(worker.run_once(c,{'TEST_PASSWORD':'test'},connect=lambda *a,**kw:connection,gmail_remote_factory=factory),[{'account':'google','state':'ok'}])
+    self.assertEqual(len(seen),1);self.assertIs(engine.return_value.account.call_args.args[1],guard);self.assertIs(states.return_value.observe.call_args.args[1],guard);self.assertIs(states.return_value.push.call_args.args[1],guard)
  def test_receive_only_account_cannot_open_the_write_capable_workspace_connection(self):
   with tempfile.TemporaryDirectory() as directory:
    root=pathlib.Path(directory);db=sqlite3.connect(root/'mail.db');db.execute('CREATE TABLE product_meta(id INTEGER PRIMARY KEY,owner TEXT,mode TEXT)');db.execute("INSERT INTO product_meta VALUES(1,'owner','personal')");db.commit();db.close()

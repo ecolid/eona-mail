@@ -27,6 +27,7 @@ jobs:
       - run: python3 product/test-source-inventory.py
       - run: python3 product/test-state-sync.py
       - run: python3 product/test-workspace-folders.py
+      - run: python3 product/test-gmail-sync.py
       - run: python3 scripts/test-follow.py
       - run: node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
       - run: cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs

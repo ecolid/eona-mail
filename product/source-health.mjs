@@ -18,7 +18,8 @@ export async function sourceHealth(db,config,{clock=Date.now}={}){
   rows.push(...orphaned.map(s=>({name:s.folder,kind:'archive',state:'incomplete',remote_count:null,archived_count:null,missing_count:JSON.parse(s.gaps_json).length,checked_at:s.checked_at,error:'source_directory_removed'})));
   accounts.push({id:account.id,address:account.address,discovery:account.imap.discovery||'configured',connection:!fresh?'stale':inventory.state,checked_at:inventory?.checked_at||null,last_success:inventory?.last_success||null,error:inventory?.error||'',coverage:!fresh||rows.some(f=>f.state==='stale')?'stale':inventory.state!=='connected'||rows.some(f=>f.state==='error')?'error':rows.some(f=>f.state==='incomplete')?'incomplete':'complete',folders:rows});
  }
- return {checked_at:stamp(clock),accounts};
+ const unlocated=config.sync?.enabled?(await db.prepare("SELECT COUNT(*) n FROM product_state_intents i WHERE i.state<>'confirmed' AND NOT EXISTS(SELECT 1 FROM product_source_copies c WHERE c.email_id=i.email_id)").first()).n:null;
+ return {checked_at:stamp(clock),accounts,unlocated_state_changes:unlocated};
 }
 export async function sourceHealthAPI(path,body,store,config,{clock=Date.now}={}){
  const account=config.accounts.find(a=>a.id===body.account);if(!account?.imap)throw Error('source_account_invalid');

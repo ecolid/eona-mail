@@ -27,7 +27,6 @@ export function validateConfig(input,{base=process.cwd()}={}){
   }
   for(const account of accounts)if(account.imap?.provider!==undefined){
     if(account.imap.provider!=='gmail'||account.imap.host!=='imap.gmail.com')throw Error('product_imap_provider_invalid');
-    if(account.sync?.enabled!==false)throw Error('product_gmail_external_sync_forbidden');
   }
   if(accounts.some(a=>a.imap&&a.imap.discovery!==undefined&&!['configured','all'].includes(a.imap.discovery)))throw Error('product_discovery_invalid');
   if(input.sync!==undefined&&(!input.sync||typeof input.sync.enabled!=='boolean'))throw Error('product_sync_invalid');

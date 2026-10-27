@@ -51,7 +51,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       const readonly=config.accounts.filter(a=>a.imap&&!accountSyncEnabled(config,a)).map(a=>a.id);
       await db.batch([db.prepare('DELETE FROM product_receive_only_accounts'+(readonly.length?' WHERE account NOT IN ('+readonly.map(()=>'?').join(',')+')':'')).bind(...readonly),...readonly.map(id=>db.prepare('INSERT OR IGNORE INTO product_receive_only_accounts VALUES(?)').bind(id))]);
     }
-    for(const account of config.accounts.filter(a=>accountSyncEnabled(config,a)))for(const folder of account.imap?.folders||[])if(['sent','drafts'].includes(folder.kind))await db.prepare('DELETE FROM product_source_status WHERE account=? AND folder=?').bind(account.id,folder.name).run();
+    for(const account of config.accounts.filter(a=>accountSyncEnabled(config,a)&&a.imap?.provider!=='gmail'))for(const folder of account.imap?.folders||[])if(['sent','drafts'].includes(folder.kind))await db.prepare('DELETE FROM product_source_status WHERE account=? AND folder=?').bind(account.id,folder.name).run();
     await initializeSourceHealth(db);await initializeServiceAPI(db);
     const jobs=await openJobs(db,{clock});
     let chain=Promise.resolve();
@@ -92,7 +92,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       // create the durable responsibility. Unique job keys prevent replay.
       if(config.ai)commands.push(jobs.statement('classify',result.emailId));
       if(config.notifications&&projection.kind==='inbox'&&!input.historical&&firstGmailCopy)commands.push(jobs.statement('notify',result.emailId));
-      if(!accountSyncEnabled(config,account))commands.push(...await sourceProjection(db,objects,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt,gmail?identity:null));
+      if(!accountSyncEnabled(config,account)||gmail?.workspaceKind==='sent')commands.push(...await sourceProjection(db,objects,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt,gmail?identity:null));
       // Complete the adapter's durable incoming responsibility before the
       // source proof/cursor can commit. A failed handoff is safely retried.
       if(projection.kind==='inbox'&&!input.historical&&firstGmailCopy&&env.MAIL_SOURCE_ARRIVAL)await env.MAIL_SOURCE_ARRIVAL(result.emailId);

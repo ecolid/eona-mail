@@ -140,7 +140,7 @@ def run_once(config,credentials,api,connect=imaplib.IMAP4_SSL):
                 except (ValueError,KeyError):last_audit=0
                 audit=time.time()-last_audit>=240
                 try:
-                    if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and folder['kind'] in ['sent','drafts']:
+                    if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and settings.get('provider')!='gmail' and folder['kind'] in ['sent','drafts']:
                         if audit:
                             status,_=client.select('"'+protocol.modified_utf7(folder['name']).replace('\\','\\\\').replace('"','\\"')+'"',readonly=True)
                             if status!='OK':raise RuntimeError('source_folder_unavailable')
@@ -154,7 +154,7 @@ def run_once(config,credentials,api,connect=imaplib.IMAP4_SSL):
         except Exception:
             api.call('/internal/product/source-inventory',{'account':account['id'],'state':'error','folders':[]})
             for folder in settings['folders']:
-                if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and folder['kind'] in ['sent','drafts']:continue
+                if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and settings.get('provider')!='gmail' and folder['kind'] in ['sent','drafts']:continue
                 old=previous.get((account['id'],folder['name']),{})
                 state={'account':account['id'],'folder':folder['name'],'validity':old.get('validity',''),'last_uid':old.get('last_uid',0),'backfill_cursor':old.get('backfill_cursor',0),'backfill_until':old.get('backfill_until',0),'state':'error','gaps':old.get('gaps',json.loads(old.get('gaps_json','[]')))}
                 api.call('/internal/product/source-status',state)

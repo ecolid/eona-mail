@@ -19,6 +19,9 @@ def op_id(copy, revision):
     value = json.dumps([proof(copy), revision], sort_keys=True)
     return hashlib.sha256(value.encode()).hexdigest()
 
+def gmail_op_id(account, message_id, revision):
+    return hashlib.sha256(json.dumps([account,'gmail',message_id,revision]).encode()).hexdigest()
+
 
 class Unknown(RuntimeError):
     pass
@@ -157,12 +160,20 @@ class StateSync:
                 self.db.execute("UPDATE product_state_intents SET state='unknown',error=? WHERE email_id=? AND revision=?", (code, op['email_id'], op['revision']))
             errors.append(code)
 
-    def complete(self):
+    def complete(self, account=None):
         pending = []
         for row in self.rows("SELECT * FROM product_state_intents WHERE state<>'confirmed'"):
-            copies = self.rows("SELECT c.* FROM product_source_copies c JOIN product_copy_state s USING(account,folder,validity,uid) WHERE c.email_id=? AND s.present=1 AND c.kind NOT IN ('sent','drafts')", (row['email_id'],))
+            # An unattributed forwarded original remains durable until a source
+            # proof arrives; it cannot make every unrelated account look failed.
+            if account is not None and not self.db.execute('SELECT 1 FROM product_source_copies WHERE email_id=? AND account=?', (row['email_id'],account)).fetchone():
+                continue
+            copies = self.rows("SELECT c.* FROM product_source_copies c JOIN product_copy_state s USING(account,folder,validity,uid) WHERE c.email_id=? AND s.present=1 AND c.kind NOT IN ('sent','drafts') AND c.account NOT IN (SELECT account FROM product_receive_only_accounts)", (row['email_id'],))
+            gmail = self.rows('SELECT DISTINCT g.account,g.message_id FROM product_gmail_copies g JOIN product_source_copies c USING(account,folder,validity,uid) WHERE c.email_id=? AND g.account NOT IN (SELECT account FROM product_receive_only_accounts)', (row['email_id'],)) if self.db.execute("SELECT 1 FROM sqlite_master WHERE name='product_gmail_copies'").fetchone() else []
+            gmail_accounts={g['account'] for g in gmail}
+            copies=[c for c in copies if c['account'] not in gmail_accounts]
             unfinished = self.db.execute("SELECT 1 FROM product_state_ops WHERE email_id=? AND state<>'confirmed'", (row['email_id'],)).fetchone()
-            if copies and not unfinished and all(self.db.execute("SELECT 1 FROM product_state_ops WHERE id=? AND state='confirmed'", (op_id(copy, row['revision']),)).fetchone() for copy in copies):
+            keys=[op_id(copy,row['revision']) for copy in copies]+[gmail_op_id(g['account'],g['message_id'],row['revision']) for g in gmail]
+            if keys and not unfinished and all(self.db.execute("SELECT 1 FROM product_state_ops WHERE id=? AND state='confirmed'", (key,)).fetchone() for key in keys):
                 with self.db:
                     self.db.execute("UPDATE product_state_intents SET state='confirmed',error='' WHERE email_id=? AND revision=?", (row['email_id'], row['revision']))
             else:

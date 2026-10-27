@@ -1,4 +1,4 @@
-"""Gmail immutable identity and label parsing for receive-only IMAP intake."""
+"""Gmail immutable identity and labels shared by intake and reconciliation."""
 import re
 
 def metadata(header, decode):

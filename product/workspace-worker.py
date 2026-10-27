@@ -9,6 +9,7 @@ spec=importlib.util.spec_from_file_location('mail_product_sync',HERE/'sync/engin
 state_spec=importlib.util.spec_from_file_location('mail_state_sync',HERE/'state-worker.py');state=importlib.util.module_from_spec(state_spec);state_spec.loader.exec_module(state)
 protocol_spec=importlib.util.spec_from_file_location('mail_imap_protocol',HERE/'imap-protocol.py');protocol=importlib.util.module_from_spec(protocol_spec);protocol_spec.loader.exec_module(protocol)
 modified_utf7=protocol.modified_utf7
+gmail_spec=importlib.util.spec_from_file_location('mail_gmail_sync',HERE/'gmail-sync.py');gmail=importlib.util.module_from_spec(gmail_spec);gmail_spec.loader.exec_module(gmail)
 class Remote(core.IMAP):
     def __init__(self,connection,root,folders):
         super().__init__(connection,lambda x:x,root);self.configured=folders
@@ -26,7 +27,7 @@ class Remote(core.IMAP):
         if role=='trash' and len(found)!=1:raise RuntimeError('trash_folder_not_identified')
         return [self.encode(name) for name in found]
 
-def run_once(config,credentials,connect=imaplib.IMAP4_SSL):
+def run_once(config,credentials,connect=imaplib.IMAP4_SSL,gmail_remote_factory=gmail.GmailRemote):
     if config.get('mode')!='personal' or not config.get('sync',{}).get('enabled'):raise ValueError('product_sync_not_enabled')
     root=pathlib.Path(config['data_root']);db=sqlite3.connect(root/'mail.db',timeout=30)
     identity=db.execute('SELECT owner,mode FROM product_meta WHERE id=1').fetchone()
@@ -49,16 +50,22 @@ def run_once(config,credentials,connect=imaplib.IMAP4_SSL):
                         if row:
                             folders=list({f['name']:f for f in [*folders,*json.loads(row[0])]}.values())
                             discovered=row[1]=='connected' and time.time()-datetime.datetime.fromisoformat(row[2].replace('Z','+00:00')).timestamp()<300
-                    remote=Remote(connection,root/'objects',folders);report=engine.account(account,remote)
-                    states=state.StateSync(db,root/'objects',core.unpack);states.observe(account.key,state.IMAPState(remote),folders,discovered=discovered);errors=states.push(account.key,state.IMAPState(remote),folders);pending=states.complete()
+                    remote=Remote(connection,root/'objects',folders)
+                    is_gmail=imap.get('provider')=='gmail'
+                    if is_gmail:remote=gmail_remote_factory(remote)
+                    report=engine.account(account,remote)
+                    states=(gmail.GmailStateSync if is_gmail else state.StateSync)(db,root/'objects',core.unpack)
+                    state_remote=remote if is_gmail else state.IMAPState(remote)
+                    states.observe(account.key,state_remote,folders,discovered=discovered);errors=states.push(account.key,state_remote,folders);pending=states.complete(account.key)
                     if errors or pending:
                         code=errors[0] if errors else 'state_operation_pending'
                         report={'account':account.key,'state':'error','error':code}
                         with db:db.execute("UPDATE mail_sync_status SET state='error',error=? WHERE owner=? AND account=?",(code,config['owner']['id'],account.key))
                     reports.append(report)
-                except Exception:
-                    with db:db.execute("INSERT INTO mail_sync_status VALUES(?,?,'error',?,'','source_unavailable') ON CONFLICT(owner,account) DO UPDATE SET state='error',checked_at=excluded.checked_at,error=excluded.error",(config['owner']['id'],account.key,core.now()))
-                    reports.append({'account':account.key,'state':'error','error':'source_unavailable'})
+                except Exception as error:
+                    code=str(error) if isinstance(error,RuntimeError) and __import__('re').fullmatch('[a-z_]+',str(error)) else 'source_unavailable'
+                    with db:db.execute("INSERT INTO mail_sync_status VALUES(?,?,'error',?,'',?) ON CONFLICT(owner,account) DO UPDATE SET state='error',checked_at=excluded.checked_at,error=excluded.error",(config['owner']['id'],account.key,core.now(),code))
+                    reports.append({'account':account.key,'state':'error','error':code})
                 finally:
                     if connection:
                         with contextlib.suppress(Exception):connection.logout()
