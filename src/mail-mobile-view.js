@@ -119,12 +119,13 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
   const rect=navigation.getBoundingClientRect();if(!rect.width)return;clearDrawer();settleReader();if(!refreshing&&root.dataset.mailPull)settlePull();
   const atTop=!ancestors(target,n=>n.scrollTop>0),now=win.performance.now();if(!root.dataset.mailPull)indicator.style.setProperty('--mail-pull-top',pullSurface.top()+'px');
   const readerRect=current==='reader'?reader?.getBoundingClientRect():null;
-  tracking={x:point.clientX,y:point.clientY,dx:0,dy:0,at:now,lastAt:now,lastX:point.clientX,velocity:0,mode:current,pull:atTop&&!refreshing&&canRefresh(),intent:'',width:current==='reader'?(readerRect?.width||width):rect.width,readerStart:Math.max(0,readerRect?.left||0),start:clamp(rect.right/rect.width),progress:clamp(rect.right/rect.width)};
+  const tap=current==='list'?(target.closest('.mail-open,#list .mail-directory-row,#list .mail-workspace-mail')||target.closest('#list .mail')?.querySelector('.mail-open')):null;
+  tracking={tap,maxTravel:0,x:point.clientX,y:point.clientY,dx:0,dy:0,at:now,lastAt:now,lastX:point.clientX,velocity:0,mode:current,pull:atTop&&!refreshing&&canRefresh(),intent:'',width:current==='reader'?(readerRect?.width||width):rect.width,readerStart:Math.max(0,readerRect?.left||0),start:clamp(rect.right/rect.width),progress:clamp(rect.right/rect.width)};
  },{passive:true,signal});
  root.addEventListener('touchmove',event=>{
   if(listActions?.move(event)){tracking=null;clearPaint();ownedTouch=true;return}
   const t=tracking;if(!t)return;if(event.touches.length!==1||selected()||mode()!==t.mode){reset();return}
-  const point=event.touches[0],now=win.performance.now();t.velocity=(point.clientX-t.lastX)/Math.max(1,now-t.lastAt);t.lastX=point.clientX;t.lastAt=now;t.dx=point.clientX-t.x;t.dy=point.clientY-t.y;
+  const point=event.touches[0],now=win.performance.now();t.velocity=(point.clientX-t.lastX)/Math.max(1,now-t.lastAt);t.lastX=point.clientX;t.lastAt=now;t.dx=point.clientX-t.x;t.dy=point.clientY-t.y;t.maxTravel=Math.max(t.maxTravel,Math.hypot(t.dx,t.dy));
   // At the list top, the first small downward pan is the refresh stream.
   // Waiting16px can hand that only cancellable move to native scrolling.
   if(!t.intent)t.intent=t.pull&&t.dy>0&&t.dy>Math.abs(t.dx)*1.2?'refresh':mailGestureIntent(t.dx,t.dy,t.mode,t.pull);
@@ -140,6 +141,12 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
   if(mode()!==t.mode||selected()){reset();return}tracking=null;flushPaint();
   if(t.intent&&event.cancelable)event.preventDefault();
   if(t.intent==='refresh'){
+   // Reserving iOS's first cancellable move is not yet a deliberate pull.
+   // Complete a tap-sized contact on its original primary row exactly once;
+   // the consumed stream's compatibility click remains suppressed.
+   const end=event.changedTouches?.[0],x=end?.clientX??t.x+t.dx,y=end?.clientY??t.y+t.dy;
+   const travel=Math.max(t.maxTravel,Math.hypot(x-t.x,y-t.y)),hit=doc.elementFromPoint?.(x,y);
+   if(travel<8&&t.tap?.isConnected&&!t.tap.disabled&&!doc.querySelector('dialog[open],:popover-open')&&(hit===t.tap||t.tap.contains(hit))){clearPull();t.tap.click();return}
    if(t.dy<80||t.dy<Math.abs(t.dx)*1.4){settlePull();return}
    // Commit the dragged position before easing both content and indicator to
    // the same waiting slot. Their return uses the same geometry and duration.

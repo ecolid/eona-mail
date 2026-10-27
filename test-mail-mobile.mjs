@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {bindMailMobileGestures,mailGestureIntent} from './src/mail-mobile-view.js';
 import {mailLoadingMarkup} from './src/mail-loading-view.js';
 
-function fixture({mode='list',pull=true,scroll=0,horizontal=false,excluded=false,selection='',mask=false,readerLeft=0,primaryRow=false,directoryRow=false,nativePanModel=false,listActions}={}){
+function fixture({mode='list',pull=true,scroll=0,horizontal=false,excluded=false,selection='',mask=false,readerLeft=0,primaryRow=false,directoryRow=false,nativePanModel=false,releaseInside=true,listActions}={}){
  const listeners={},capture={},windowCapture={},windowEvents={},actions=[],styles={},frames=new Map(),timers=new Map();let time=0,overlay=false,finish,next=0,nativeLocked=false;
  const label={textContent:''},indicator={hidden:true,dataset:{},style:{setProperty(){}},setAttribute(){},querySelector(){return label},remove(){}};
  const root={contains:()=>false,dataset:{},style:{setProperty(k,v){styles[k]=v},removeProperty(k){delete styles[k]}},append(){},addEventListener(name,fn){listeners[name]=fn}},panel={scrollTop:scroll,parentElement:root,scrollWidth:horizontal?600:300,clientWidth:300};
- const target={parentElement:panel,scrollTop:0,closest(selector){if(selector==='#side,#view,#list,#mask')return mask?{id:'mask'}:panel;if(primaryRow&&(selector==='button,a'||selector.startsWith('.mail-open')))return this;if(directoryRow&&(selector==='button,a'||selector.includes('#list .mail-directory-row')))return this;return excluded?{}:null}};
+ const target={isConnected:true,disabled:false,click(){click(0)},contains:node=>node===target,parentElement:panel,scrollTop:0,closest(selector){if(selector==='#side,#view,#list,#mask')return mask?{id:'mask'}:panel;if(primaryRow&&(selector==='button,a'||selector.startsWith('.mail-open')))return this;if(directoryRow&&(selector==='button,a'||selector.includes('#list .mail-directory-row')))return this;return excluded?{}:null}};
  const navigation={getBoundingClientRect:()=>({width:300,right:root.dataset.mailDrawerDrag!==undefined?300+parseFloat(styles['--mail-drawer-x']||0):mode==='navigation'?300:0})};
- const doc={addEventListener(name,fn,options){assert(options.capture);(capture[name]??=[]).push(fn)},getElementById(){return {getBoundingClientRect:()=>({top:56})}},createElement(){return indicator},querySelector(){return overlay?{}:null},documentElement:{clientWidth:390,dataset:{}}};
+ const doc={elementFromPoint:()=>releaseInside?target:null,addEventListener(name,fn,options){assert(options.capture);(capture[name]??=[]).push(fn)},getElementById(){return {getBoundingClientRect:()=>({top:56})}},createElement(){return indicator},querySelector(){return overlay?{}:null},documentElement:{clientWidth:390,dataset:{}}};
  const win={addEventListener(name,fn,options){(windowEvents[name]??=[]).push(fn);if(options?.capture)(windowCapture[name]??=[]).push(fn)},matchMedia(){return {matches:true,addEventListener(){}}},getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:horizontal&&node===panel?'auto':'visible'}),performance:{now:()=>time},requestAnimationFrame(fn){frames.set(++next,fn);return next},cancelAnimationFrame(id){frames.delete(id)},setTimeout(fn){timers.set(++next,fn);return next},clearTimeout(id){timers.delete(id)}};
  const reader={getBoundingClientRect:()=>({width:390,left:readerLeft})};
  const binding=bindMailMobileGestures({root,navigation,reader,listActions,document:doc,window:win,mode:()=>mode,canRefresh:()=>pull,openNavigation:()=>{actions.push('open-navigation');mode='navigation'},closeNavigation:()=>{actions.push('close-navigation');mode='list'},back:()=>{actions.push('back-reader');mode='list'},refresh:()=>{actions.push('refresh');return new Promise(resolve=>finish=resolve)}});
@@ -224,4 +224,21 @@ test('a top-list pull claims the first native small downward move and completes 
 test('native small pulls cancel below threshold while native upward and scrolled lists stay available',()=>{
  const f=fixture({nativePanModel:true});f.event('touchstart');assert.equal(f.event('touchmove',151,204),true);f.frame();f.event('touchend',151,204,0);f.settle();assert.equal(f.indicator.hidden,true);assert.deepEqual(f.actions,[]);
  for(const options of [{pull:false,scroll:120},{pull:true,scroll:120},{pull:true,scroll:0}]){const f=fixture({...options,nativePanModel:true});f.event('touchstart');assert.equal(f.event('touchmove',151,196),false);assert.equal(f.event('touchmove',152,100),false);f.event('touchend',152,100,0);assert.deepEqual(f.actions,[])}
+});
+
+// Preventing the first small pull move is necessary on iOS; that reservation
+// must not silently consume a tap with ordinary finger jitter.
+test('a reserved pull with tap-sized jitter opens the original row exactly once',()=>{
+ for(const row of [{primaryRow:true},{directoryRow:true}])for(const dy of [1,3,7]){
+  const f=fixture({...row,nativePanModel:true});f.event('touchstart');
+  assert(f.event('touchmove',150,200+dy));f.frame();f.event('touchend',150,200+dy,0);
+  assert.deepEqual(f.actions,['activate']);assert(f.click(),'compatibility click stays consumed');assert.deepEqual(f.actions,['activate']);
+ }
+});
+test('pull reservation cannot activate after a real drag, reversal, cancellation, or release outside the row',()=>{
+ for(const variant of ['drag','reverse','cancel','outside','overlay']){
+  const f=fixture({primaryRow:true,releaseInside:variant!=='outside'});f.event('touchstart');f.event('touchmove',150,variant==='reverse'?245:variant==='drag'?212:203);f.frame();
+  if(variant==='reverse')f.event('touchmove',150,202);if(variant==='overlay')f.overlay(true);
+  f.event(variant==='cancel'?'touchcancel':'touchend',150,203,0);assert.deepEqual(f.actions,[],variant);assert(f.click());
+ }
 });

@@ -10,8 +10,8 @@ export function normalizeMailNavigation(value,owner){
 }
 export function mailNavigationKey(route){return JSON.stringify([route.folder,route.starred,route.alias,route.box,route.origin,route.category,route.actionOnly,route.q,route.searchOrder,route.directoryGroup||''])}
 export function createMailNavigation({owner,history,url,readRoute,readScroll,readReader,applyRoute,restoreList,openReader,applyScroll,closeReader,onError}){
- const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0;
- const write=(push=false)=>history[push?'pushState':'replaceState']({...history.state,eonaMail:current.reader?.id||null,eonaMailKind:current.reader?.kind||null,eonaMailPage:current},'',url);
+ const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false;
+ const write=(push=false)=>{if(awaitingBack){deferredWrite=true;return}history[push?'pushState':'replaceState']({...history.state,eonaMail:current.reader?.id||null,eonaMailKind:current.reader?.kind||null,eonaMailPage:current},'',url)};
  const scroll=()=>{if(applying)return;Object.assign(current,readScroll());write()};
  if(!initial)write();else applyRoute(current.route,current.reader);
  const restore=async(snapshot,ticket)=>{
@@ -25,13 +25,15 @@ export function createMailNavigation({owner,history,url,readRoute,readScroll,rea
    epoch++;applying=false;Object.assign(current,readScroll());write();const sameFolder=route.folder===current.route.folder;current={version:1,owner,route,reader:sameFolder?readReader():null,listScroll:0,readerScroll:0,loaded:0,depth:current.depth+1};write(true);
   },
   open(id,kind,push=true,parent=null,messageKind='received'){
-   if(applying)return;this.visit();const prior=current.reader;Object.assign(current,readScroll());write();const next={id:String(id),kind,parent,messageKind},changed=prior?.id!==next.id||prior?.kind!==next.kind;
+   // A deliberate new open supersedes pending history restoration. Internal
+   // replay uses push=false and retains the restoration's own epoch.
+   if(applying){if(!push)return;epoch++;applying=false}this.visit();const prior=current.reader;Object.assign(current,readScroll());write();const next={id:String(id),kind,parent,messageKind},changed=prior?.id!==next.id||prior?.kind!==next.kind;
    current={...current,reader:next,readerScroll:changed?0:current.readerScroll,depth:current.depth+(push&&changed?1:0)};write(push&&changed);
   },
   surface(){if(!applying&&!readReader()&&current.reader){current={...current,reader:null,readerScroll:0};write()}},
   save:scroll,
-  back(){if(!current.reader||applying)return false;applying=true;closeReader();if(current.depth>0&&history.length>1){history.back();return true}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
-  pop(value){const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;current=next;restore(next,++epoch);return true},
+  back(){if(!current.reader||applying)return false;applying=true;closeReader();if(current.depth>0&&history.length>1){awaitingBack=true;history.back();return true}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
+  pop(value){const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;if(awaitingBack){awaitingBack=false;if(deferredWrite){deferredWrite=false;epoch++;applying=false;current={...current,depth:next.depth+1};write(true);return true}}current=next;restore(next,++epoch);return true},
   restoreInitial(){if(!initial)return Promise.resolve();return restore(initial,++epoch)},
  };
 }

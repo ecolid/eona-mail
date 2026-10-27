@@ -46,3 +46,16 @@ test('shared received and sent openers preserve the correspondence history paren
  vm.runInContext("pushMailReaderHistory('41','workspace-message',true);pushMailReaderHistory('41','inbox',false)",ctx);assert.equal(calls[1][1],'workspace-message');assert.equal(calls[1][3].id,'friend@test');
  ctx.state.workspaceMailKind='sent';vm.runInContext("pushMailReaderHistory('sent-1','sent',false)",ctx);assert.equal(calls[2][1],'workspace-message');assert.equal(calls[2][4],'sent');
 });
+
+test('a user opening the next mail takes ownership from a slow return restoration',async()=>{
+ const f=fixture();f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();f.defer();f.pop();
+ assert(f.nav.restoring);f.nav.open('9','inbox');f.setReader({id:'9',kind:'inbox'});
+ assert.equal(f.nav.snapshot.reader.id,'9');assert.equal(f.nav.restoring,false);f.release();await new Promise(setImmediate);
+ assert.equal(f.nav.snapshot.reader.id,'9');assert.equal(f.reader().id,'9');assert.equal(f.history.state.eonaMailPage.reader.id,'9');
+});
+test('an immediate next tap survives the asynchronous native back event',async()=>{
+ const f=fixture();f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();const destination=clone(f.history.state);
+ // The native traversal has moved, but its popstate has not been delivered yet.
+ f.nav.open('9','inbox');f.setReader({id:'9',kind:'inbox'});f.nav.pop(destination);await new Promise(setImmediate);
+ assert.equal(f.nav.snapshot.reader.id,'9');assert.equal(f.reader().id,'9');assert.equal(f.history.state.eonaMailPage.reader.id,'9');
+});

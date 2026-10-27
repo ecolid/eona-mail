@@ -103,3 +103,9 @@ test('reversing a filter during its row animation commits the latest cached resu
  s.context.state.q='old';const restored=s.load();s.requests[2].resolve(emails('original'));await commits[1].promise;assert.match(s.list.innerHTML,/original/,'visible commit metadata must advance before its animation completes');
  finish[1]();await restored;finish[0]();await filtered;assert.match(s.list.innerHTML,/original/);assert.doesNotMatch(s.list.innerHTML,/attachment/);
 });
+
+test('list verification failure leaves the current reader and its return path usable',async()=>{
+ const f=fixture();f.context.state.cur='9';f.context.state.curMail={id:9,subject:'current'};
+ const pending=f.load();f.requests[0].reject(Error('offline'));await pending;
+ assert.equal(f.context.state.cur,'9');assert.equal(f.context.state.curMail.subject,'current');assert.deepEqual(f.selection,[[false]]);assert.equal(f.notices.length,1);
+});

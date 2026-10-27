@@ -62,7 +62,7 @@ test('native browser history restores the correct inbox or sent reader without a
  const handlers={},actions=[],c={window:{addEventListener(type,handler){handlers[type]=handler}},openMail:(...args)=>actions.push(['inbox',...args]),openMailSent:(...args)=>actions.push(['sent',...args]),closeMailReader:()=>actions.push(['list'])};vm.createContext(c);
  vm.runInContext(page.slice(page.indexOf("window.addEventListener('popstate'"),page.indexOf('const state={')),c);
  handlers.popstate({state:{eonaMail:'1',eonaMailKind:'inbox'}});handlers.popstate({state:{eonaMail:'sent-1',eonaMailKind:'sent'}});handlers.popstate({state:{}});
- assert.deepEqual(actions,[['inbox','1',false],['sent','sent-1',false],['list']]);
+ assert.deepEqual(actions,[['inbox','1',false],['sent','sent-1',false],['list']]);c.window.MailNavigation={};handlers.popstate({state:{}});assert.equal(actions.length,3,'legacy history cannot close the current reader before the installed owner handles popstate');
 });
 test('changing query clears old desktop content and rejects a late detail response',async()=>{
  const s=fixture(),old=s.open('1');s.clear();s.requests[0].resolve(mail(1));await old;
@@ -98,4 +98,18 @@ test('deletion feedback waits for storage and undo restores the same mail withou
 });
 test('failed deletion preserves the reader and produces an error without an undo for a nonexistent change',async()=>{
  const f=folderActionFixture(),pending=f.act(1,'trash');f.requests[0].reject(Error('offline'));await pending;assert.equal(f.ctx.state.cur,'1');assert.equal(f.listReads.length,0);assert.equal(f.feedback.length,1);assert.equal(f.feedback[0].options.tone,'error');assert.equal(f.feedback[0].options.action,undefined);
+});
+
+test('clearing reading drops only reader highlights immediately, including cached rows on failure',()=>{
+ const s=fixture(),classes=new Set(['on','unread']),selected=new Set(['on']);
+ const row={classList:{remove:name=>classes.delete(name)}},other={classList:{remove:name=>selected.delete(name)}};
+ s.context.document.getElementById=id=>id==='list'?{querySelectorAll:selector=>selector==='.mail.on'?[row,other]:[]}:s.view;
+ s.clear();assert(!classes.has('on'));assert(classes.has('unread'));assert(!selected.has('on'));assert.equal(s.context.state.cur,null);
+});
+test('mobile sync clears cached reading paint without touching independent batch selection',()=>{
+ const source=page.slice(page.indexOf('function syncMailReader(){'),page.indexOf('function setMailSelectionPending('));
+ for(const [mobile,reading,expected]of [[true,false,false],[true,true,true],[false,false,true]]){
+  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},list={querySelectorAll:()=>[row]},view={},c={matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
+  assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,mobile&&reading);assert.equal(view.inert,mobile&&!reading);
+ }
 });
