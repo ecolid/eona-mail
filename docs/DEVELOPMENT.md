@@ -219,3 +219,20 @@ transfer, current-intent selection and the actual delivered icon set.
 
 References: [Ionic refresher lifecycle](https://ionicframework.com/docs/api/refresher)
 and [Gmail's attachment placement](https://support.google.com/mail/answer/30719).
+
+### Body and attachment presentation
+
+The shared body controller owns the initial layout transaction for Received,
+Sent and draft preview HTML. Pending body geometry uses an inline placeholder;
+attachments remain out of layout until the same task commits the fitted body.
+Failure settles its error/retry surface and exposes independent file downloads;
+retry starts a new pending transaction. Plain text does not wait for an iframe.
+Disposal prevents late frame work from changing another reader.
+
+The maintenance fixture `/reader-paint-review` samples from intent through body
+source, fitting, reveal and stable frames. Use `MAIL_FIXTURE_PAINT=1` with
+JOURNEYS/CONTROLS/DENSE for short HTML plus files; omit PAINT for long HTML.
+Cover cold and cached opens, body failure/retry, rapid switching, Sent and draft
+preview at desktop/390/320 widths. A final screenshot or a text-only attachment
+sample cannot prove this asynchronous layout handoff. Keep old-source failure
+and exact candidate results, then inspect pending and settled screenshots.

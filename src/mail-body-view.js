@@ -73,17 +73,22 @@ function mailBodyController(){
  };
  window.installMailBodyFrame=function(frame,{reload}={}){
   const abort=new AbortController();let resize,mutation,bodyInput=null,poll=0,pending=0,connected=null,timer=0,observedDoc=null,feedbackTimer=0,phase='rendering',retrying=false;
-  const holder=frame.parentElement,hitAreas=new Map();
+  const holder=frame.parentElement,reader=frame.closest?.('.mail-reader-content')||holder,hitAreas=new Map();
+  // Body layout and the following files commit together. A hidden, unfitted
+  // iframe must not expose a file section at its temporary browser height.
+  const placeholder=document.createElement('div');placeholder.className='mail-body-placeholder';placeholder.setAttribute('aria-hidden','true');placeholder.innerHTML='<span class="mail-placeholder-line"></span><span class="mail-placeholder-line mail-placeholder-medium"></span><span class="mail-placeholder-line mail-placeholder-short"></span>';holder.prepend(placeholder);
+  const present=value=>{reader.dataset.mailBodyState=value;holder.dataset.mailBodyState=value;holder.setAttribute('aria-busy',String(value==='pending'));placeholder.hidden=value!=='pending'};
+  present('pending');
   const status=document.createElement('div');status.className='mail-body-status';status.setAttribute('role','status');status.textContent='正在读取邮件正文…';status.hidden=true;feedbackTimer=setTimeout(()=>{if(frame.dataset.mailReady!=='true'&&!abort.signal.aborted)status.hidden=false},500);holder.prepend(status);
   const layer=document.createElement('div');layer.className='mail-body-links';layer.setAttribute('role','group');layer.setAttribute('aria-label','邮件链接');holder.append(layer);
   frame.style.visibility='hidden';frame.dataset.mailReady='false';
   const clearHits=()=>{for(const entry of hitAreas.values())for(const button of entry.buttons){button.mailContactDispose?.();button.remove()}hitAreas.clear()};
   const failure=(error,source=false)=>{
    if(abort.signal.aborted||frame.dataset.mailReady==='true'||!source&&phase!=='rendering')return;
-   phase='failed';cancelAnimationFrame(poll);clearTimeout(timer);status.hidden=false;clearTimeout(feedbackTimer);status.setAttribute('role','alert');status.textContent=(typeof error==='string'?error:error?.message)||'邮件正文未能加载。';
+   phase='failed';present('failed');cancelAnimationFrame(pending);pending=0;cancelAnimationFrame(poll);clearTimeout(timer);status.hidden=false;clearTimeout(feedbackTimer);status.setAttribute('role','alert');status.textContent=(typeof error==='string'?error:error?.message)||'邮件正文未能加载。';
    const retry=document.createElement('button');retry.className='btn';retry.textContent='重试';retry.onclick=async()=>{
     if(retrying||abort.signal.aborted)return;retrying=true;connected=null;clearHits();
-    try{if(reload)await reload();else{status.setAttribute('role','status');status.textContent='正在读取邮件正文…';phase='rendering';if(frame.srcdoc)frame.srcdoc=frame.srcdoc;else frame.src=frame.src;start()}}finally{retrying=false}
+    try{if(reload)await reload();else{status.setAttribute('role','status');status.textContent='正在读取邮件正文…';phase='rendering';present('pending');frame.dataset.mailReady='false';frame.style.visibility='hidden';if(frame.srcdoc)frame.srcdoc=frame.srcdoc;else frame.src=frame.src;start()}}finally{retrying=false}
    };status.append(retry);
   };
   const updateHits=doc=>{
@@ -116,12 +121,12 @@ function mailBodyController(){
    makeMailResponsive(doc,content);
    let fittedWidth=0,fittedHeight=0,fittedGeometry='';
    const fit=()=>{
-    pending=0;if(abort.signal.aborted||!frame.isConnected)return;
+    pending=0;if(abort.signal.aborted||!frame.isConnected||phase!=='rendering'&&phase!=='ready')return;
     const width=frame.clientWidth;if(!width)return;
     content.style.zoom='1';content.style.width='auto';const natural=Math.max(width,content.scrollWidth),scale=Math.min(1,width/natural);
     if(scale<1)content.style.width=natural+'px';content.style.zoom=String(scale);frame.dataset.mailScale=String(scale);
     const contentHeight=content.getBoundingClientRect().height,height=Math.ceil(Math.max(contentHeight,doc.body.getBoundingClientRect().height));if(frame.style.height!==height+'px')frame.style.height=height+'px';
-    fittedWidth=width;fittedHeight=contentHeight/scale;const geometry=width+':'+scale+':'+height;if(phase!=='ready'&&geometry!==fittedGeometry){fittedGeometry=geometry;schedule();return}setMailBodyInputAxes(doc,content,frame);updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;clearTimeout(timer);clearTimeout(feedbackTimer);
+    fittedWidth=width;fittedHeight=contentHeight/scale;const geometry=width+':'+scale+':'+height;if(phase!=='ready'&&geometry!==fittedGeometry){fittedGeometry=geometry;schedule();return}setMailBodyInputAxes(doc,content,frame);updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;present('ready');clearTimeout(timer);clearTimeout(feedbackTimer);
    };
    const schedule=()=>{if(!pending)pending=requestAnimationFrame(fit)};
    resize=new ResizeObserver(entries=>{if(entries.some(e=>e.target===holder?Math.abs(e.contentRect.width-fittedWidth)>.5:Math.abs(e.contentRect.height-fittedHeight)>.5))schedule()});resize.observe(holder);resize.observe(content);
@@ -133,7 +138,7 @@ function mailBodyController(){
   const start=()=>{phase='rendering';cancelAnimationFrame(poll);clearTimeout(timer);timer=setTimeout(failure,15000);poll=requestAnimationFrame(watch)};
   frame.addEventListener('load',()=>{if(phase==='rendering'&&frame.dataset.mailReady!=='true')connect()},{signal:abort.signal});frame.addEventListener('error',failure,{signal:abort.signal});if(!reload)start();
   const suspend=()=>{if(abort.signal.aborted)return;abort.abort();bodyInput?.();bodyInput=null;resize?.disconnect();mutation?.disconnect();cancelAnimationFrame(pending);cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);for(const entry of hitAreas.values())for(const button of entry.buttons)button.mailContactDispose?.();document.querySelector('[data-mail-link-dialog]')?.remove()};
-  const dispose=()=>{suspend();clearHits();layer.remove();status.remove()};
-  return Object.assign(dispose,{suspend,sourceLoading(){if(abort.signal.aborted)return;phase='source';frame.dataset.mailReady='false';cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);status.hidden=true;status.setAttribute('role','status');status.textContent='正在读取邮件正文…';feedbackTimer=setTimeout(()=>{if(phase==='source'&&!abort.signal.aborted)status.hidden=false},500)},sourceLoaded(){if(!abort.signal.aborted)start()},sourceFailed(error){failure(error,true)}});
+  const dispose=()=>{suspend();clearHits();layer.remove();status.remove();placeholder.remove()};
+  return Object.assign(dispose,{suspend,sourceLoading(){if(abort.signal.aborted)return;phase='source';cancelAnimationFrame(pending);pending=0;present('pending');frame.style.visibility='hidden';frame.dataset.mailReady='false';cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);status.hidden=true;status.setAttribute('role','status');status.textContent='正在读取邮件正文…';feedbackTimer=setTimeout(()=>{if(phase==='source'&&!abort.signal.aborted)status.hidden=false},500)},sourceLoaded(){if(!abort.signal.aborted)start()},sourceFailed(error){failure(error,true)}});
  };
 }

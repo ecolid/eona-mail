@@ -2,6 +2,14 @@ import {MAIL_WORKSPACE_CSS} from './mail-workspace-style.js';
 // The reader owns its envelope, command group, summary and original document.
 export const MAIL_READER_CSS = `
 #view{background:var(--card);scroll-padding-top:16px;scrollbar-gutter:stable;overflow-anchor:none}
+/* Initial body geometry is private to the body controller, across all readers. */
+.mail-reader-content[data-mail-body-state=pending] .mail-reader-attachments{display:none}
+[data-mail-body-state=pending]:is(#vbody,.htmlbody){position:relative}
+[data-mail-body-state=pending]:is(#vbody,.htmlbody)>iframe{position:absolute;inset:0 auto auto 0;visibility:hidden}
+.mail-body-placeholder{display:flex;min-height:96px;box-sizing:border-box;padding:20px 0;flex-direction:column;justify-content:space-between;gap:12px}
+.mail-body-placeholder[hidden]{display:none}
+[data-mail-body-state=pending]>.mail-body-status{position:absolute;bottom:0;left:0;padding:0;font-size:12px}
+[data-mail-body-state=failed]:is(#vbody,.htmlbody)>iframe{display:none}
 .mail-reader-content{flex:none;box-sizing:border-box;width:100%;max-width:1048px;margin:0 auto;padding:24px 28px 40px;overflow-anchor:none}
 #vhead{display:block;background:transparent;width:100%;max-width:none;margin:0;padding:0 0 20px;border:0}
 #vhead h2{font-size:22px;font-weight:650;line-height:1.4;letter-spacing:-.02em;text-wrap:pretty;margin:0 0 16px;overflow-wrap:anywhere}

@@ -37,3 +37,21 @@ test('source failures retain their retry owner through late render callbacks and
  release();await first;assert.equal(timers.filter(timer=>timer.delay===15000).length,2);
  dispose();lateWatchdog();assert.equal(status.removed,true);assert.equal(reloads,1);
 });
+
+test('body and following files share pending, fitted, failed, retry and disposed presentation',()=>{
+ class Node{
+  constructor(){this.children=[];this.attributes={};this.style={setProperty(k,v){this[k]=v},getPropertyValue(k){return this[k]}};this.dataset={};this.isConnected=true;this.clientWidth=600;this.scrollWidth=600;}
+  set textContent(v){this.text=String(v);this.children=[]}get textContent(){return this.text||''}
+  setAttribute(k,v){this.attributes[k]=v}append(...v){this.children.push(...v)}prepend(n){this.children.unshift(n)}remove(){this.removed=true}addEventListener(){}querySelectorAll(){return []}getBoundingClientRect(){return{left:0,top:0,width:600,height:56}}
+ }
+ const frames=new Map();let serial=0;const reader=new Node(),holder=new Node(),frame=new Node(),body=new Node(),html=new Node();frame.parentElement=holder;frame.closest=()=>reader;
+ const doc={URL:'about:srcdoc',readyState:'complete',body,documentElement:html,head:new Node(),addEventListener(){},createElement:()=>{const n=new Node();n.ownerDocument=doc;return n},createTreeWalker:()=>({nextNode:()=>null}),querySelectorAll:()=>[],defaultView:{getComputedStyle:()=>({overflowX:'visible'})}};frame.contentDocument=doc;
+ const context={window:{},document:{createElement:()=>new Node(),querySelector:()=>null},AbortController,Map,Set,ResizeObserver:class{observe(){}disconnect(){}},MutationObserver:class{observe(){}disconnect(){}},setTimeout:()=>1,clearTimeout(){},requestAnimationFrame(fn){frames.set(++serial,fn);return serial},cancelAnimationFrame(id){frames.delete(id)}};
+ const flush=()=>{const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn())};vm.createContext(context);vm.runInContext(script,context);
+ const dispose=context.window.installMailBodyFrame(frame,{reload:()=>{}}),placeholder=holder.children.find(n=>n.className==='mail-body-placeholder');
+ assert.equal(reader.dataset.mailBodyState,'pending');assert.equal(holder.attributes['aria-busy'],'true');assert.equal(placeholder.hidden,false);assert.equal(frame.style.visibility,'hidden');
+ dispose.sourceLoading();dispose.sourceLoaded();flush();assert.equal(reader.dataset.mailBodyState,'pending','first fit is not a committed layout');
+ dispose.sourceFailed(new Error('unavailable'));flush();assert.equal(reader.dataset.mailBodyState,'failed','late fit must not clear a failure');assert.equal(placeholder.hidden,true);assert.equal(holder.attributes['aria-busy'],'false');
+ dispose.sourceLoading();frame.contentDocument={...doc};dispose.sourceLoaded();flush();flush();assert.equal(frame.dataset.mailReady,'true');assert.equal(reader.dataset.mailBodyState,'ready');assert.equal(frame.style.visibility,'visible');assert.equal(placeholder.hidden,true);
+ dispose.sourceLoading();assert.equal(reader.dataset.mailBodyState,'pending');assert.equal(frame.style.visibility,'hidden');dispose.sourceLoaded();dispose();flush();assert.equal(reader.dataset.mailBodyState,'pending','disposed source cannot reveal a different reader');assert.equal(placeholder.removed,true);
+});
