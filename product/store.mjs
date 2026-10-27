@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import PostalMime from 'postal-mime';
 import {SQLiteD1,FileObjects} from '../sv/storage.mjs';
-import {archiveRaw} from '../src/index.js';
+import {archiveRaw,mailMailboxScope} from '../src/index.js';
 import {initializeMailWorkspace} from '../src/mail-send.js';
 import {initializeMailDirectory} from '../src/mail-directory.js';
 import {initializeMailSync} from '../src/mail-sync-schema.js';
@@ -60,9 +60,8 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
     env.MAIL_SOURCE_HEALTH=()=>sourceHealth(db,config,{clock});
     const accountIds=mailbox=>config.accounts.filter(a=>a.address.toLowerCase()===String(mailbox).toLowerCase()).map(a=>a.id);
     env.MAIL_MAILBOX_SCOPE=mailbox=>{const ids=accountIds(mailbox);return ids.length?{where:'EXISTS(SELECT 1 FROM product_source_copies sc WHERE sc.email_id=emails.id AND sc.account IN ('+ids.map(()=>'?').join(',')+'))',binds:ids}:null;};
-    env.MAIL_MAILBOX_STATS=async()=>{
-      const rows=(await db.prepare("SELECT sc.account,COUNT(DISTINCT e.id) count,MAX(e.received_at) last_seen FROM product_source_copies sc JOIN emails e ON e.id=sc.email_id WHERE e.folder='inbox' GROUP BY sc.account").all()).results;
-      const values=new Map();for(const a of config.accounts){const ids=accountIds(a.address),scope=env.MAIL_MAILBOX_SCOPE(a.address);const row=ids.length===1?rows.find(r=>r.account===a.id):await db.prepare("SELECT COUNT(*) count,MAX(received_at) last_seen FROM emails WHERE folder='inbox' AND ("+scope.where+')').bind(...scope.binds).first();values.set(a.address.toLowerCase(),row||{count:0,last_seen:null});}return values;
+    env.MAIL_MAILBOX_STATS=async(context=env)=>{
+      const values=new Map();for(const a of config.accounts){const scope=mailMailboxScope(context,a.address);const row=await db.prepare("SELECT COUNT(*) count,MAX(received_at) last_seen FROM emails WHERE folder='inbox' AND ("+scope.where+')').bind(...scope.binds).first();values.set(a.address.toLowerCase(),row||{count:0,last_seen:null});}return values;
     };
     async function ingest(raw,input){return serialize(async()=>{
       const account=config.accounts.find(a=>a.id===input.account)||(config.mode==='demo'&&input.account==='demo'?{id:'demo',address:config.owner.email}:null);

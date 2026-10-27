@@ -1055,6 +1055,11 @@ function boxAliasForms(mailbox,aliasDomain='eona.top') {
   const b = String(mailbox || '').toLowerCase(), local = b.split('@')[0], domain = (b.split('@')[1] || '').split('.')[0];
   return aliasDomain?[b, domain + '@'+aliasDomain, local + '.' + domain + '@'+aliasDomain]:[b,b,b];
 }
+export function mailMailboxScope(env,mailbox){
+  const forms=boxAliasForms(mailbox,env.MAIL_ALIAS_DOMAIN),source=env.MAIL_MAILBOX_SCOPE?.(mailbox);
+  const legacy={where:'lower(alias) IN (?, ?, ?) OR lower(origin_to) = ?',binds:[...forms,String(mailbox).toLowerCase()]};
+  return source?{where:'('+legacy.where+') OR ('+source.where+')',binds:[...legacy.binds,...source.binds]}:legacy;
+}
 export function likelyMine(o, now = Date.now()) {
   // GitHub 通知信的收件人是 <仓库名>@noreply.github.com,那不是邮箱,是仓库
   if (/@noreply\.github\.com$/i.test(String(o && o.mailbox || ''))) return false;

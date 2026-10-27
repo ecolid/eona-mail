@@ -205,3 +205,15 @@ test('adapter incoming handoff is durable before source proof, retries failures 
  assert.equal((await store.db.prepare('SELECT ai_tries FROM emails WHERE id=?').bind(result.id).first()).ai_tries,0);
  assert.equal((await store.db.prepare("SELECT ai_tries FROM emails WHERE subject='Product test' AND id<>? ORDER BY id LIMIT 1").bind(result.id).first()).ai_tries,3);
 });
+
+test('mailbox views and counters keep forwarded originals before IMAP proof and deduplicate their later proof',async t=>{
+ const root=await temporary(t),c=validateConfig(config(root,{mode:'personal',auth:{mode:'local'},accounts:[account]}));const store=await openStore(c);t.after(()=>store.close());
+ const {archiveRaw,fetchWithIdentity}=await import('../src/index.js'),env={...store.env,MAIL_ALIAS_DOMAIN:'bridge.test'},identity={authenticated:true,subject:c.owner.id,email:c.owner.email};
+ const direct=raw('Direct','unproven-direct');await archiveRaw(env,direct,{alias:account.address,imported:true,skipAI:true});
+ const forwarded=Buffer.from(raw('Forwarded','unproven-forward').toString().replace('To: owner@example.test','To: elsewhere@example.test'));
+ await archiveRaw(env,forwarded,{alias:'owner.example@bridge.test',imported:true,skipAI:true});
+ await archiveRaw(env,Buffer.from(raw('Unrelated','unrelated').toString().replace('To: owner@example.test','To: elsewhere@example.test')),{alias:'elsewhere@example.test',imported:true,skipAI:true});
+ await store.ingest(raw('Proven','proven-only'),proof(1,{historical:true}));
+ const check=async()=>{const response=await fetchWithIdentity(new Request(c.origin+'/api/emails?box='+account.address),env,identity);assert.equal(response.status,200);assert.equal((await response.json()).emails.length,3);const routes=await fetchWithIdentity(new Request(c.origin+'/api/routes?fresh=1'),env,identity);assert.equal((await routes.json()).routes.find(r=>r.mailbox===account.address).box_count,3)};
+ await check();await store.ingest(direct,proof(2,{historical:true}));await check();assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM emails').first()).n,4);
+});
