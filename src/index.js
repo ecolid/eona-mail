@@ -21,6 +21,7 @@ import {EONA_FOUNDATION_CSS,EONA_FOUNDATION_JS} from './eona-foundation-assets.j
 import {translateInline,inlineSourceHash,validateInlineSegments,validateTranslatedText} from './translation-inline.js';
 import {translationBrowserScript} from './mail-translation-view.js';
 import {mailBodyBrowserScript} from './mail-body-view.js';
+import {mailHTMLPolicy,mailHTMLDocument,sanitizeMailHTML} from './mail-html-policy.js';
 import {mailSearchBrowserScript,MAIL_SEARCH_CSS} from './mail-search-view.js';
 import {mailReaderBrowserScript} from './mail-reader-view.js';
 import {mailDownloadBrowserScript} from './mail-download-view.js';
@@ -1976,7 +1977,7 @@ async function openMail(id,push=true){
       ?'<span class="att"><a data-mail-download="'+esc(a.name||'attachment')+'" href="/api/file?key='+encodeURIComponent(a.key)+'">'+I.clip+esc(a.name)+'</a> <button class="mini" data-att-del="'+esc(a.key)+'" data-id="'+e.id+'" aria-label="删除附件 '+esc(a.name)+'" title="删除附件">'+I.trash+'</button></span>'
       :'<span class="att gone">'+I.clip+esc(a.name)+' ('+esc(a.deleted?a.deleted+' '+localTime(a.deleted_at):(a.skipped||'未归档'))+')</span>').join('')+'</div>':'')+
   '<div id="vbody">'+(e.html_key
-    ?'<iframe title="邮件原文" style="visibility:hidden" sandbox="allow-same-origin" data-html-mail="'+e.id+'"></iframe>'
+    ?'<iframe title="邮件原文" style="visibility:hidden" sandbox="allow-same-origin allow-scripts" data-html-mail="'+e.id+'"></iframe>'
     :'<pre class="e-reader-prose">'+esc(e.text_body||'(空正文)')+'</pre>')+'</div></section></div>';
 
   mailContactsDispose=installMailContactActions(document.getElementById('vhead'),mailContactOptions());
@@ -1984,7 +1985,9 @@ async function openMail(id,push=true){
   installMailTranslation(e);
   for(const row of $('#list').querySelectorAll('[data-mail-id]')){row.classList.toggle('on',String(row.dataset.mailId)===String(id));if(String(row.dataset.mailId)===String(id))row.classList.remove('unread')}
 }
-async function loadMailHTML(frame,id,ticket,fresh=false){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceLoading?.();try{const source=await api('/api/email/'+id+'/html?format=json',{fresh});if(ticket!==mailReaderIntent||!frame.isConnected)return;frame.srcdoc='<!doctype html><meta http-equiv="Content-Security-Policy" content="'+esc(source.policy)+'">'+source.html;mailBodyDispose?.sourceLoaded?.()}catch(error){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceFailed?.(error)}}
+${mailHTMLPolicy.toString()}
+${mailHTMLDocument.toString()}
+async function loadMailHTML(frame,id,ticket,fresh=false){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceLoading?.();try{const source=await api('/api/email/'+id+'/html?format=json',{fresh});if(ticket!==mailReaderIntent||!frame.isConnected)return;frame.srcdoc=mailHTMLDocument(source.html);mailBodyDispose?.sourceLoaded?.()}catch(error){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceFailed?.(error)}}
 ${mailBodyBrowserScript()}
 function looksForeignJs(t){t=(t||'').slice(0,3000);const letters=(t.match(/\\p{L}/gu)||[]).length;if(letters<25)return false;const kana=(t.match(/[\\u3040-\\u30ff\\uac00-\\ud7af]/g)||[]).length;if(kana/letters>=0.05)return true;const chinese=(t.match(/[\\u4e00-\\u9fff]/g)||[]).length;return chinese/letters<0.5}
 ${translationBrowserScript()}

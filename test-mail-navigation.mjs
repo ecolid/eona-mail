@@ -6,7 +6,7 @@ const route=(folder='inbox',q='')=>({folder,q,searchOrder:'recent'});
 function fixture(saved=null,{reuse=false}={}){
  let target=route(),reader=null,scroll={listScroll:0,readerScroll:0,loaded:100},pending=null,rejectPending=null;
  const stack=[saved?{eonaMailPage:saved}:{}],events=[];let at=0;
- const history={get state(){return stack[at]},get length(){return stack.length},pushState(v){stack.splice(at+1);stack.push(clone(v));at++;events.push('push')},replaceState(v){stack[at]=clone(v);events.push('replace')},back(){events.push('back');at=Math.max(0,at-1)}};
+ const history={scrollRestoration:'auto',get state(){return stack[at]},get length(){return stack.length},pushState(v){stack.splice(at+1);stack.push(clone(v));at++;events.push('push')},replaceState(v){stack[at]=clone(v);events.push('replace')},back(){events.push('back');at=Math.max(0,at-1)}};
  const nav=createMailNavigation({owner:'a',history,url:'https://mail.test/',readRoute:()=>target,readReader:()=>reader,readScroll:()=>scroll,canReuseList:()=>reuse,applyRoute:(r)=>{target=r},restoreList:()=>{events.push('restore');return pending?new Promise((resolve,reject)=>{pending=resolve;rejectPending=reject}):Promise.resolve()},openReader:async r=>{reader=r;events.push('read:'+r.id)},applyScroll:(s,reading)=>{scroll={listScroll:s.listScroll,readerScroll:reading?s.readerScroll:0,loaded:s.loaded}},closeReader:()=>{reader=null;events.push('close')},onError:e=>events.push('error:'+e.message)});
  return {nav,history,stack,events,setRoute:r=>target=r,setReader:r=>reader=r,setScroll:s=>scroll=s,reader:()=>reader,scroll:()=>scroll,defer:()=>pending=true,release:()=>{const fn=pending;pending=null;fn()},fail:()=>{pending=null;rejectPending(Error('offline'))},pop:()=>nav.pop(history.state)};
 }
@@ -117,3 +117,5 @@ test('open-return-open-return before native traversal settles issues only one br
  f.nav.pop(destination);await new Promise(setImmediate);assert.equal(f.nav.snapshot.reader,null);assert.equal(f.nav.restoring,false);assert.equal(f.history.state.eonaMailPage.reader,null);
  f.nav.open('10','inbox');assert.equal(f.nav.snapshot.reader.id,'10');assert.equal(f.history.state.eonaMailPage.reader.id,'10');
 });
+
+test('browser traversal cannot restore scroll behind the application after return input begins',()=>{const f=fixture();assert.equal(f.history.scrollRestoration,'manual')});

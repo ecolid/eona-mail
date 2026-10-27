@@ -1,7 +1,13 @@
-// The parent owns all interactive hit areas. WebKit does not dispatch parent
-// listeners attached inside a script-disabled iframe (WebKit issue 218086).
-// Email scripts, forms, popups and top navigation stay disabled.
-export function mailBodyBrowserScript(){return makeMailResponsive.toString()+'\n('+mailBodyController.toString()+')();';}
+// The parent owns interactive actions and pointer input. WebKit requires the
+// iframe script sandbox flag relaxed for parent callbacks (issue 218086), while
+// the first CSP keeps script-src 'none' and the projection strips active HTML.
+export function mailBodyBrowserScript(){return makeMailResponsive.toString()+'\n'+setMailBodyInputAxes.toString()+'\n('+mailBodyController.toString()+')();';}
+export function setMailBodyInputAxes(doc,content,frame){
+ const nodes=[content,...content.querySelectorAll('*')],native=new Set();let horizontal=false;
+ for(const node of nodes)if(/auto|scroll/.test(doc.defaultView.getComputedStyle(node).overflowX)&&node.scrollWidth>node.clientWidth+2){horizontal=true;for(let at=node;at&&at!==doc.body;at=at.parentElement)native.add(at);for(const child of node.querySelectorAll('*'))native.add(child)}
+ const set=(node,value)=>{if(node.style.getPropertyValue?.('touch-action')!==value)node.style.setProperty('touch-action',value,'important')};
+ for(const node of nodes)set(node,native.has(node)?'auto':'pan-y pinch-zoom');for(const node of [doc.body,doc.documentElement])set(node,horizontal?'auto':'pan-y pinch-zoom');frame.dataset.mailNativeX=String(horizontal);
+}
 // Widen email layout shells, not images or every cell in an invoice table.
 export function makeMailResponsive(doc,content) {
  const view=doc.defaultView,wide=[];
@@ -60,7 +66,7 @@ function mailBodyController(){
   linkify(root);const abort=new AbortController();root.addEventListener('click',event=>followMailLink(event,document),{signal:abort.signal});return()=>abort.abort();
  };
  window.installMailBodyFrame=function(frame,{reload}={}){
-  const abort=new AbortController();let resize,mutation,poll=0,pending=0,connected=null,timer=0,observedDoc=null,feedbackTimer=0,phase='rendering',retrying=false;
+  const abort=new AbortController();let resize,mutation,bodyInput=null,poll=0,pending=0,connected=null,timer=0,observedDoc=null,feedbackTimer=0,phase='rendering',retrying=false;
   const holder=frame.parentElement,hitAreas=new Map();
   const status=document.createElement('div');status.className='mail-body-status';status.setAttribute('role','status');status.textContent='正在读取邮件正文…';status.hidden=true;feedbackTimer=setTimeout(()=>{if(frame.dataset.mailReady!=='true'&&!abort.signal.aborted)status.hidden=false},500);holder.prepend(status);
   const layer=document.createElement('div');layer.className='mail-body-links';layer.setAttribute('role','group');layer.setAttribute('aria-label','邮件链接');holder.append(layer);
@@ -97,9 +103,9 @@ function mailBodyController(){
    if(doc!==observedDoc){observedDoc=doc;doc.addEventListener('error',event=>{if(event.target.matches?.('link[rel=stylesheet]'))event.target.dataset.mailStyleFailed='true'},{capture:true,signal:abort.signal});}
    if(doc.readyState==='loading')return false;if(doc===connected)return true;
    if(doc.readyState!=='complete'&&[...doc.querySelectorAll('link[rel=stylesheet]')].some(link=>!link.sheet&&!link.dataset.mailStyleFailed))return false;
-   connected=doc;resize?.disconnect();mutation?.disconnect();clearHits();
+   connected=doc;resize?.disconnect();mutation?.disconnect();bodyInput?.();bodyInput=window.MailReaderPan?.bindDocument(doc,frame);clearHits();
    const meta=doc.createElement('meta');meta.name='viewport';meta.content='width=device-width,initial-scale=1';doc.head.append(meta);
-   const style=doc.createElement('style');style.textContent='html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden}body{margin:0!important;min-width:0!important;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;overflow-x:hidden;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}';doc.head.append(style);
+   const style=doc.createElement('style');style.textContent='html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden;touch-action:pan-y pinch-zoom}body{margin:0!important;min-width:0!important;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;overflow-x:hidden;overflow-wrap:anywhere;touch-action:pan-y pinch-zoom}img,video{max-width:100%;height:auto}';doc.head.append(style);
    const content=doc.createElement('div');content.dataset.eMailContent='';content.style.display='flow-root';while(doc.body.firstChild)content.append(doc.body.firstChild);doc.body.append(content);linkify(content);
    makeMailResponsive(doc,content);
    let fittedWidth=0,fittedHeight=0,fittedGeometry='';
@@ -109,7 +115,7 @@ function mailBodyController(){
     content.style.zoom='1';content.style.width='auto';const natural=Math.max(width,content.scrollWidth),scale=Math.min(1,width/natural);
     if(scale<1)content.style.width=natural+'px';content.style.zoom=String(scale);frame.dataset.mailScale=String(scale);
     const contentHeight=content.getBoundingClientRect().height,height=Math.ceil(Math.max(contentHeight,doc.body.getBoundingClientRect().height));if(frame.style.height!==height+'px')frame.style.height=height+'px';
-    fittedWidth=width;fittedHeight=contentHeight/scale;const geometry=width+':'+scale+':'+height;if(phase!=='ready'&&geometry!==fittedGeometry){fittedGeometry=geometry;schedule();return}updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;clearTimeout(timer);clearTimeout(feedbackTimer);
+    fittedWidth=width;fittedHeight=contentHeight/scale;const geometry=width+':'+scale+':'+height;if(phase!=='ready'&&geometry!==fittedGeometry){fittedGeometry=geometry;schedule();return}setMailBodyInputAxes(doc,content,frame);updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;clearTimeout(timer);clearTimeout(feedbackTimer);
    };
    const schedule=()=>{if(!pending)pending=requestAnimationFrame(fit)};
    resize=new ResizeObserver(entries=>{if(entries.some(e=>e.target===holder?Math.abs(e.contentRect.width-fittedWidth)>.5:Math.abs(e.contentRect.height-fittedHeight)>.5))schedule()});resize.observe(holder);resize.observe(content);
@@ -120,7 +126,7 @@ function mailBodyController(){
   const watch=()=>{if(abort.signal.aborted||!frame.isConnected)return;if(!connect())poll=requestAnimationFrame(watch)};
   const start=()=>{phase='rendering';cancelAnimationFrame(poll);clearTimeout(timer);timer=setTimeout(failure,15000);poll=requestAnimationFrame(watch)};
   frame.addEventListener('load',()=>{if(phase==='rendering'&&frame.dataset.mailReady!=='true')connect()},{signal:abort.signal});frame.addEventListener('error',failure,{signal:abort.signal});if(!reload)start();
-  const dispose=()=>{abort.abort();resize?.disconnect();mutation?.disconnect();cancelAnimationFrame(pending);cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);clearHits();layer.remove();status.remove();document.querySelector('[data-mail-link-dialog]')?.remove()};
+  const dispose=()=>{abort.abort();bodyInput?.();bodyInput=null;resize?.disconnect();mutation?.disconnect();cancelAnimationFrame(pending);cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);clearHits();layer.remove();status.remove();document.querySelector('[data-mail-link-dialog]')?.remove()};
   return Object.assign(dispose,{sourceLoading(){if(abort.signal.aborted)return;phase='source';frame.dataset.mailReady='false';cancelAnimationFrame(poll);clearTimeout(timer);clearTimeout(feedbackTimer);status.hidden=true;status.setAttribute('role','status');status.textContent='正在读取邮件正文…';feedbackTimer=setTimeout(()=>{if(phase==='source'&&!abort.signal.aborted)status.hidden=false},500)},sourceLoaded(){if(!abort.signal.aborted)start()},sourceFailed(error){failure(error,true)}});
  };
 }

@@ -10,6 +10,9 @@ export function normalizeMailNavigation(value,owner){
 }
 export function mailNavigationKey(route){return JSON.stringify([route.folder,route.starred,route.alias,route.box,route.origin,route.category,route.actionOnly,route.q,route.searchOrder,route.directoryGroup||''])}
 export function createMailNavigation({owner,history,url,readRoute,readScroll,readReader,applyRoute,restoreList,openReader,applyScroll,closeReader,onError,canReuseList=()=>false}){
+ // The same owner restores both scroll viewports. Browser traversal must not
+ // perform a second restoration after popstate and overwrite a fresh pan.
+ try{if('scrollRestoration'in history)history.scrollRestoration='manual'}catch{}
  const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false,inputEpoch=0,backInput=0,lastWritten='',historyBlocked=false;const localParents=[];
  const write=(push=false,parent=null)=>{
   if(awaitingBack){deferredWrite=true;return true}
