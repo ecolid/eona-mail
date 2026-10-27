@@ -70,6 +70,16 @@ test('a new reading flushes only the previous retirement and has no recurring se
  const f=fixture();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);f.paint();f.mode('reader');f.left(0);f.doc.emit('mail:surface');assert.equal(disposed,1);f.paint();const callbacks=f.allFrames.length;for(let i=0;i<30;i++)f.paint();assert.equal(f.allFrames.length,callbacks);assert.equal(f.root.dataset.mailReaderPhase,'active');
 });
 
+test('the first list input retires the outgoing render layer before its native default action',()=>{
+ for(const type of ['pointerdown','touchstart','wheel','keydown']){
+  const f=fixture();f.paint();f.mode('list');f.doc.emit('mail:surface');f.left(180);let disposed=0;f.binding.retire(()=>disposed++);
+  const e=f.doc.emit(type,{target:{closest:s=>s==='#list'?{}:null}});assert.equal(e.defaultPrevented,undefined);assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
+  f.doc.emit('mail:surface');assert.equal(f.root.dataset.mailReaderPhase,'list','same-list synchronization cannot rematerialize the reader');
+  f.allFrames.slice().forEach(fn=>fn());assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
+  f.mode('reader');f.left(0);f.doc.emit('mail:surface');f.paint();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose();
+ }
+});
+
 test('sent and draft composite bodies suspend once and dispose each old resource once',()=>{
  const calls=[],body=Object.assign(()=>calls.push('body-dispose'),{suspend:()=>calls.push('body-pause')}),contacts=()=>calls.push('contacts');const combined=chainMailReaderDisposers(body,contacts);combined.suspend();combined.suspend();assert.deepEqual(calls,['body-pause','contacts']);combined();combined();combined.suspend();assert.deepEqual(calls,['body-pause','contacts','body-dispose']);
 });
