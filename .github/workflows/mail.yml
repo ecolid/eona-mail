@@ -45,9 +45,46 @@ jobs:
           done
           python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/mail-health.json")); assert d["ok"] and d["mode"]=="demo"'
           curl --fail --silent http://127.0.0.1:8799/ > "$RUNNER_TEMP/mail-page.html"
+  browser:
+    name: Browser motion (${{ matrix.browser }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Bind browser checks to the immutable release
+        run: |
+          node scripts/release.mjs --output "$RUNNER_TEMP/mail-browser-bundle"
+          (cd "$RUNNER_TEMP/mail-browser-bundle" && node scripts/verify-release.mjs)
+          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/mail-browser-bundle/node_modules"
+      - name: Run motion, rendering and lifecycle gates
+        env:
+          MAIL_PRODUCT_ROOT: ${{ runner.temp }}/mail-browser-bundle
+        run: npm run test:browser -- --project=${{ matrix.browser }}
+      - name: Preserve browser evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: mail-browser-${{ matrix.browser }}-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: error
+          retention-days: 14
   development:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
+    needs: [check, browser]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

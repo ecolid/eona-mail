@@ -1,6 +1,6 @@
 # 开发与发布
 
-通用功能只在 eona-mail 修改。执行 npm ci、资产散列核对、Node 全套产品与界面回归、四项 Python 同步测试、跟版恢复测试。另用真实浏览器检查操作及整页、过渡过程；本地场景与正式回读分别记录。
+通用功能只在 eona-mail 修改。执行 npm ci、资产散列核对、Node 全套产品与界面回归、四项 Python 同步测试、跟版恢复测试。浏览器动效与完整操作由下述 CI 门禁自动执行；产品画面判断与正式回读继续分别记录。
 
 main CI 成功后生成独立发布包，PRODUCT-RELEASE.json 记录产品 main 提交、源树、兼容合同和每个文件散列。channels/development 是连续的已验 release 历史，同时保留产品 main 祖先关系。服务器只读拉该渠道，先校验合同与文件，再由本地安装的实例适配器切换；下载的产品不能自改特权安装器。
 
@@ -260,3 +260,15 @@ model. `MAIL_FIXTURE_JOURNEYS=1` is required for controlled read faults.
 The page/content split follows Ionic's [content host and inner scroll element](https://github.com/ionic-team/ionic-framework/blob/main/core/src/components/content/content.scss).
 Only Mail's layout ownership changes; the existing native scroll and refresh
 controllers remain in use.
+
+## 浏览器动效与性能 CI
+
+`npm run test:browser -- --project=chromium`（或 `webkit`）运行产品自身的合成工作区，无需私人装配、登录、真实邮件或发信权限。先执行 `npx playwright install --with-deps chromium webkit`；CI 依赖使用锁定版本。`test/browser/scenarios.mjs` 是唯一场景清单，维护技能从本产品加载同一夹具与测量器。
+
+每次 PR、main 提交和手动候选检查运行 Chromium 与 WebKit。每个任务单 worker、无自动重试、总时限十二分钟。场景覆盖局部渲染/一帧预算、最终触点、快滑反向/取消/重抓、刷新回顶/等待/失败重试、慢阅读与迟到响应、正文和附件同次提交、首次返回输入、页面栈、连续使用和二十四轮资源清理；另验 320 深色、390 和桌面排版，以及可信浏览器 wheel 的首次滚动交接。
+
+浏览器读取干净提交生成、散列验证过的发布包；证据绑定该提交与完整文件清单。缺失、超时、仍在运行、空断言或源码不一致均失败。原根节点位移缺陷的注入反例必须被真实测量器拒绝，防止门禁失效。`development` 同时依赖普通检查与两个浏览器任务，任一失败不发布开发渠道。
+
+性能场景与 trace 截图采样分开，记录处理器、rAF、强制样式/布局刷新各自耗时，p95 合计必须低于 16.7ms；同时硬性拒绝根节点运动写入、热路径整表扫描、返回列表重建和资源累计。其它场景失败保留 trace 与截图，所有结果/HTML 报告保存为私有 Actions artifact 十四天。共享 CI 的帧间隔记录用于定位，不能写成物理 iPhone 的 FPS；新设备/原生系统特有条件才补设备验收，不让日常源码回归反复依赖用户手测。
+
+浏览器安装、单 worker 和 trace 方法沿 [Playwright CI](https://playwright.dev/docs/ci) 与 [Trace Viewer](https://playwright.dev/docs/trace-viewer)。不要给性能场景打开 trace/视频后再放宽预算。
