@@ -133,3 +133,20 @@ rendering continuity, not physical Safari FPS. Run these against the old package
 first and bind results to the exact release manifest. Product unit tests exercise
 the WAAPI path, final up coordinate, signed direction, bounded timing and stale
 completion cancellation in the normal npm test/CI entry.
+
+### Return task budget and list invalidation
+
+Reader surface changes only reset input and clear an actually active selection.
+A list already prepared for the same query and identity is reused as is. Row
+construction and quick-action presentation belong to list/data changes, with
+unchanged quick-action content retained. Account/query changes still invalidate
+the prepared scope; real action changes update their existing controls.
+
+The maintenance return-budget probe measures nested total/exclusive costs for
+pointer down/move/up, native DOM properties, history, reader suspension and surface
+listeners. It rejects any full row scan or HTML rebuild during a same-list return,
+and compares synchronous release against the observed frame cadence, capped at
+60Hz's frame budget. A 50ms long-task threshold cannot establish smooth motion.
+The normal-speed trajectory and first native input remain separate checks. Run
+against the previous package before the candidate, and exercise a real synthetic
+star/unstar mutation afterward to verify data invalidation still works.

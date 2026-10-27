@@ -101,7 +101,13 @@ export function createMailRowPainter(write,win=window){
  const flush=()=>{win.cancelAnimationFrame(frame);frame=0;const next=pending;pending=null;if(next)write(next.wrap,next.x)};
  return {queue(wrap,x){pending={wrap,x};if(!frame){const ticket=epoch;frame=win.requestAnimationFrame(()=>{if(ticket===epoch)flush()})}},flush,cancel(){epoch++;win.cancelAnimationFrame(frame);frame=0;pending=null}};
 }
-export function mailListActionsBrowserScript(){return [bindMailRowPointerInput,createMailRowPainter,mailRangeSelection,mailTwoFingerIntent,mailRemoveRows,mailReconcileList,mailAnimateListCommit,mailItemActions,mailBatchActions,mailActionBackdrop,installMailListActions].map(fn=>fn.toString()).join('\n');}
+// Page input reset and list presentation have different invalidation scopes.
+// Returning to a prepared list must not rescan/rebuild every row in pointerup.
+export function bindMailListSurface({document:doc,readScope,preparedScope,needsPreparation=()=>false,reading,hasSelection,reset,exitSelection,enhance}){
+ const surface=()=>{reset();if(readScope()!==preparedScope()||needsPreparation())enhance();else if(reading()&&hasSelection())exitSelection()};
+ doc.addEventListener('mail:surface',surface);return {dispose(){doc.removeEventListener('mail:surface',surface)}};
+}
+export function mailListActionsBrowserScript(){return [bindMailRowPointerInput,createMailRowPainter,bindMailListSurface,mailRangeSelection,mailTwoFingerIntent,mailRemoveRows,mailReconcileList,mailAnimateListCommit,mailItemActions,mailBatchActions,mailActionBackdrop,installMailListActions].map(fn=>fn.toString()).join('\n');}
 export function installMailListActions(){
  const list=document.getElementById('list'),root=document.getElementById('app');
  const selector='.mail[data-mail-id],.mail[data-sent-open],.mail[data-draft-open],.mail[data-directory-open]';
@@ -113,7 +119,8 @@ export function installMailListActions(){
  const identity=row=>row?.dataset.mailId!==undefined?{kind:'received',id:row.dataset.mailId}:row?.dataset.sentOpen?{kind:'sent',id:row.dataset.sentOpen}:row?.dataset.draftOpen?{kind:'draft',id:row.dataset.draftOpen}:row?.dataset.directoryOpen?{kind:state.folder==='subscriptions'?'source':'contact',id:row.dataset.directoryOpen}:null;
  const valueFor=item=>item.kind==='received'?(String(state.cur)===String(item.id)&&state.curMail)||activeMailPage?.readerPreviews?.get(String(item.id))||api.peek('/api/email/'+encodeURIComponent(item.id))?.email:item.kind==='sent'?MailWorkspace.row('sent',item.id):item.kind==='draft'?MailWorkspace.row('draft',item.id):item.kind==='source'?MailWorkspace.data.sources.find(m=>m.key===item.id):MailWorkspace.data.directory.find(m=>m.address===item.id);
  const button=(label,icon,action,danger=false)=>{const n=document.createElement('button');n.type='button';n.className='e-button';n.innerHTML=(icons[icon]||'')+'<span>'+esc(label)+'</span>';n.dataset.listAction=action;if(danger)n.dataset.danger='';return n};
- const paintQuick=(control,action)=>{const label={star:'星标',unstar:'取消星标',trash:'删除',restore:'恢复',edit:'编辑',important:action.label.startsWith('取消')?'取消重要':'设为重要',source:action.label.startsWith('移出')?'移出订阅':'加入订阅'}[action.key]||action.label;control.dataset.listAction=action.key;control.innerHTML='<span class="mail-quick-icon" aria-hidden="true">'+(icons[action.icon]||'')+'</span><span>'+esc(label)+'</span>';control.setAttribute('aria-label',action.label)};
+ const quickPresentation=new WeakMap();
+ const paintQuick=(control,action)=>{const signature=JSON.stringify([action.key,action.icon,action.label]);if(quickPresentation.get(control)===signature)return;quickPresentation.set(control,signature);const label={star:'星标',unstar:'取消星标',trash:'删除',restore:'恢复',edit:'编辑',important:action.label.startsWith('取消')?'取消重要':'设为重要',source:action.label.startsWith('移出')?'移出订阅':'加入订阅'}[action.key]||action.label;control.dataset.listAction=action.key;control.innerHTML='<span class="mail-quick-icon" aria-hidden="true">'+(icons[action.icon]||'')+'</span><span>'+esc(label)+'</span>';control.setAttribute('aria-label',action.label)};
  const rowLimit=wrap=>Math.min(Number(wrap.dataset.trayWidth)||232,document.documentElement.clientWidth*.62);
  const closeRow=()=>{rowPainter.cancel();if(!opened)return;opened.style.removeProperty('--mail-row-x');opened.removeAttribute('data-open');opened.querySelector('.mail-row-tray').inert=true;opened=null};
  const clearFeedback=()=>{for(const n of list.querySelectorAll('[data-mail-pressed]'))n.removeAttribute('data-mail-pressed')};
@@ -224,7 +231,7 @@ export function installMailListActions(){
  list.addEventListener('scroll',()=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover');if(!gesture?.owned)closeRow()},{passive:true});
  document.addEventListener('pointerdown',event=>{if(opened&&!opened.contains(event.target))closeRow()},{capture:true,passive:true});
  document.addEventListener('mail:list-actions',enhance);
- document.addEventListener('mail:surface',()=>{binding.cancel();closeRow();if(document.body.classList.contains('viewing'))exitSelection();enhance()});
+ bindMailListSurface({document,readScope:()=>mailPageKey()+':'+MailWorkspace.identityGeneration,preparedScope:()=>scope,needsPreparation:()=>{const head=list.querySelector('.mail-workspace-title,.mail-results-bar');return !!head&&!head.closest('.mail-page-skeleton')&&!head.querySelector('[data-mail-select-toggle]')},reading:()=>document.body.classList.contains('viewing'),hasSelection:()=>selecting||selected.size>0,reset:()=>{binding.cancel();closeRow()},exitSelection,enhance});
  window.addEventListener('blur',()=>{binding.cancel();closeRow()});document.addEventListener('visibilitychange',()=>{if(document.hidden){binding.cancel();closeRow()}});
  toolbar.onclick=async event=>{const trigger=event.target.closest('[data-list-action]');if(!trigger||busy)return;const op=trigger.dataset.listAction;if(op==='done'){cancel();exitSelection();list.querySelector('[data-mail-select-toggle]')?.focus?.({preventScroll:true});return}if(op==='all'){const ids=rows().map(r=>identity(r).id),on=ids.every(id=>selected.has(id));selected.clear();if(!on)for(const id of ids)selected.add(id);paintSelection();return}
   if(kind()!=='received'){

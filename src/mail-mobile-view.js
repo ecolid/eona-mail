@@ -290,7 +290,7 @@ function installMailMobile(){
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';
  if(window.PointerEvent)window.MailReaderPan=bindMailReaderPan({root:document.getElementById('app'),reader:document.getElementById('view'),page:document.getElementById('mail-reader-page'),mode,back:()=>returnToMailList()});
  const listActions=installMailListActions();bindMailGestureDiagnostic({root:document.getElementById('app')});
- window.MailReturnDiagnostic=bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,installMailNavigation,mailReaderRelease,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
+ window.MailReturnDiagnostic=bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,installMailNavigation,mailReaderRelease,bindMailReaderPan,returnToMailList,installMailListActions,bindMailListSurface].map(fn=>fn.toString()).join('\n')});
  bindMailMobileGestures({root:document.getElementById('app'),navigation:document.getElementById('side'),reader:document.getElementById('mail-reader-page'),mode,canRefresh:()=>mode()==='list'&&!listActions.selecting&&!['settings','routes'].includes(state.folder),openNavigation:()=>mailDrawer.open(),closeNavigation:()=>mailDrawer.close(),back:()=>returnToMailList(),refresh:()=>refresh(true,{feedback:'pull'}),listActions});
 }
 export const MAIL_MOBILE_CSS=`

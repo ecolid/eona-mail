@@ -76,3 +76,12 @@ test('row paint coalesces input bursts, flushes release and rejects cancelled ca
  paint.queue('row-a',30);paint.flush();assert.deepEqual(writes.at(-1),['row-a',30]);paint.queue('row-a',50);paint.cancel();all.forEach(fn=>fn());assert.equal(writes.length,2);
  paint.queue('row-b',-40);[...callbacks.values()].forEach(fn=>fn());assert.deepEqual(writes.at(-1),['row-b',-40]);
 });
+
+
+import {bindMailListSurface} from './src/mail-list-actions.js';
+test('reader surface changes reset input without rebuilding a prepared list; scope and selection keep their owners',()=>{
+ const handlers=new Map(),calls=[],doc={addEventListener:(name,fn)=>handlers.set(name,fn),removeEventListener:(name,fn)=>{if(handlers.get(name)===fn)handlers.delete(name)}};let scope='inbox:owner-a',prepared=scope,reading=false,selected=false,missingHeader=false;
+ const binding=bindMailListSurface({document:doc,readScope:()=>scope,preparedScope:()=>prepared,needsPreparation:()=>missingHeader,reading:()=>reading,hasSelection:()=>selected,reset:()=>calls.push('reset'),exitSelection:()=>{calls.push('exit');selected=false},enhance:()=>{calls.push('enhance');prepared=scope;missingHeader=false}});
+ const change=()=>handlers.get('mail:surface')();for(let i=0;i<20;i++){reading=true;change();reading=false;change()}assert.equal(calls.filter(c=>c==='enhance').length,0);assert.equal(calls.filter(c=>c==='exit').length,0);assert.equal(calls.filter(c=>c==='reset').length,40);
+ selected=true;reading=true;change();assert.equal(calls.at(-1),'exit');change();assert.equal(calls.at(-1),'reset');scope='inbox:owner-b';change();assert.equal(calls.at(-1),'enhance');reading=false;change();assert.equal(calls.at(-1),'reset');scope='sent:owner-b';change();assert.equal(calls.at(-1),'enhance');missingHeader=true;change();assert.equal(calls.at(-1),'enhance');change();assert.equal(calls.at(-1),'reset');binding.dispose();assert.equal(handlers.size,0);
+});
