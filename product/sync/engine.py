@@ -178,7 +178,7 @@ class Sync:
         if self.one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='product_gmail_copies'"):
             for account in self.accounts.values():
                 if getattr(account,'config',{}).get('imap',{}).get('provider')!='gmail':continue
-                copies=self.all("SELECT c.*,g.message_id AS gmail_id FROM product_source_copies c JOIN product_gmail_copies g USING(account,folder,validity,uid) WHERE c.account=? AND c.kind='drafts'",(account.key,))
+                copies=self.all("SELECT c.*,g.message_id AS gmail_id FROM product_source_copies c JOIN product_gmail_copies g USING(account,folder,validity,uid) WHERE c.account=? ORDER BY (c.kind='drafts') DESC,c.source_at",(account.key,))
                 for copy in copies:
                     id='source-'+digest(json.dumps([account.key,'gmail',copy['gmail_id'],'drafts'],separators=(',',':')))[:48]
                     row=self.draft(id)

@@ -1,4 +1,5 @@
-import copy,importlib.util,json,pathlib,sqlite3,tempfile,unittest
+import copy,importlib.util,json,pathlib,sqlite3,tempfile,unittest,subprocess,time
+from types import SimpleNamespace
 from unittest.mock import patch
 HERE=pathlib.Path(__file__).resolve().parent
 def load(name,file):
@@ -70,6 +71,14 @@ class State(unittest.TestCase):
    self.db.execute("INSERT INTO product_copy_state VALUES('other','INBOX','1','1',1,0,'')")
   self.remote.move(self.remote.item,'Trash');self.run_sync();self.assertEqual(self.db.execute('SELECT folder FROM emails').fetchone()[0],'inbox')
 class Protocol(unittest.TestCase):
+ def test_old_trash_proof_is_not_presence_in_active_drafts(self):
+  remote=object.__new__(gmail.GmailRemote)
+  class Underlying:
+   def folders(self,kind):return ['Drafts']
+   def exists(self,item):return True
+  remote.r=Underlying()
+  self.assertFalse(remote.exists({'kind':'draft','folder':'Trash'}));self.assertTrue(remote.exists({'kind':'draft','folder':'Drafts'}));self.assertTrue(remote.exists({'folder':'Trash'}))
+  db=sqlite3.connect(':memory:');db.row_factory=sqlite3.Row;row=db.execute("SELECT 'draft' AS kind,'Trash' AS folder").fetchone();self.assertFalse(remote.exists(row));db.close()
  def test_post_auth_capabilities_and_no_blanket_or_targeted_expunge(self):
   class Connection:
    capabilities=(b'X-GM-EXT-1',)
@@ -88,4 +97,29 @@ class Protocol(unittest.TestCase):
   engine=object.__new__(worker.core.Sync);engine.owner='owner';engine.db=sqlite3.connect(':memory:');engine.db.execute('CREATE TABLE mail_sync_copies(owner,account,kind,folder,validity,uid,removed)')
   engine.append=lambda *_:self.fail('Gmail draft retirement must not append a duplicate backup')
   remote=Remote();engine.retire(type('Account',(),{'key':'one'})(),remote,{'removed':0,'kind':'draft','folder':'Drafts','validity':'1','uid':2});self.assertEqual(remote.copy['uid'],2);engine.db.close()
+class Migration(unittest.TestCase):
+ def test_real_storage_readonly_draft_first_seen_in_trash_is_adopted_and_never_reappended(self):
+  with tempfile.TemporaryDirectory() as directory:
+   script=r'''
+import {openStore} from './product/store.mjs';import {createHash} from 'node:crypto';
+const root=process.argv[2],account={id:'google',address:'owner@example.test',sync:{enabled:false},imap:{provider:'gmail',folders:[{name:'Trash',kind:'trash'}]}},config={mode:'personal',owner:{id:'owner',email:'owner@example.test'},sync:{enabled:true},origin:'http://127.0.0.1:8799',accounts:[account],data_root:root};
+const store=await openStore(config),raw=Buffer.from('Message-ID: <draft@example.test>\r\nFrom: owner@example.test\r\nTo: owner@example.test\r\nDate: Tue, 01 Jan 2019 10:00:00 +0000\r\nSubject: Synthetic draft\r\n\r\nOriginal draft');
+await store.ingest(raw,{account:'google',folder:'Trash',kind:'trash',validity:'1',uid:'1',historical:true,gmail:{message_id:'99',labels:['\\Draft','\\Trash']}});
+const id='source-'+createHash('sha256').update(JSON.stringify(['google','gmail','99','drafts'])).digest('hex').slice(0,48);
+await store.db.prepare('INSERT INTO mail_drafts VALUES(?,?,?,?,?,1,?,?)').bind('owner',id,'owner@example.test','Synthetic draft','Original draft','2019-01-01T10:00:00Z',JSON.stringify({from_id:'google'})).run();store.close();
+'''
+   subprocess.run(['node','--input-type=module','-',directory],input=script,text=True,cwd=HERE.parent,capture_output=True,check=True)
+   db=sqlite3.connect(pathlib.Path(directory)/'mail.db');db.execute('DELETE FROM product_receive_only_accounts');db.commit()
+   a=SimpleNamespace(key='google',user='owner@example.test',config={'imap':{'provider':'gmail'}});engine=worker.core.Sync(db,pathlib.Path(directory)/'objects','owner',[a]);engine.adopt()
+   self.assertEqual(engine.one('SELECT base_rev FROM mail_sync_drafts')[0],1)
+   class Underlying:
+    def folders(self,kind):return ['Drafts']
+    def scan(self,kind):return []
+    def exists(self,item):return True # Physical Trash original is retained.
+    def append(self,*args):raise AssertionError('old discarded draft was resurrected')
+   remote=object.__new__(gmail.GmailRemote);remote.r=Underlying()
+   self.assertEqual(engine.account(a,remote)['state'],'ok');self.assertEqual(engine.one('SELECT count(*) FROM mail_drafts')[0],1)
+   future=time.time()+61
+   with patch.object(worker.core.time,'time',lambda:future):self.assertEqual(engine.account(a,remote)['state'],'ok')
+   self.assertEqual(engine.one('SELECT count(*) FROM mail_drafts')[0],0);self.assertEqual(engine.one('SELECT count(*) FROM mail_sync_tombstones')[0],1);self.assertEqual(engine.one('SELECT count(*) FROM product_source_copies')[0],1);self.assertEqual(engine.one('SELECT count(*) FROM mail_sync_ops')[0],0);db.close()
 if __name__=='__main__':unittest.main()

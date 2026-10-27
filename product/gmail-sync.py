@@ -26,6 +26,13 @@ class GmailRemote:
         if 'X-GM-EXT-1' not in remote.cap or 'MOVE' not in remote.cap:
             raise RuntimeError('gmail_sync_capability_missing')
     def __getattr__(self,name):return getattr(self.r,name)
+    def exists(self,item):
+        item=dict(item)
+        # An old read-only draft may first have been collected from All Mail
+        # or Trash. Its original still exists there, but its Draft role is gone.
+        # The shared missing debounce owns retiring that editable projection.
+        if item.get('kind')=='draft' and item['folder'] not in self.r.folders('draft'):return False
+        return self.r.exists(item)
     def folder(self,role):
         values=[f['name'] for f in self.configured if f['kind']==role]
         if len(values)!=1:raise RuntimeError('gmail_target_folder_ambiguous')

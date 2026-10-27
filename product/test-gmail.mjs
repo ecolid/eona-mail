@@ -39,6 +39,14 @@ test('full Gmail sync queues local state, retains full-folder coverage and leave
  const again=await openStore(c);assert.equal((await again.db.prepare("SELECT COUNT(*) n FROM product_source_status WHERE account='google' AND folder='Sent'").first()).n,1);again.close();
  assert.equal(publicAccounts(c)[0].sync,true);
 });
+test('Gmail Trash overrides a retained Draft or Sent label and cannot recreate an active workspace record',async t=>{
+ const {store}=await fixture(t);
+ for(const label of ['\\Draft','\\Sent']){
+  const value=label==='\\Draft'?'301':'302',mail=await store.ingest(raw(value),source('Trash',Number(value),value,[label,'\\Trash']));
+  assert.equal((await store.db.prepare('SELECT folder FROM emails WHERE id=?').bind(mail.id).first()).folder,'trash');
+ }
+ assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM mail_drafts').first()).n,0);assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM mail_outbox').first()).n,0);
+});
 test('self-sent Inbox is in both Inbox and Sent; a new message alerts once across Gmail label copies',async t=>{
  const {store}=await fixture(t);let arrivals=0;store.env.MAIL_SOURCE_ARRIVAL=async()=>{arrivals++;};
  const message=raw('self','owner@example.test'),labels=['\\Inbox','\\Sent','\\Starred','Projects (2026)'];
