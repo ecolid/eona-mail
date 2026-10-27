@@ -48,6 +48,16 @@ class State(unittest.TestCase):
   self.edit();self.assertEqual(self.run_sync(),([],[]))
   self.remote.item.update(seen=False,flagged=False);self.sync.observe('one',self.remote,FOLDERS)
   self.assertEqual(tuple(self.db.execute('SELECT is_read,is_starred FROM emails').fetchone()),(0,0))
+ def test_enable_sync_retires_obsolete_readonly_draft_role_without_resurrection(self):
+  with self.db:
+   self.db.execute('DELETE FROM product_gmail_state')
+   self.db.execute('UPDATE product_state_guard SET remote_apply=1')
+   self.db.execute("UPDATE emails SET folder='drafts',is_read=1")
+   self.db.execute('UPDATE product_state_guard SET remote_apply=0')
+  self.remote.move(self.remote.item,'Trash');self.sync.observe('one',self.remote,FOLDERS)
+  self.assertEqual(tuple(self.db.execute('SELECT is_read,folder FROM emails').fetchone()),(1,'trash'))
+  self.assertEqual(self.db.execute('SELECT count(*) FROM product_state_intents').fetchone()[0],0)
+  self.assertEqual(self.db.execute('SELECT raw_key FROM product_source_copies LIMIT 1').fetchone()[0],'original')
  def test_new_local_revision_is_not_consumed_by_old_receipt(self):
   self.edit();self.remote.after=lambda:self.edit(read=0,star=0);self.sync.push('one',self.remote,FOLDERS)
   self.assertEqual(self.sync.complete('one'),[1]);self.assertEqual(self.run_sync(),([],[]));self.assertFalse(self.remote.item['seen'])

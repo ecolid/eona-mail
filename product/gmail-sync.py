@@ -136,8 +136,18 @@ class GmailStateSync(state.StateSync):
                 if folder!='trash':restore=actual['folder']
                 self.db.execute('INSERT INTO product_gmail_state VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account,message_id) DO UPDATE SET is_read=excluded.is_read,is_starred=excluded.is_starred,folder=excluded.folder,labels_json=excluded.labels_json,restore_folder=excluded.restore_folder',(account,mid,known['email_id'],int(actual['seen']),int(actual['flagged']),folder,json.dumps(labels),restore))
                 pending=self.db.execute("SELECT 1 FROM product_state_intents WHERE email_id=? AND state<>'confirmed'",(known['email_id'],)).fetchone()
-                if not old or pending:continue # Adopt existing local edits, no mass write on enable.
                 current=self.db.execute('SELECT * FROM emails WHERE id=?',(known['email_id'],)).fetchone()
+                if pending:continue
+                if not old:
+                    # Receive-only workspace projections may already have been
+                    # replaced/discarded at the provider before sync was enabled.
+                    # Retain their originals, but retire that obsolete role;
+                    # local Inbox/Trash and reading choices remain untouched.
+                    if current['folder'] in ('drafts','sent') and current['folder']!=folder:
+                        self.db.execute('UPDATE product_state_guard SET remote_apply=1 WHERE id=1')
+                        self.db.execute('UPDATE emails SET folder=? WHERE id=?',(folder,known['email_id']))
+                        self.db.execute('UPDATE product_state_guard SET remote_apply=0 WHERE id=1')
+                    continue
                 values=[current['is_read'],current['is_starred'],current['folder']]
                 if old['is_read']!=int(actual['seen']):values[0]=int(actual['seen'])
                 if old['is_starred']!=int(actual['flagged']):values[1]=int(actual['flagged'])
