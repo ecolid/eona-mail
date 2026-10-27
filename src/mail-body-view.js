@@ -99,19 +99,20 @@ function mailBodyController(){
    if(doc.readyState!=='complete'&&[...doc.querySelectorAll('link[rel=stylesheet]')].some(link=>!link.sheet&&!link.dataset.mailStyleFailed))return false;
    connected=doc;resize?.disconnect();mutation?.disconnect();clearHits();
    const meta=doc.createElement('meta');meta.name='viewport';meta.content='width=device-width,initial-scale=1';doc.head.append(meta);
-   const style=doc.createElement('style');style.textContent='html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden}body{margin:0!important;min-width:0!important;width:auto!important;overflow-x:hidden;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}';doc.head.append(style);
+   const style=doc.createElement('style');style.textContent='html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overflow-x:hidden}body{margin:0!important;min-width:0!important;width:auto!important;height:auto!important;min-height:0!important;max-height:none!important;overflow-x:hidden;overflow-wrap:anywhere}img,video{max-width:100%;height:auto}';doc.head.append(style);
    const content=doc.createElement('div');content.dataset.eMailContent='';content.style.display='flow-root';while(doc.body.firstChild)content.append(doc.body.firstChild);doc.body.append(content);linkify(content);
    makeMailResponsive(doc,content);
+   let fittedWidth=0,fittedHeight=0,fittedGeometry='';
    const fit=()=>{
     pending=0;if(abort.signal.aborted||!frame.isConnected)return;
     const width=frame.clientWidth;if(!width)return;
     content.style.zoom='1';content.style.width='auto';const natural=Math.max(width,content.scrollWidth),scale=Math.min(1,width/natural);
     if(scale<1)content.style.width=natural+'px';content.style.zoom=String(scale);frame.dataset.mailScale=String(scale);
-    const height=Math.ceil(Math.max(content.getBoundingClientRect().height,doc.body.getBoundingClientRect().height));if(frame.style.height!==height+'px')frame.style.height=height+'px';
-    updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;clearTimeout(timer);clearTimeout(feedbackTimer);
+    const contentHeight=content.getBoundingClientRect().height,height=Math.ceil(Math.max(contentHeight,doc.body.getBoundingClientRect().height));if(frame.style.height!==height+'px')frame.style.height=height+'px';
+    fittedWidth=width;fittedHeight=contentHeight/scale;const geometry=width+':'+scale+':'+height;if(phase!=='ready'&&geometry!==fittedGeometry){fittedGeometry=geometry;schedule();return}updateHits(doc);phase='ready';frame.dataset.mailReady='true';frame.style.visibility='visible';status.hidden=true;clearTimeout(timer);clearTimeout(feedbackTimer);
    };
    const schedule=()=>{if(!pending)pending=requestAnimationFrame(fit)};
-   resize=new ResizeObserver(schedule);resize.observe(holder);resize.observe(content);
+   resize=new ResizeObserver(entries=>{if(entries.some(e=>e.target===holder?Math.abs(e.contentRect.width-fittedWidth)>.5:Math.abs(e.contentRect.height-fittedHeight)>.5))schedule()});resize.observe(holder);resize.observe(content);
    mutation=new MutationObserver(schedule);mutation.observe(content,{childList:true,subtree:true,characterData:true});
    doc.addEventListener('load',schedule,{capture:true,signal:abort.signal});doc.fonts?.ready.then(()=>{if(!abort.signal.aborted)schedule()});
    fit();return true;

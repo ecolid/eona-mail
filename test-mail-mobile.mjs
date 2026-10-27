@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {bindMailMobileGestures,mailGestureIntent} from './src/mail-mobile-view.js';
+import {bindMailMobileGestures,mailGestureIntent,bindMailReaderSurface} from './src/mail-mobile-view.js';
 import {mailLoadingMarkup} from './src/mail-loading-view.js';
 
 function fixture({mode='list',pull=true,scroll=0,horizontal=false,excluded=false,selection='',mask=false,readerLeft=0,primaryRow=false,directoryRow=false,nativePanModel=false,releaseInside=true,listActions}={}){
@@ -241,4 +241,10 @@ test('pull reservation cannot activate after a real drag, reversal, cancellation
   if(variant==='reverse')f.event('touchmove',150,202);if(variant==='overlay')f.overlay(true);
   f.event(variant==='cancel'?'touchcancel':'touchend',150,203,0);assert.deepEqual(f.actions,[],variant);assert(f.click());
  }
+});
+
+
+test('height-only browser chrome and keyboard resizes do not cancel the current surface or gesture',()=>{
+ const events={},doc={documentElement:{clientWidth:390}},calls=[];const binding=bindMailReaderSurface({document:doc,window:{addEventListener:(type,fn)=>events[type]=fn},sync:()=>calls.push('surface')});
+ for(let i=0;i<180;i++)events.resize();assert.equal(calls.length,0);doc.documentElement.clientWidth=844;events.resize();events.resize();assert.deepEqual(calls,['surface']);binding.dispose();
 });

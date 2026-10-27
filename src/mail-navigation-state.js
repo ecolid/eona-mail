@@ -10,9 +10,16 @@ export function normalizeMailNavigation(value,owner){
 }
 export function mailNavigationKey(route){return JSON.stringify([route.folder,route.starred,route.alias,route.box,route.origin,route.category,route.actionOnly,route.q,route.searchOrder,route.directoryGroup||''])}
 export function createMailNavigation({owner,history,url,readRoute,readScroll,readReader,applyRoute,restoreList,openReader,applyScroll,closeReader,onError,canReuseList=()=>false}){
- const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false,inputEpoch=0,backInput=0;
- const write=(push=false)=>{if(awaitingBack){deferredWrite=true;return}history[push?'pushState':'replaceState']({...history.state,eonaMail:current.reader?.id||null,eonaMailKind:current.reader?.kind||null,eonaMailPage:current},'',url)};
- const scroll=()=>{if(applying)return;Object.assign(current,readScroll());write()};
+ const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false,inputEpoch=0,backInput=0,lastWritten='',historyBlocked=false;const localParents=[];
+ const write=(push=false,parent=null)=>{
+  if(awaitingBack){deferredWrite=true;return true}
+  const key=JSON.stringify(current);if(!push&&key===lastWritten)return true;
+  try{history[push?'pushState':'replaceState']({...history.state,eonaMail:current.reader?.id||null,eonaMailKind:current.reader?.kind||null,eonaMailPage:current},'',url);lastWritten=key;historyBlocked=false;if(push)localParents.length=0;return true}
+  catch(error){if(error.name!=='SecurityError')throw error;historyBlocked=true;if(push&&parent)localParents.push(parent);return false}
+ };
+ // Live scroll is UI state. Browser history is a bounded persistence sink,
+ // never the per-frame event bus or a prerequisite for opening a message.
+ const scroll=()=>{if(!applying)Object.assign(current,readScroll())};
  if(!initial)write();else applyRoute(current.route,current.reader);
  const restore=async(snapshot,ticket,input=inputEpoch)=>{
   applying=true;closeReader();applyRoute(snapshot.route,snapshot.reader);
@@ -20,24 +27,24 @@ export function createMailNavigation({owner,history,url,readRoute,readScroll,rea
   catch(error){if(ticket===epoch){if(input!==inputEpoch){snapshot.listScroll=readScroll().listScroll;current=snapshot;write()}onError(error)}}finally{if(ticket===epoch)applying=false}
  };
  return {
-  get hasInitial(){return !!initial},get restoring(){return applying},get snapshot(){return current},
+  get hasInitial(){return !!initial},get restoring(){return applying},get snapshot(){return current},get historyBlocked(){return historyBlocked},
   visit(){const route=normalizeMailNavigation({version:1,owner,route:readRoute()},owner).route;if(mailNavigationKey(route)===mailNavigationKey(current.route))return;
-   epoch++;applying=false;Object.assign(current,readScroll());write();const sameFolder=route.folder===current.route.folder;current={version:1,owner,route,reader:sameFolder?readReader():null,listScroll:0,readerScroll:0,loaded:0,depth:current.depth+1};write(true);
+   epoch++;applying=false;Object.assign(current,readScroll());write();const sameFolder=route.folder===current.route.folder,parent=normalizeMailNavigation(current,owner);current={version:1,owner,route,reader:sameFolder?readReader():null,listScroll:0,readerScroll:0,loaded:0,depth:current.depth+1};write(true,parent);
   },
   open(id,kind,push=true,parent=null,messageKind='received'){
    // A deliberate new open supersedes pending history restoration. Internal
    // replay uses push=false and retains the restoration's own epoch.
-   if(applying){if(!push)return;epoch++;applying=false}this.visit();const prior=current.reader;Object.assign(current,readScroll());write();const next={id:String(id),kind,parent,messageKind},changed=prior?.id!==next.id||prior?.kind!==next.kind;
-   current={...current,reader:next,readerScroll:changed?0:current.readerScroll,depth:current.depth+(push&&changed?1:0)};write(push&&changed);
+   if(applying){if(!push)return;epoch++;applying=false}this.visit();const prior=current.reader;Object.assign(current,readScroll());write();const previous=normalizeMailNavigation(current,owner),next={id:String(id),kind,parent,messageKind},changed=prior?.id!==next.id||prior?.kind!==next.kind;
+   current={...current,reader:next,readerScroll:changed?0:current.readerScroll,depth:current.depth+(push&&changed?1:0)};write(push&&changed,previous);
   },
   surface(){if(!applying&&!readReader()&&current.reader){current={...current,reader:null,readerScroll:0};write()}},
-  save:scroll,
+  save:scroll,persist(){if(!applying)write()},
   input(){inputEpoch++},
-  back(){if(!current.reader||applying)return false;backInput=inputEpoch;applying=true;closeReader();if(current.depth>0&&history.length>1){awaitingBack=true;history.back();return true}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
-  pop(value){
-   const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;
+  back(){if(!current.reader||applying)return false;backInput=inputEpoch;scroll();write();applying=true;closeReader();if(awaitingBack){current={...current,reader:null,readerScroll:0};deferredWrite=true;applying=false;return true}if(localParents.length){this.pop({eonaMailPage:localParents.pop()},true);return true}if(current.depth>0&&history.length>1){awaitingBack=true;try{history.back();return true}catch(error){if(error.name!=='SecurityError')throw error;historyBlocked=true;awaitingBack=false}}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
+  pop(value,local=false){
+   const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;if(!local)localParents.length=0;lastWritten='';
    const returning=!!current.reader&&!next.reader,input=awaitingBack?backInput:inputEpoch;
-   if(awaitingBack){awaitingBack=false;if(deferredWrite){deferredWrite=false;epoch++;applying=false;current={...current,depth:next.depth+1};write(true);return true}}
+   if(awaitingBack){awaitingBack=false;if(deferredWrite){deferredWrite=false;epoch++;applying=false;const sameList=!current.reader&&mailNavigationKey(current.route)===mailNavigationKey(next.route);current=sameList?{...next,...readScroll(),reader:null,readerScroll:0}:{...current,depth:next.depth+1};write(!sameList);return true}}
    // Reading never unmounts its list. Reveal that live viewport directly; a
    // second asynchronous restore could overwrite the user's first scroll.
    if(returning&&mailNavigationKey(next.route)===mailNavigationKey(normalizeMailNavigation({version:1,owner,route:readRoute()},owner).route)&&canReuseList(next)){epoch++;applying=true;closeReader();current={...next,...readScroll(),reader:null,readerScroll:0};applying=false;write();return true}
@@ -46,8 +53,13 @@ export function createMailNavigation({owner,history,url,readRoute,readScroll,rea
   restoreInitial(){if(!initial)return Promise.resolve();return restore(initial,++epoch)},
  };
 }
+export function createMailScrollPersistence({save,persist,now=()=>performance.now(),schedule=setTimeout,cancel=clearTimeout}){
+ let timer=0,last=-Infinity;
+ const flush=()=>{cancel(timer);timer=0;save();persist();last=now()};
+ return {update(){save();if(!timer)timer=schedule(flush,Math.max(180,1000-(now()-last)))},flush,dispose(){cancel(timer);timer=0}};
+}
 export function installMailNavigation(owner){
- const list=document.getElementById('list'),view=document.getElementById('view');let pendingScroll=null,scrollFrame=0;
+ const list=document.getElementById('list'),view=document.getElementById('view');let pendingScroll=null;
  const route=()=>Object.fromEntries(['folder','starred','alias','box','origin','category','actionOnly','q','searchOrder','directoryGroup'].map(k=>[k,state[k]]));
  const readReader=()=>!document.body.classList.contains('viewing')?null:state.workspaceMail?{id:String(state.workspaceMailKind==='sent'?state.sentSelected:state.cur),kind:'workspace-message',parent:state.workspaceSelected,messageKind:state.workspaceMailKind}:state.workspaceSelected?{id:state.workspaceSelected.id,kind:state.workspaceSelected.kind}:state.sentSelected?{id:state.sentSelected,kind:'sent'}:state.cur?{id:String(state.cur),kind:'inbox'}:null;
  const closeReader=()=>{pendingScroll?.();pendingScroll=null;clearMailReader()};
@@ -66,12 +78,12 @@ export function installMailNavigation(owner){
    const ready=()=>{const frame=view.querySelector('iframe');return !view.querySelector('.mail-page-skeleton')&&(!frame||frame.dataset.mailReady==='true')};if(ready())return;
    const abort=new AbortController(),observer=new MutationObserver(()=>{if(ready()){view.scrollTop=snapshot.readerScroll;stop()}}),stop=()=>{observer.disconnect();abort.abort();if(pendingScroll===stop)pendingScroll=null};pendingScroll=stop;observer.observe(view,{subtree:true,childList:true,attributes:true,attributeFilter:['data-mail-ready']});for(const type of ['pointerdown','touchstart','wheel','keydown'])document.addEventListener(type,stop,{capture:true,passive:true,signal:abort.signal});
   },closeReader,onError:error=>mailToast(error.message||'页面恢复失败，请重试。',{tone:'error'})});
- const save=()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=0;nav.save()})};
+ const scrollPersistence=createMailScrollPersistence({save:()=>nav.save(),persist:()=>nav.persist()});const save=()=>scrollPersistence.update();
  // Native input takes ownership before its default scroll, even while the
  // previous history read is pending. Do not synthesize a scroll to prove it.
  for(const type of ['pointerdown','touchstart','wheel','keydown'])list.addEventListener(type,()=>nav.input(),{capture:true,passive:true});
- list.addEventListener('scroll',save,{passive:true});view.addEventListener('scroll',save,{passive:true});window.addEventListener('pagehide',()=>nav.save());
+ list.addEventListener('scroll',save,{passive:true});view.addEventListener('scroll',save,{passive:true});window.addEventListener('pagehide',()=>scrollPersistence.flush());
  window.addEventListener('popstate',event=>{if(nav.pop(event.state))event.stopImmediatePropagation()},{capture:true});
  document.addEventListener('mail:surface',()=>nav.surface());return nav;
 }
-export function mailNavigationBrowserScript(){return [normalizeMailNavigation,mailNavigationKey,createMailNavigation,installMailNavigation].map(fn=>fn.toString()).join('\n');}
+export function mailNavigationBrowserScript(){return [normalizeMailNavigation,mailNavigationKey,createMailNavigation,createMailScrollPersistence,installMailNavigation].map(fn=>fn.toString()).join('\n');}

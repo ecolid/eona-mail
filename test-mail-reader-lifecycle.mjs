@@ -38,7 +38,7 @@ function mobileFixture(){
  c.document.getElementById=id=>id==='list'?list:s.view;c.$=selector=>selector==='#list'?list:s.view;
  c.mailListScroll=0;c.history={state:null,pushState(value){this.state=value;events.push(['push',value.eonaMailKind,value.eonaMail])},back(){events.push(['back',classes.has('viewing')]);this.state=null}};
  const helpers=page.slice(page.indexOf('function pushMailReaderHistory('),page.indexOf('function syncMailReader('));
- const close=page.slice(page.indexOf('function closeMailReader('),page.indexOf("window.addEventListener('resize',syncMailReader)"));
+ const close=page.slice(page.indexOf('function closeMailReader('),page.indexOf('const mailReaderSurface='));
  vm.runInContext(helpers+close,c);return {...s,classes,list,events,back:()=>vm.runInContext('returnToMailList()',c)};
 }
 test('ready, pending and failed readers return immediately without opening the drawer or losing list position',async()=>{
@@ -81,7 +81,7 @@ test('switching to an incompatible folder or star view clears the previous reade
 });
 
 test('navigation cleanup and desktop reading preserve list scroll; mobile back restores its own reading origin',()=>{
- const source=page.slice(page.indexOf('function closeMailReader('),page.indexOf("window.addEventListener('resize',syncMailReader)"));
+ const source=page.slice(page.indexOf('function closeMailReader('),page.indexOf('const mailReaderSurface='));
  for(const [mobile,restore,expected]of [[false,true,500],[true,false,500],[true,true,40]]){let reading=true;const list={scrollTop:500},c={mailReaderIntent:0,state:{sentSelected:'sent-1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading,remove(){reading=false}}},getElementById:()=>list},mailListScroll:40,syncMailReader(){}};vm.createContext(c);vm.runInContext(source,c);c.closeMailReader(restore);assert.equal(list.scrollTop,expected);if(mobile&&restore)assert.equal(c.state.sentSelected,null)}
 });
 
@@ -107,9 +107,9 @@ test('clearing reading drops only reader highlights immediately, including cache
  s.clear();assert(!classes.has('on'));assert(classes.has('unread'));assert(!selected.has('on'));assert.equal(s.context.state.cur,null);
 });
 test('mobile sync clears cached reading paint without touching independent batch selection',()=>{
- const source=page.slice(page.indexOf('function syncMailReader(){'),page.indexOf('function setMailSelectionPending('));
+ const source=page.slice(page.indexOf('function syncMailReader('),page.indexOf('function setMailSelectionPending('));
  for(const [mobile,reading,expected]of [[true,false,false],[true,true,true],[false,false,true]]){
-  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},list={querySelectorAll:()=>[row]},view={},c={matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
+  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},list={querySelectorAll:()=>[row]},view={},c={mailReaderSurfaceKey:'',state:{cur:'1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
   assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,mobile&&reading);assert.equal(view.inert,mobile&&!reading);
  }
 });

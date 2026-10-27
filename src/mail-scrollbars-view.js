@@ -7,7 +7,7 @@ export function mailScrollTrack(box,heading){
 // Preserve each existing scroll element: reader history and touch controllers own it.
 export function installMailOverlayScrollbars(OverlayScrollbars){
  if(typeof OverlayScrollbars!=='function')return;
- const ports=new Map(),selector='#side,#list,#view,#mail-settings-form,.mail-settings-page>.mail-layout-settings,.mail-compose';let frame=0;
+ const ports=new Map(),selector='#side,#list,#view,#mail-settings-form,.mail-settings-page>.mail-layout-settings,.mail-compose';let frame=0,active=false;const desktop=matchMedia('(min-width:861px) and (hover:hover) and (pointer:fine)');
  const place=(element,instance)=>{
   const box=element.getBoundingClientRect(),mobile=matchMedia('(max-width:860px)').matches;
   const obscured=mobile&&(element.id==='side'&&!document.body.classList.contains('sideopen')||element.id==='list'&&document.body.classList.contains('viewing')||element.id==='view'&&!document.body.classList.contains('viewing'))||document.body.classList.contains('mail-composing')&&['list','view'].includes(element.id);
@@ -15,7 +15,7 @@ export function installMailOverlayScrollbars(OverlayScrollbars){
   bar.classList.add('mail-overlay-scrollbar');bar.dataset.mailScrollFor=element.id||'workspace';
   Object.assign(bar.style,{top:track.top+'px',left:(box.right-10)+'px',height:track.height+'px',width:'10px',zIndex:element.id==='side'&&mobile?'105':'65',visibility:!obscured&&box.width>0&&box.height>0&&box.right>0&&box.left<innerWidth?'visible':'hidden'});
  };
- const sync=()=>{frame=0;
+ const sync=()=>{frame=0;if(!active)return;
   for(const [element,instance] of ports)if(!element.isConnected){instance.destroy();ports.delete(element);sizes?.unobserve(element)}
   for(const element of document.querySelectorAll(selector)){
    if(!ports.has(element)&&element.getBoundingClientRect().width>0){
@@ -26,10 +26,13 @@ export function installMailOverlayScrollbars(OverlayScrollbars){
   }
   for(const [element,instance] of ports)place(element,instance);
  };
- const schedule=()=>{if(!frame)frame=requestAnimationFrame(sync)};
+ const schedule=()=>{if(active&&!frame)frame=requestAnimationFrame(sync)};
  const sizes=typeof ResizeObserver==='function'?new ResizeObserver(schedule):null;
  const changes=new MutationObserver(records=>{if(records.some(record=>!record.target.closest?.('.os-scrollbar')))schedule()});
- changes.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
- window.addEventListener('resize',schedule);document.addEventListener('scroll',schedule,true);document.addEventListener('transitionend',schedule);sync();
- return {refresh:schedule,dispose(){changes.disconnect();sizes?.disconnect();cancelAnimationFrame(frame);window.removeEventListener('resize',schedule);document.removeEventListener('scroll',schedule,true);document.removeEventListener('transitionend',schedule);for(const instance of ports.values())instance.destroy();ports.clear()}};
+ // Native phone panning has no scrollbar portals or custom drag owner.
+ const scrolled=event=>{if([...ports.keys()].some(node=>node!==event.target&&event.target.contains?.(node)))schedule()};
+ const deactivate=()=>{active=false;changes.disconnect();sizes?.disconnect();cancelAnimationFrame(frame);frame=0;window.removeEventListener('resize',schedule);document.removeEventListener('scroll',scrolled,true);document.removeEventListener('transitionend',schedule);for(const instance of ports.values())instance.destroy();ports.clear()};
+ const activate=()=>{deactivate();if(!desktop.matches)return;active=true;changes.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});window.addEventListener('resize',schedule);document.addEventListener('scroll',scrolled,true);document.addEventListener('transitionend',schedule);sync()};
+ desktop.addEventListener('change',activate);activate();
+ return {refresh:schedule,dispose(){desktop.removeEventListener('change',activate);deactivate()}};
 }

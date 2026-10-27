@@ -84,7 +84,18 @@ export function mailActionBackdrop(event,dialog,close){
  if(event.clientX>=r.left&&event.clientX<=r.right&&event.clientY>=r.top&&event.clientY<=r.bottom)return false;
  close();return true;
 }
-export function mailListActionsBrowserScript(){return [mailRangeSelection,mailTwoFingerIntent,mailRemoveRows,mailReconcileList,mailAnimateListCommit,mailItemActions,mailBatchActions,mailActionBackdrop,installMailListActions].map(fn=>fn.toString()).join('\n');}
+// Native vertical panning is declared in CSS. Pointer cancellation releases the
+// same row state used by touch range selection, without reserving tiny jitter.
+export function bindMailRowPointerInput({list,readGesture,move,cancel,window:win=window}){
+ if(!win.PointerEvent)return {primary:()=>undefined,reset(){},dispose(){}};
+ const contacts=new Set(),abort=new AbortController();let primary;
+ list.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;contacts.add(e.pointerId);primary=contacts.size===1?e.pointerId:undefined},{passive:true,signal:abort.signal});
+ list.addEventListener('pointermove',e=>{const g=readGesture();if(contacts.size!==1||g?.two||g?.pointer!==e.pointerId)return;move({mailPointer:true,target:e.target,touches:[{clientX:e.clientX,clientY:e.clientY}],cancelable:e.cancelable,preventDefault:()=>e.preventDefault()})},{passive:false,signal:abort.signal});
+ const release=e=>{contacts.delete(e.pointerId);if(!contacts.size)primary=undefined;if(e.type==='pointercancel'&&readGesture()?.pointer===e.pointerId)cancel()};
+ for(const type of ['pointerup','pointercancel'])list.addEventListener(type,release,{passive:true,signal:abort.signal});
+ return {primary:()=>primary,reset(){contacts.clear();primary=undefined},dispose(){abort.abort();contacts.clear();primary=undefined}};
+}
+export function mailListActionsBrowserScript(){return [bindMailRowPointerInput,mailRangeSelection,mailTwoFingerIntent,mailRemoveRows,mailReconcileList,mailAnimateListCommit,mailItemActions,mailBatchActions,mailActionBackdrop,installMailListActions].map(fn=>fn.toString()).join('\n');}
 export function installMailListActions(){
  const list=document.getElementById('list'),root=document.getElementById('app');
  const selector='.mail[data-mail-id],.mail[data-sent-open],.mail[data-draft-open],.mail[data-directory-open]';
@@ -169,6 +180,7 @@ export function installMailListActions(){
  // Check controls are siblings of the row; both surfaces resolve one identity.
  const rowAt=(x,y)=>{const hit=document.elementFromPoint(x,y);return hit?.closest(selector)||hit?.closest('.mail-action-row')?.querySelector(selector)};
  const updateRange=()=>{if(!gesture?.two||!range)return;const visible=rows(),r=list.getBoundingClientRect(),hit=rowAt(range.x,Math.max(r.top+2,Math.min(r.bottom-2,range.y))),item=identity(hit);if(item&&item.kind===kind())gesture.last=item.id;const next=mailRangeSelection(visible.map(r=>identity(r).id),gesture.base,gesture.anchor,gesture.last,true);selected.clear();for(const id of next)selected.add(id);paintSelection();const delta=range.y<r.top+48?-10:range.y>r.bottom-56?10:0;if(delta){list.scrollTop+=delta;scrollFrame=requestAnimationFrame(updateRange)}};
+ const pointerInput=bindMailRowPointerInput({list,readGesture:()=>gesture,move:event=>binding.move(event),cancel:()=>cancel()});
  const binding={
   get selecting(){return selecting},
   start(event,mode){
@@ -179,18 +191,18 @@ export function installMailListActions(){
    // available. Admit the pair here; only a move proves native ownership.
    if(points.length===2){if(previousContact&&Math.abs(list.scrollTop-previousContact.top)>1){event.mailGestureDecision='native-scroll';return false;}const first=points.find(p=>firstId!==undefined&&p.identifier===firstId)||points[0],anchor=rows().find(r=>identity(r).id===previousContact?.anchor)||rowAt(first.clientX,first.clientY);if(!anchor||identity(anchor)?.kind!==item.kind||points.some(p=>identity(rowAt(p.clientX,p.clientY))?.kind!==item.kind)){event.mailGestureDecision='outside-pair-scope';return false;}const id=identity(anchor).id;gesture={two:true,firstId:first.identifier,start:points.map(p=>({identifier:p.identifier,clientX:p.clientX,clientY:p.clientY})),anchor:id,last:id,base:new Set(selected),wasSelecting:selecting,owned:false,reserved:false};event.mailGestureDecision='pair-pending';return true}
    if(points.length!==1||event.target.closest('.mail-row-menu,[data-copy]')||!selecting&&event.target.closest('.mail-row-check'))return false;
-   const p=points[0],width=document.documentElement.clientWidth;if(p.clientX<20||p.clientX>width-20)return false;gesture={row,wrap:row.parentElement,firstId:p.identifier,selectionOnly:selecting,x:p.clientX,y:p.clientY,start:opened===row.parentElement?-rowLimit(row.parentElement):0,owned:false};return false;
+   const p=points[0],width=document.documentElement.clientWidth;if(p.clientX<20||p.clientX>width-20)return false;gesture={row,wrap:row.parentElement,pointer:pointerInput.primary(),firstId:p.identifier,selectionOnly:selecting,x:p.clientX,y:p.clientY,start:opened===row.parentElement?-rowLimit(row.parentElement):0,owned:false};return false;
   },
   move(event){
    const g=gesture;if(!g)return false;
    // Waiting for 16px before cancelling lets iOS own the first small pan.
    if(g.two){if(event.touches.length!==2){cancel();return false}const points=[...event.touches],intent=mailTwoFingerIntent(g.owned?g.previous:g.start,points,g.owned);event.mailGestureDecision='pair-'+(intent||'pending');if(g.owned)g.previous=points.map(p=>({identifier:p.identifier,clientX:p.clientX,clientY:p.clientY}));if(intent==='native')return false;if(intent==='hold'){cancelAnimationFrame(scrollFrame);scrollFrame=0;if(event.cancelable)event.preventDefault();clearFeedback();return true}if(intent==='cancel'){const owned=cancel();if(owned&&event.cancelable)event.preventDefault();return owned}if(!event.cancelable){event.mailGestureDecision='pair-native-locked';cancel();return false}event.preventDefault();g.reserved=true;clearFeedback();if(!g.owned&&!intent)return true;if(!g.owned){g.owned=true;g.previous=points.map(p=>({identifier:p.identifier,clientX:p.clientX,clientY:p.clientY}));closeRow();selecting=true}clearFeedback();const p=points;range={x:(p[0].clientX+p[1].clientX)/2,y:(p[0].clientY+p[1].clientY)/2};cancelAnimationFrame(scrollFrame);updateRange();return true}
-   if(g.selectionOnly)return false;if(event.touches.length!==1){cancel();return false}const p=event.touches[0],dx=p.clientX-g.x,dy=p.clientY-g.y;
+   if(g.selectionOnly)return false;if(g.pointer!==undefined&&!event.mailPointer)return !!g.owned;if(event.touches.length!==1){cancel();return false}const p=event.touches[0],dx=p.clientX-g.x,dy=p.clientY-g.y;
    if(!g.owned){if(Math.max(Math.abs(dx),Math.abs(dy))<16)return false;if(Math.abs(dy)>Math.abs(dx)/1.6||dx>0&&!g.start){gesture=null;closeRow();return false}if(!event.cancelable){cancel();return false}closeRow();opened=g.wrap;g.owned=true;g.wrap.setAttribute('data-dragging','');clearFeedback()}
    event.preventDefault();const limit=rowLimit(g.wrap);g.offset=Math.max(-limit,Math.min(0,g.start+dx));g.dx=dx;setOffset(g.wrap,g.offset);return true;
   },
   end(event){const g=gesture,wasMulti=multiContact;multiContact=false;if(!event.touches.length)contactStart=null;if(!g)return wasMulti?'suppress-click':false;gesture=null;range=null;cancelAnimationFrame(scrollFrame);scrollFrame=0;if(!g.owned)return wasMulti?'suppress-click':false;event.preventDefault();clearFeedback();if(g.two){paintSelection();return true}g.wrap.removeAttribute('data-dragging');const keepOpen=g.start<0?g.dx<32:g.offset<=-56;if(keepOpen){g.wrap.setAttribute('data-open','');setOffset(g.wrap,-rowLimit(g.wrap));opened=g.wrap}else closeRow();return true},
-  cancel,
+  cancel(){pointerInput.reset();return cancel()},
  };
  document.addEventListener('click',event=>{const more=event.target.closest('[data-mail-more]');if(!more||!state.cur)return;event.preventDefault();event.stopImmediatePropagation();showMore(rows().find(r=>r.dataset.mailId===String(state.cur)),more,{kind:'received',id:String(state.cur)})},true);
  list.addEventListener('click',event=>{
@@ -205,8 +217,8 @@ export function installMailListActions(){
  list.addEventListener('scroll',()=>{for(const n of list.querySelectorAll('[data-row-hover]'))n.removeAttribute('data-row-hover');if(!gesture?.owned)closeRow()},{passive:true});
  document.addEventListener('pointerdown',event=>{if(opened&&!opened.contains(event.target))closeRow()},{capture:true,passive:true});
  document.addEventListener('mail:list-actions',enhance);
- document.addEventListener('mail:surface',()=>{cancel();closeRow();if(document.body.classList.contains('viewing'))exitSelection();enhance()});
- window.addEventListener('blur',()=>{cancel();closeRow()});document.addEventListener('visibilitychange',()=>{if(document.hidden){cancel();closeRow()}});
+ document.addEventListener('mail:surface',()=>{binding.cancel();closeRow();if(document.body.classList.contains('viewing'))exitSelection();enhance()});
+ window.addEventListener('blur',()=>{binding.cancel();closeRow()});document.addEventListener('visibilitychange',()=>{if(document.hidden){binding.cancel();closeRow()}});
  toolbar.onclick=async event=>{const trigger=event.target.closest('[data-list-action]');if(!trigger||busy)return;const op=trigger.dataset.listAction;if(op==='done'){cancel();exitSelection();list.querySelector('[data-mail-select-toggle]')?.focus?.({preventScroll:true});return}if(op==='all'){const ids=rows().map(r=>identity(r).id),on=ids.every(id=>selected.has(id));selected.clear();if(!on)for(const id of ids)selected.add(id);paintSelection();return}
   if(kind()!=='received'){
    const type=kind(),generation=MailWorkspace.identityGeneration,ids=[...selected],values=new Map(ids.map(id=>[id,valueFor({kind:type,id})]));
@@ -239,7 +251,7 @@ export function installMailListActions(){
 }
 
 export const MAIL_LIST_ACTIONS_CSS=`
-.mail-action-row{position:relative;overflow:hidden;isolation:isolate;background:var(--e-ui-surface)}
+.mail-action-row{touch-action:pan-y pinch-zoom;position:relative;overflow:hidden;isolation:isolate;background:var(--e-ui-surface)}
 .mail-action-row>.mail{z-index:2;transform:translate3d(var(--mail-row-x,0px),0,0);transition:transform 240ms cubic-bezier(.16,1,.3,1),border-radius 180ms; background:var(--e-ui-surface)}
 .mail-action-row[data-open]>.mail,.mail-action-row[data-dragging]>.mail{border-radius:0 16px 16px 0}
 .mail-action-row[data-dragging]>.mail-row-tray,.mail-action-row[data-open]>.mail-row-tray{visibility:visible;transition-delay:0s}

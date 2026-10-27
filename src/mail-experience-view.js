@@ -69,7 +69,7 @@ function mailExperienceController(){
    onDragStart(){document.body.classList.add('mail-resizing');EonaUI.dismissPopovers();},onDrag(){indicatorUpdate(true);updateSeparators();},onDragEnd(){document.body.classList.remove('mail-resizing');rememberSize();indicatorUpdate(true);}});updateSeparators();
  }
  new MutationObserver(()=>rebuild()).observe(document.body,{attributes:true,attributeFilter:['class']});desktop.addEventListener('change',()=>rebuild(true));
- window.addEventListener('resize',()=>{clearTimeout(saveQueued);saveQueued=setTimeout(()=>{rebuild(true);indicatorUpdate(true);for(const root of document.querySelectorAll('.mail-segments'))segmentsChanged(root)},100);});
+ let panelWidth=innerWidth;window.addEventListener('resize',()=>{clearTimeout(saveQueued);saveQueued=setTimeout(()=>{const changed=innerWidth!==panelWidth;panelWidth=innerWidth;if(changed)rebuild(true);indicatorUpdate(true);for(const root of document.querySelectorAll('.mail-segments'))segmentsChanged(root)},100);});
  window.MailExperience={
   acceptSideUpdate(){if(document.body.classList.contains('mail-sorting')){sideDeferred=true;return false;}return true;},
   setOwner(value){owner=String(value||'password-owner');try{prefs=normalizeMailExperience(JSON.parse(localStorage.getItem(storageKey())||'{}'));}catch{prefs=normalizeMailExperience();}stopSort();settingsHost=null;state.sideMarkup=null;rebuild(true);},

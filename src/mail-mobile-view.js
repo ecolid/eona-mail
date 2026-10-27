@@ -36,7 +36,7 @@ export function bindMailTouchFeedback({root,document:doc=document,window:win=win
  const clear=()=>{contact?.node.removeAttribute('data-mail-pressed');contact=null};
  const listen=(target,type,fn)=>target.addEventListener(type,fn,{capture:true,passive:true,signal});
  listen(doc,'pointerdown',event=>{
-  hoverPolicy.refresh();clear();if(event.pointerType==='mouse'){doc.documentElement.dataset.mailPointer='mouse';return}
+  clear();if(event.pointerType==='mouse'){doc.documentElement.dataset.mailPointer='mouse';return}
   if(!['touch','pen'].includes(event.pointerType))return;
   doc.documentElement.dataset.mailPointer='touch';
   if(event.isPrimary===false||event.button>0)return;
@@ -69,6 +69,13 @@ export function bindMailPullSurface({list,document:doc=document,window:win=windo
  };
  const observer=win.MutationObserver&&list?.children?new win.MutationObserver(arrange):null;observer?.observe(list,{childList:true,subtree:true});arrange();
  return {top:()=>heading()?.getBoundingClientRect().bottom??list.getBoundingClientRect().top,dispose(){observer?.disconnect();if(clip?.parentElement){const scroll=list.scrollTop;clip.before(...content.children);clip.remove();list.scrollTop=scroll}list.style?.removeProperty('--mail-pull-heading-height')}};
+}
+// Safari browser chrome changes height during a pan. Only geometry that
+// changes the horizontal surface may invalidate the current input owner.
+export function bindMailReaderSurface({window:win=window,document:doc=document,sync}){
+ let width=doc.documentElement.clientWidth;const abort=new AbortController();
+ win.addEventListener('resize',()=>{const next=doc.documentElement.clientWidth;if(next===width)return;width=next;sync(true)},{passive:true,signal:abort.signal});
+ return {dispose(){abort.abort()}};
 }
 export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,openNavigation,closeNavigation,back,refresh,listActions,document:doc=document,window:win=window}) {
  const feedbackBinding=bindMailTouchFeedback({root,document:doc,window:win}),pullSurface=bindMailPullSurface({list:doc.getElementById('list'),document:doc,window:win});
@@ -110,7 +117,7 @@ export function bindMailMobileGestures({root,navigation,reader,mode,canRefresh,o
   if(listActions?.start(event,mode()))return;
   if(event.touches.length!==1)return;
   const target=event.target,current=mode();if(!target.closest||target.closest('input,textarea,select,label,[contenteditable]:not([contenteditable=false]),[data-mail-gesture-lock],dialog,[popover]'))return;
-  if(current!=='navigation'&&target.closest('button,a')&&!target.closest('.mail-open,#list .mail-directory-row,#list .mail-workspace-mail'))return;
+  if(current!=='navigation'&&target.closest('button,a')&&!target.closest('.mail-open,#list .mail-directory-row,#list .mail-workspace-mail,.mail-body-link-hit,#vbody a'))return;
   const point=event.touches[0],width=doc.documentElement.clientWidth;
   // Leave the browser's native back/forward edge gestures alone.
   if(point.clientX<20||point.clientX>width-20)return;
@@ -191,7 +198,7 @@ export function bindMailGestureDiagnostic({root,document:doc=document,window:win
  const dispose=()=>{abort.abort();for(const {timer}of pending.values())win.clearTimeout(timer);pending.clear();panel.remove()};close.onclick=()=>{dispose();const url=new win.URL(win.location.href);url.searchParams.delete('gesture_check');win.history.replaceState(win.history.state,'',url)};
  return {dispose};
 }
-export function mailMobileBrowserScript(){return bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
+export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
 function installMailMobile(){
  document.addEventListener('click',event=>{if(event.target.closest('[data-mail-pending-back]'))returnToMailList()});
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';

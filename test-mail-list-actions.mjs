@@ -58,3 +58,12 @@ test('action drawer backdrop closes only outside its bounds and preserves inside
  assert.equal(mailActionBackdrop({target:dialog,clientX:20,clientY:150},dialog,close),false);
  assert.equal(mailActionBackdrop({target:{},clientX:3,clientY:60},dialog,close),false);assert.equal(closed,1);
 });
+
+
+import {bindMailRowPointerInput} from './src/mail-list-actions.js';
+test('pointer axis input shares row state, native cancellation releases it, and pairs remain touch-owned',()=>{
+ const handlers={},moves=[];let g=null,cancels=0;const input=bindMailRowPointerInput({list:{addEventListener:(type,fn)=>handlers[type]=fn},window:{PointerEvent:class{}},readGesture:()=>g,move:e=>moves.push(e),cancel:()=>{cancels++;g=null}});
+ handlers.pointerdown({pointerType:'touch',pointerId:4});assert.equal(input.primary(),4);g={pointer:4};handlers.pointermove({pointerId:4,clientX:10,clientY:5,cancelable:true,preventDefault(){}});assert.equal(moves.length,1);assert.equal(moves[0].mailPointer,true);
+ handlers.pointercancel({type:'pointercancel',pointerId:4});assert.equal(cancels,1);assert.equal(g,null);assert.equal(input.primary(),undefined);
+ handlers.pointerdown({pointerType:'touch',pointerId:5});handlers.pointerdown({pointerType:'touch',pointerId:6});g={two:true};handlers.pointermove({pointerId:5});assert.equal(moves.length,1);assert.equal(input.primary(),undefined);input.reset();handlers.pointerdown({pointerType:'touch',pointerId:7});assert.equal(input.primary(),7,'a removed surface cannot leave stale pointer contacts');input.dispose();
+});

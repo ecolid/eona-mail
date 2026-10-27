@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMailNavigation,normalizeMailNavigation} from './src/mail-navigation-state.js';
+import {createMailNavigation,normalizeMailNavigation,createMailScrollPersistence} from './src/mail-navigation-state.js';
 const clone=value=>JSON.parse(JSON.stringify(value));
 const route=(folder='inbox',q='')=>({folder,q,searchOrder:'recent'});
 function fixture(saved=null,{reuse=false}={}){
@@ -80,4 +80,40 @@ test('mounted list reuse cannot cross folder or filter identity or skip reload r
 
 test('failed restoration keeps the new scroll in both the viewport and history',async()=>{
  const f=fixture();f.setScroll({listScroll:400,readerScroll:0,loaded:200});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();f.defer();f.pop();f.nav.input();f.setScroll({listScroll:520,readerScroll:0,loaded:200});f.fail();await new Promise(setImmediate);assert.equal(f.scroll().listScroll,520);assert.equal(f.nav.snapshot.listScroll,520);assert.equal(f.history.state.eonaMailPage.listScroll,520);assert(f.events.includes('error:offline'));
+});
+
+
+test('continuous reading scroll cannot exhaust the browser history budget or block the next open',async()=>{
+ const f=fixture(null,{reuse:true});let writes=0;
+ for(const name of ['replaceState','pushState']){const original=f.history[name].bind(f.history);f.history[name]=(...args)=>{if(++writes>100)throw new DOMException('history rate limit','SecurityError');return original(...args)}}
+ f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});
+ for(let i=0;i<900;i++){f.setScroll({listScroll:75,readerScroll:i,loaded:100});f.nav.save()}
+ assert(writes<10,'scroll state stays in memory, not one history write per frame');assert.equal(f.nav.snapshot.readerScroll,899);
+ assert.doesNotThrow(()=>f.nav.back());f.pop();await new Promise(setImmediate);assert.doesNotThrow(()=>f.nav.open('9','inbox'));assert.equal(f.nav.snapshot.reader.id,'9');
+});
+test('browser history refusal cannot disable reading or the local return path',async()=>{
+ const f=fixture(null,{reuse:true});for(const name of ['replaceState','pushState'])f.history[name]=()=>{throw new DOMException('history rate limit','SecurityError')};
+ assert.doesNotThrow(()=>f.nav.open('8','inbox'));f.setReader({id:'8',kind:'inbox'});assert(f.nav.back());await new Promise(setImmediate);assert.equal(f.nav.snapshot.reader,null);assert.equal(f.reader(),null);
+ assert.doesNotThrow(()=>f.nav.open('9','inbox'));assert.equal(f.nav.snapshot.reader.id,'9');
+});
+
+
+test('scroll persistence coalesces frame updates and flushes the latest state at a bounded rate',()=>{
+ let now=0,id=0,saved=0,written=0,latest=0;const jobs=new Map(),writer=createMailScrollPersistence({now:()=>now,save:()=>saved++,persist:()=>{written++;latest=now},schedule:(fn,ms)=>{jobs.set(++id,{fn,at:now+ms});return id},cancel:id=>jobs.delete(id)});
+ for(let i=0;i<1800;i++){now=i*16;writer.update();for(const [id,job]of [...jobs])if(job.at<=now){jobs.delete(id);job.fn()}}
+ assert(written<=30);assert(saved>=1800);writer.flush();assert.equal(latest,now);assert.equal(jobs.size,0);writer.dispose();
+});
+test('repeated surface synchronization is idempotent across the return event and its native history event',()=>{
+ const match=/function syncMailReader[^\n]+/.exec(testHooks().PAGE);assert(match);let reading=false,events=0,removed=0;const nodes={view:{},list:{querySelectorAll:()=>[{classList:{remove:()=>removed++}}]}};
+ const context={mailReaderSurfaceKey:'',state:{cur:null},matchMedia:()=>({matches:true}),Event,document:{body:{classList:{contains:()=>reading}},getElementById:id=>nodes[id],dispatchEvent:()=>events++}};vm.createContext(context);vm.runInContext(match[0]+';syncMailReader();syncMailReader();',context);assert.equal(events,1);assert.equal(removed,1);
+ reading=true;context.state.cur='8';vm.runInContext('syncMailReader();syncMailReader()',context);assert.equal(events,2);assert.equal(nodes.list.inert,true);
+ reading=false;context.state.cur=null;vm.runInContext('syncMailReader();syncMailReader()',context);assert.equal(events,3);assert.equal(nodes.list.inert,false);
+});
+
+
+test('open-return-open-return before native traversal settles issues only one browser back',async()=>{
+ const f=fixture(null,{reuse:true});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();const destination=clone(f.history.state);
+ f.nav.open('9','inbox');f.setReader({id:'9',kind:'inbox'});f.nav.back();assert.equal(f.events.filter(x=>x==='back').length,1,'never queue a second traversal across the app entry');
+ f.nav.pop(destination);await new Promise(setImmediate);assert.equal(f.nav.snapshot.reader,null);assert.equal(f.nav.restoring,false);assert.equal(f.history.state.eonaMailPage.reader,null);
+ f.nav.open('10','inbox');assert.equal(f.nav.snapshot.reader.id,'10');assert.equal(f.history.state.eonaMailPage.reader.id,'10');
 });
