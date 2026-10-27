@@ -106,7 +106,7 @@ test('scroll persistence coalesces frame updates and flushes the latest state at
 test('repeated surface synchronization is idempotent across the return event and its native history event',()=>{
  const match=/function syncMailReader[^\n]+/.exec(testHooks().PAGE);assert(match);let reading=false,events=0,removed=0;const nodes={view:{},list:{querySelectorAll:()=>[{classList:{remove:()=>removed++}}]}};
  const context={mailReaderSurfaceKey:'',state:{cur:null},matchMedia:()=>({matches:true}),Event,document:{body:{classList:{contains:()=>reading}},getElementById:id=>nodes[id],dispatchEvent:()=>events++}};vm.createContext(context);vm.runInContext(match[0]+';syncMailReader();syncMailReader();',context);assert.equal(events,1);assert.equal(removed,1);
- reading=true;context.state.cur='8';vm.runInContext('syncMailReader();syncMailReader()',context);assert.equal(events,2);assert.equal(nodes.list.inert,true);
+ reading=true;context.state.cur='8';vm.runInContext('syncMailReader();syncMailReader()',context);assert.equal(events,2);assert.equal(nodes.list.inert,false);
  reading=false;context.state.cur=null;vm.runInContext('syncMailReader();syncMailReader()',context);assert.equal(events,3);assert.equal(nodes.list.inert,false);
 });
 

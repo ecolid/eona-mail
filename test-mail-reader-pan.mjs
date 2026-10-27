@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {bindMailReaderPan} from './src/mail-mobile-view.js';
+import {bindMailReaderPan,bindMailReaderSurface} from './src/mail-mobile-view.js';
 import {setMailBodyInputAxes,chainMailReaderDisposers} from './src/mail-body-view.js';
 
 class Surface {
@@ -8,16 +8,18 @@ class Surface {
  addEventListener(type,fn,{signal}={}){const list=this.events.get(type)||[];list.push(fn);this.events.set(type,list);signal?.addEventListener('abort',()=>this.events.set(type,(this.events.get(type)||[]).filter(f=>f!==fn)),{once:true})}
  emit(type,values={}){const e={type,cancelable:true,detail:1,pointerType:'touch',pointerId:1,isPrimary:true,button:0,clientX:160,clientY:80,preventDefault(){this.defaultPrevented=true},stopImmediatePropagation(){this.stopped=true},...values};for(const fn of [...this.events.get(type)||[]]){fn(e);if(e.stopped)break}return e}
 }
-function fixture(){
- const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),allFrames=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
+function fixture(separatePage=false){
+ const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),idles=new Map(),allFrames=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
  query.matches=true;doc.documentElement={clientWidth:390};doc.querySelector=()=>null;
  Object.assign(win,{PointerEvent:class{},performance:{now:()=>now},matchMedia:()=>query,getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:node.horizontal?'auto':'visible'}),requestAnimationFrame(fn){allFrames.push(fn);frames.set(++id,fn);return id},cancelAnimationFrame(id){frames.delete(id)}});child.defaultView=win;
+ win.requestIdleCallback=fn=>{idles.set(++id,fn);return id};win.cancelIdleCallback=id=>idles.delete(id);
  win.setTimeout=fn=>{frames.set(++id,fn);return id};win.clearTimeout=id=>frames.delete(id);
  const root={dataset:{},style:{setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]}},reader={style:root.style,contains:n=>n===shell,getBoundingClientRect:()=>({width:390,left:left+parseFloat(styles['--mail-reader-x']||0)})};
  const node=owner=>({ownerDocument:owner,parentElement:null,closest:()=>null,setPointerCapture(){this.captured=true},hasPointerCapture(){return this.captured},releasePointerCapture(){this.captured=false}}),shell=node(doc),text=node(child),frame={getBoundingClientRect:()=>({left:reader.getBoundingClientRect().left+12,top:300})};
- const binding=bindMailReaderPan({root,reader,document:doc,window:win,mode:()=>mode,back:()=>{backs++;mode='list';doc.emit('mail:surface')}}),disposeChild=binding.bindDocument(child,frame);
+ const readerStyles={},page=separatePage?{style:root.style,getBoundingClientRect:reader.getBoundingClientRect}:reader;if(separatePage)reader.style={setProperty:(k,v)=>readerStyles[k]=v,removeProperty:k=>delete readerStyles[k]};
+ const binding=bindMailReaderPan({root,reader,page,document:doc,window:win,mode:()=>mode,back:()=>{backs++;mode='list';doc.emit('mail:surface')}}),disposeChild=binding.bindDocument(child,frame);
  const emit=(type,x=160,y=80,more={},source=child,target=text)=>{now+=20;return source.emit(type,{target,clientX:x,clientY:y,...more})},paint=()=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn())};
- return {doc,child,win,query,root,styles,reader,shell,text,frame,binding,disposeChild,emit,paint,allFrames,backs:()=>backs,mode:value=>mode=value,select:value=>selection=value,left:value=>left=value};
+ return {idle(){const batch=[...idles.values()];idles.clear();batch.forEach(fn=>fn())},doc,child,win,query,root,styles,reader,readerStyles,page,shell,text,frame,binding,disposeChild,emit,paint,allFrames,backs:()=>backs,mode:value=>mode=value,select:value=>selection=value,left:value=>left=value};
 }
 test('a pan starting inside HTML body returns through the same owner and releases input before back',()=>{
  const f=fixture();f.emit('pointerdown');assert(!f.emit('pointermove',163,81).defaultPrevented);f.emit('pointermove',300,82);f.paint();assert.equal(f.styles['--mail-reader-x'],'140px');
@@ -64,16 +66,16 @@ test('body coordinates stay stable through reversal without per-move frame geome
  f.emit('pointermove',130,80,{screenX:530,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'30px');assert.equal(reads,before);f.emit('pointercancel');assert.equal(f.styles['--mail-reader-x'],undefined);
 });
 test('retirement preserves outgoing content until offscreen, then releases exactly once',()=>{
- const f=fixture(),released=[];f.emit('pointerdown');f.emit('pointermove',300,81);f.paint();f.emit('pointerup',300,81);f.binding.retire(()=>released.push('old'));assert.deepEqual(released,[]);f.paint();assert.deepEqual(released,[]);f.left(390);f.paint();assert.deepEqual(released,['old']);f.paint();f.binding.dispose();assert.deepEqual(released,['old']);
+ const f=fixture(),released=[];f.emit('pointerdown');f.emit('pointermove',300,81);f.paint();f.emit('pointerup',300,81);f.binding.retire(()=>released.push('old'));assert.deepEqual(released,[]);f.paint();assert.deepEqual(released,[]);f.left(390);f.paint();assert.deepEqual(released,[]);f.idle();assert.deepEqual(released,['old']);f.paint();f.binding.dispose();assert.deepEqual(released,['old']);
 });
 test('a new reading flushes only the previous retirement and has no recurring settlement loop',()=>{
  const f=fixture();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);f.paint();f.mode('reader');f.left(0);f.doc.emit('mail:surface');assert.equal(disposed,1);f.paint();const callbacks=f.allFrames.length;for(let i=0;i<30;i++)f.paint();assert.equal(f.allFrames.length,callbacks);assert.equal(f.root.dataset.mailReaderPhase,'active');
 });
 
-test('the first list input retires the outgoing render layer before its native default action',()=>{
+test('first list input removes the old page without tearing down its body during the contact',()=>{
  for(const type of ['pointerdown','touchstart','wheel','keydown']){
   const f=fixture();f.paint();f.mode('list');f.doc.emit('mail:surface');f.left(180);let disposed=0;f.binding.retire(()=>disposed++);
-  const e=f.doc.emit(type,{target:{closest:s=>s==='#list'?{}:null}});assert.equal(e.defaultPrevented,undefined);assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
+  const e=f.doc.emit(type,{target:{closest:s=>s==='#list'?{}:null}});assert.equal(e.defaultPrevented,undefined);assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,0);f.idle();assert.equal(disposed,type==='keydown'?1:0);f.doc.emit('touchend');f.idle();assert.equal(disposed,1);
   f.doc.emit('mail:surface');assert.equal(f.root.dataset.mailReaderPhase,'list','same-list synchronization cannot rematerialize the reader');
   f.allFrames.slice().forEach(fn=>fn());assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
   f.mode('reader');f.left(0);f.doc.emit('mail:surface');f.paint();assert.equal(f.root.dataset.mailReaderPhase,'active');f.binding.dispose();
@@ -86,6 +88,14 @@ test('sent and draft composite bodies suspend once and dispose each old resource
 
 test('a browser-owned return finishes in the same task and cannot hide a fresh reader',()=>{
  const f=fixture();f.paint();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);
- assert.equal(f.root.dataset.mailReaderPhase,'leaving');f.binding.finishReturn();assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,1);
+ assert.equal(f.root.dataset.mailReaderPhase,'leaving');f.binding.finishReturn();assert.equal(f.root.dataset.mailReaderPhase,'list');assert.equal(disposed,0);f.idle();assert.equal(disposed,1);
  f.allFrames.slice().forEach(fn=>fn());assert.equal(f.root.dataset.mailReaderPhase,'list');f.mode('reader');f.doc.emit('mail:surface');f.paint();f.binding.finishReturn();assert.equal(f.root.dataset.mailReaderPhase,'active');assert.equal(disposed,1);f.binding.dispose();
+});
+
+test('the animation page moves while the native reader scroll node has no transform writes',()=>{
+ const f=fixture(true);f.emit('pointerdown');f.emit('pointermove',300,81);f.paint();assert.equal(f.styles['--mail-reader-x'],'140px');assert.deepEqual(f.readerStyles,{});f.emit('pointerup',300,81);assert.deepEqual(f.readerStyles,{});assert.equal(f.styles['--mail-reader-x'],undefined);f.binding.dispose();
+});
+
+test('covered list focus redirects without disabling its native scroll host',()=>{
+ const f=fixture();let reading=true,focus=0;f.doc.body={classList:{contains:()=>reading}};f.reader.focus=options=>{assert.equal(options.preventScroll,true);focus++};f.doc.getElementById=()=>f.reader;const binding=bindMailReaderSurface({document:f.doc,window:f.win,sync(){}}),target={closest:s=>s==='#list'?{}:null};f.doc.emit('focusin',{target});assert.equal(focus,1);reading=false;f.doc.emit('focusin',{target});assert.equal(focus,1);binding.dispose();reading=true;f.doc.emit('focusin',{target});assert.equal(focus,1);f.binding.dispose();
 });

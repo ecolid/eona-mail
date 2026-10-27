@@ -109,7 +109,7 @@ body.mail-atlas{--mail-control:34px;--mail-field:36px;--mail-radius:10px;--mail-
 .mail-split-gutter:hover:after,.mail-split-gutter:focus-visible:after,.mail-resizing .mail-split-gutter:after{opacity:.4}
 .mail-split-gutter:focus-visible:after{outline:2px solid var(--e-ui-accent);outline-offset:3px}
 .mail-resizing{cursor:col-resize;user-select:none}.mail-resizing iframe{pointer-events:none}
-#app[data-mail-split=true] :is(#side,#list,#view){flex:none;min-width:0}
+#app[data-mail-split=true] :is(#side,#list,#mail-reader-page){flex:none;min-width:0}
 #app[data-mail-split=true] #side,#app[data-mail-split=true] #list{border-right:0}
 .mail-search-options-panel{border-radius:var(--mail-float-radius);padding:20px!important;max-height:min(780px,var(--e-popover-available-height,82dvh));overflow:hidden}
 .mail-search-options-panel form{display:flex;flex-direction:column;min-height:0;max-height:calc(var(--e-popover-available-height,82dvh) - 42px)}

@@ -85,3 +85,24 @@ HTML正文是独立输入文档，父页监听不会跨iframe冒泡。正文、�
 导航控制器是返回操作的唯一所有者；已安装时不得因 `back()` 返回 false 再执行兼容历史逻辑。历史恢复等待数据期间，已露出的列表收到新输入即撤销旧阅读意图，迟到成功和失败均不得重开正文或覆盖新滚动。保持列表恢复和阅读恢复的取消语义独立。
 
 显式 `?return_check=1` 提供本地 `mail-return-v1` 记录，包含装载控制器的 SHA-256、表面状态、输入边界和渲染盒，不包含邮件身份、文本或地址，不自动上传或持久化。退出后解除监听、观察器、采样和 iframe 绑定。无此参数时不创建任何诊断节点或监听。
+## Mobile page and scroll ownership
+
+The reader has a non-scrolling page (`#mail-reader-page`) and a separate native
+scroll host (`#view`). The page owns translation, containment and visibility;
+the scroll host owns vertical position. The mounted list retains its original
+scroll node and is never made inert during reading. Covered-list semantics use
+`aria-hidden` and a focus guard, with pointer access gated by the active page.
+
+This follows the separation used by Ionic's [page container](https://github.com/ionic-team/ionic-framework/blob/main/core/src/css/core.scss)
+and [content scroll host](https://github.com/ionic-team/ionic-framework/blob/main/core/src/components/content/content.scss).
+It does not introduce an Ionic runtime or change Mail's data/API ownership.
+
+Return completion means the list can accept its next input. Browser-owned
+transitions finish the page synchronously; ordinary returns retain their exit
+animation. Body observers and input bindings pause on exit; destructive body
+cleanup runs at idle and waits through an active list contact. A new reader or
+disposal flushes the retired resource exactly once without replacing new content.
+
+Regression covers return, first native vertical input, next open, cancellation,
+browser history flags, late requests, and repeated long HTML readers. Event
+models, browser native scrolling, and physical Safari results remain distinct.

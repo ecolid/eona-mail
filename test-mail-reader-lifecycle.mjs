@@ -109,8 +109,8 @@ test('clearing reading drops only reader highlights immediately, including cache
 test('mobile sync clears cached reading paint without touching independent batch selection',()=>{
  const source=page.slice(page.indexOf('function syncMailReader('),page.indexOf('function setMailSelectionPending('));
  for(const [mobile,reading,expected]of [[true,false,false],[true,true,true],[false,false,true]]){
-  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},list={querySelectorAll:()=>[row]},view={},c={mailReaderSurfaceKey:'',state:{cur:'1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
-  assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,mobile&&reading);assert.equal(view.inert,mobile&&!reading);
+  const classes=new Set(['on','unread']),row={classList:{remove:name=>classes.delete(name)}},attributes=new Map(),list={querySelectorAll:()=>[row],setAttribute:(k,v)=>attributes.set(k,v),removeAttribute:k=>attributes.delete(k)},view={},c={mailReaderSurfaceKey:'',state:{cur:'1'},matchMedia:()=>({matches:mobile}),document:{body:{classList:{contains:()=>reading}},getElementById:id=>id==='list'?list:view,dispatchEvent(){}},Event};vm.createContext(c);vm.runInContext(source+';syncMailReader()',c);
+  assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,false);assert.equal(attributes.get('aria-hidden'),mobile&&reading?'true':undefined);assert.equal(view.inert,mobile&&!reading);
  }
 });
 test('mobile return freezes its outgoing content while cleanup cannot overwrite a new reader',async()=>{
