@@ -42,8 +42,12 @@ export function createMailNavigation({owner,history,url,readRoute,readScroll,rea
   },
   surface(){if(!applying&&!readReader()&&current.reader){current={...current,reader:null,readerScroll:0};write()}},
   save:scroll,persist(){if(!applying)write()},
-  input(){inputEpoch++},
-  back(){if(!current.reader||applying)return false;backInput=inputEpoch;scroll();write();applying=true;closeReader();if(awaitingBack){current={...current,reader:null,readerScroll:0};deferredWrite=true;applying=false;return true}if(localParents.length){this.pop({eonaMailPage:localParents.pop()},true);return true}if(current.depth>0&&history.length>1){awaitingBack=true;try{history.back();return true}catch(error){if(error.name!=='SecurityError')throw error;historyBlocked=true;awaitingBack=false}}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
+  input(){inputEpoch++;if(applying&&current.reader&&!readReader()){
+   // The exposed list has accepted a new intent. A historical reader waiting
+   // for data must not reopen after this pan, even if its request succeeds.
+   epoch++;applying=false;current={...current,...readScroll(),reader:null,readerScroll:0};closeReader();write();
+  }},
+  back(){if(!current.reader)return false;if(applying){epoch++;applying=false}backInput=inputEpoch;scroll();write();applying=true;closeReader();if(awaitingBack){current={...current,reader:null,readerScroll:0};deferredWrite=true;applying=false;return true}if(localParents.length){this.pop({eonaMailPage:localParents.pop()},true);return true}if(current.depth>0&&history.length>1){awaitingBack=true;try{history.back();return true}catch(error){if(error.name!=='SecurityError')throw error;historyBlocked=true;awaitingBack=false}}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
   pop(value,local=false){
    const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;if(!local)localParents.length=0;lastWritten='';
    const returning=!!current.reader&&!next.reader,input=awaitingBack?backInput:inputEpoch;

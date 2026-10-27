@@ -1,0 +1,29 @@
+// Explicit local-only capture of the return -> next input boundary. No message
+// identifiers, text, mail URLs, cookies, storage or network are read by this capture.
+export function bindMailReturnDiagnostic({root,buildSource,document:doc=document,window:win=window}){
+ if(!new win.URLSearchParams(win.location.search).has('return_check'))return {dispose(){}};
+ const abort=new AbortController(),signal=abort.signal,reader=doc.getElementById('view'),list=doc.getElementById('list'),records=[],frames=new Map(),seen=new WeakSet();let signature='pending',started=win.performance.now(),until=0,raf=0,sampled=0,reading=doc.body.classList.contains('viewing');
+ const panel=doc.createElement('aside');panel.className='mail-gesture-diagnostic';panel.setAttribute('aria-label','临时返回诊断');
+ const label=doc.createElement('span'),copy=doc.createElement('button'),exit=doc.createElement('button');copy.type=exit.type='button';copy.textContent='复制返回记录';exit.textContent='退出';label.textContent='返回记录';panel.append(label,copy,exit);doc.body.append(panel);
+ if(win.crypto?.subtle)win.crypto.subtle.digest('SHA-256',new TextEncoder().encode(buildSource)).then(raw=>{if(signal.aborted)return;signature=[...new Uint8Array(raw)].map(n=>n.toString(16).padStart(2,'0')).join('');doc.documentElement.dataset.mailReturnBuild=signature;label.textContent='返回记录 · '+signature.slice(0,8)}).catch(()=>{signature='unavailable'});else signature='unavailable';
+ const record=(type,event,origin)=>{
+  if(signal.aborted||panel.contains(event?.target))return;const css=win.getComputedStyle(reader),rect=reader.getBoundingClientRect(),viewport=win.visualViewport;
+  records.push({ms:Math.round(win.performance.now()-started),type,origin:origin||null,trusted:event?!!event.isTrusted:null,cancelable:event?!!event.cancelable:null,prevented:event?!!event.defaultPrevented:null,point:event&&Number.isFinite(event.clientX)?{x:event.clientX,y:event.clientY}:event?.changedTouches?.[0]?{x:event.changedTouches[0].clientX,y:event.changedTouches[0].clientY}:null,contacts:event?.touches?.length??null,reading:doc.body.classList.contains('viewing'),phase:root.dataset.mailReaderPhase||null,drag:root.hasAttribute('data-mail-reader-drag'),pull:root.dataset.mailPull||null,reader:{x:Math.round(rect.x*100)/100,width:rect.width,display:css.display,visibility:css.visibility,bodies:reader.querySelectorAll('iframe').length},listScroll:list.scrollTop,rootScroll:{x:win.scrollX,y:win.scrollY},viewport:viewport?{width:viewport.width,height:viewport.height,x:viewport.offsetLeft,y:viewport.offsetTop,scale:viewport.scale}:null,navigation:{restoring:!!win.MailNavigation?.restoring,reader:!!win.MailNavigation?.snapshot?.reader,historyReader:!!win.history.state?.eonaMailPage?.reader},persisted:event?.persisted??null});
+  if(records.length>180){const at=records.findIndex((item,i)=>i>=16&&item.type==='frame');records.splice(at>=0?at:16,1);}
+ };
+ const sample=()=>{raf=0;if(++sampled%2===0)record('frame');if(win.performance.now()<until)raf=win.requestAnimationFrame(sample)};
+ const observeExit=()=>{if(win.performance.now()>until&&records.length>16)records.splice(0,records.length-16);until=win.performance.now()+1600;if(!raf)raf=win.requestAnimationFrame(sample)};
+ const input=(event,origin)=>{record(event.type,event,origin);win.setTimeout(()=>record('after-'+event.type,event,origin),0)};
+ for(const type of ['pointerdown','pointerup','pointercancel','touchstart','touchend','touchcancel','wheel','scroll'])doc.addEventListener(type,e=>{const origin=e.target?.closest?.('#list')?'list':e.target?.closest?.('#view')?'reader':null;if(origin)input(e,origin)},{capture:true,passive:true,signal});
+ doc.addEventListener('mail:surface',e=>{const next=doc.body.classList.contains('viewing');record('surface',e);if(reading&&!next)observeExit();reading=next},{capture:true,signal});
+ for(const type of ['popstate','pageshow','pagehide','resize'])win.addEventListener(type,e=>{record(type,e);if(type==='popstate')observeExit()},{capture:true,passive:true,signal});
+ for(const type of ['resize','scroll'])win.visualViewport?.addEventListener(type,e=>record('viewport-'+type,e),{passive:true,signal});
+ const connect=()=>{const live=new Set(reader.querySelectorAll('iframe'));for(const [frame,item]of frames)if(!live.has(frame)){item.abort.abort();frames.delete(frame)}
+  for(const frame of live){if(!seen.has(frame)){seen.add(frame);frame.addEventListener('load',connect,{signal})}let child;try{child=frame.contentDocument}catch{}if(!child||frames.get(frame)?.document===child)continue;frames.get(frame)?.abort.abort();const binding=new AbortController();frames.set(frame,{document:child,abort:binding});for(const type of ['pointerdown','pointerup','pointercancel','touchstart','touchend','touchcancel'])child.addEventListener(type,e=>input(e,'body'),{capture:true,passive:true,signal:binding.signal});}
+ };
+ const mutation=new win.MutationObserver(()=>{connect();record('reader-mutation')});mutation.observe(reader,{childList:true,subtree:true});connect();record('start');
+ copy.onclick=async()=>{record('copy');const value=JSON.stringify({format:'mail-return-v1',uiBuild:signature,viewport:{width:doc.documentElement.clientWidth,height:doc.documentElement.clientHeight},events:records});let field=panel.querySelector('textarea');if(!field){field=doc.createElement('textarea');field.readOnly=true;field.setAttribute('aria-label','返回诊断内容');panel.append(field)}field.value=value;try{await win.navigator.clipboard.writeText(value);copy.textContent='已复制'}catch{field.focus();field.select()}};
+ const dispose=()=>{abort.abort();mutation.disconnect();win.cancelAnimationFrame(raf);for(const item of frames.values())item.abort.abort();frames.clear();panel.remove();delete doc.documentElement.dataset.mailReturnBuild};
+ exit.onclick=()=>{dispose();const url=new win.URL(win.location.href);url.searchParams.delete('return_check');win.history.replaceState(win.history.state,'',url)};
+ return {dispose};
+}

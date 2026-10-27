@@ -69,7 +69,7 @@ test('user scrolling wins over slow history restoration before and after native 
  for(const beforePop of [false,true])for(const next of [280,520]){
   const f=fixture();f.setScroll({listScroll:400,readerScroll:0,loaded:200});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();f.defer();
   if(beforePop){f.nav.input?.();f.setScroll({listScroll:next,readerScroll:0,loaded:200})}f.pop();
-  if(!beforePop){f.nav.input?.();f.setScroll({listScroll:next,readerScroll:0,loaded:200})}f.release();await new Promise(setImmediate);
+  if(!beforePop){f.nav.input?.();f.setScroll({listScroll:next,readerScroll:0,loaded:200});f.release()}else assert.equal(f.events.includes('restore'),false,'a new list intent avoids replaying the old reader restoration');await new Promise(setImmediate);
   assert.equal(f.scroll().listScroll,next);assert.equal(f.nav.snapshot.listScroll,next);assert.equal(f.history.state.eonaMailPage.listScroll,next);
  }
 });
@@ -119,3 +119,26 @@ test('open-return-open-return before native traversal settles issues only one br
 });
 
 test('browser traversal cannot restore scroll behind the application after return input begins',()=>{const f=fixture();assert.equal(f.history.scrollRestoration,'manual')});
+
+test('return during an unfinished reader restoration invalidates its late reopen',async()=>{
+ const f=fixture(),saved=normalizeMailNavigation({version:1,owner:'a',route:route(),reader:{id:'old','kind':'inbox'},depth:1},'a');
+ f.defer();f.nav.pop({eonaMailPage:saved});assert(f.nav.restoring);assert.equal(f.reader(),null);
+ assert.equal(f.nav.back(),true,'return is accepted while restoration is pending');
+ f.nav.input();f.setScroll({listScroll:90,readerScroll:0,loaded:100});f.release();await new Promise(setImmediate);
+ assert.equal(f.reader(),null);assert.equal(f.nav.snapshot.reader,null);assert(!f.events.includes('read:old'),'a late restoration cannot reopen the outgoing reader');
+});
+test('a list pan supersedes a pending historical reader, while a list-only restore still completes',async()=>{
+ for(const reader of [null,{id:'old','kind':'inbox'}]){
+  const f=fixture(),saved=normalizeMailNavigation({version:1,owner:'a',route:route(),reader,depth:1},'a');
+  f.defer();f.nav.pop({eonaMailPage:saved});f.nav.input();f.setScroll({listScroll:105,readerScroll:0,loaded:100});f.release();await new Promise(setImmediate);
+  assert.equal(f.reader(),null);assert.equal(f.nav.snapshot.reader,null);assert.equal(f.scroll().listScroll,105);assert(!f.events.includes('read:old'));
+ }
+});
+
+test('the page never falls through to legacy history while the installed owner is settling',()=>{
+ const source=testHooks().PAGE,body=source.slice(source.indexOf('function returnToMailList(){'),source.indexOf("let mailReaderSurfaceKey="));
+ for(const accepted of [true,false]){
+  const calls=[],context={window:{MailNavigation:{back:()=>{calls.push('owner');return accepted}}},history:{state:{eonaMail:'old'},back:()=>calls.push('legacy-back')},state:{},closeMailReader:()=>calls.push('legacy-close')};
+  vm.createContext(context);vm.runInContext(body+';returnToMailList();returnToMailList()',context);assert.deepEqual(calls,['owner','owner']);
+ }
+});

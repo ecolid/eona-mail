@@ -1,3 +1,4 @@
+import {bindMailReturnDiagnostic} from './mail-return-diagnostic.js';
 // Gesture ownership stays in the trusted shell. Email scripts remain disabled.
 export function mailGestureIntent(dx,dy,mode,canRefresh) {
  // A resting finger jitters before scrolling. Do not cancel that native stream.
@@ -249,12 +250,13 @@ export function bindMailGestureDiagnostic({root,document:doc=document,window:win
  const dispose=()=>{abort.abort();for(const {timer}of pending.values())win.clearTimeout(timer);pending.clear();panel.remove()};close.onclick=()=>{dispose();const url=new win.URL(win.location.href);url.searchParams.delete('gesture_check');win.history.replaceState(win.history.state,'',url)};
  return {dispose};
 }
-export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
+export function mailMobileBrowserScript(){return bindMailReaderSurface.toString()+'\n'+bindMailReaderPan.toString()+'\n'+bindMailReturnDiagnostic.toString()+'\n'+bindMailGestureDiagnostic.toString()+'\n'+bindMailHoverPolicy.toString()+'\n'+bindMailTouchFeedback.toString()+'\n'+mailGestureIntent.toString()+'\n'+bindMailPullSurface.toString()+'\n'+bindMailMobileGestures.toString()+'\n('+installMailMobile.toString()+')();'}
 function installMailMobile(){
  document.addEventListener('click',event=>{if(event.target.closest('[data-mail-pending-back]'))returnToMailList()});
  const mode=()=>document.body.classList.contains('sideopen')?'navigation':document.body.classList.contains('mail-composing')?'editor':document.body.classList.contains('viewing')?'reader':'list';
  if(window.PointerEvent)window.MailReaderPan=bindMailReaderPan({root:document.getElementById('app'),reader:document.getElementById('view'),mode,back:()=>returnToMailList()});
  const listActions=installMailListActions();bindMailGestureDiagnostic({root:document.getElementById('app')});
+ bindMailReturnDiagnostic({root:document.getElementById('app'),buildSource:[createMailNavigation,bindMailReaderPan,returnToMailList].map(fn=>fn.toString()).join('\n')});
  bindMailMobileGestures({root:document.getElementById('app'),navigation:document.getElementById('side'),reader:document.getElementById('view'),mode,canRefresh:()=>mode()==='list'&&!listActions.selecting&&!['settings','routes'].includes(state.folder),openNavigation:()=>mailDrawer.open(),closeNavigation:()=>mailDrawer.close(),back:()=>returnToMailList(),refresh:()=>refresh(true,{feedback:'pull'}),listActions});
 }
 export const MAIL_MOBILE_CSS=`
