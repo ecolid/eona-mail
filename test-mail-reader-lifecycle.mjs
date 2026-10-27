@@ -113,3 +113,10 @@ test('mobile sync clears cached reading paint without touching independent batch
   assert.equal(classes.has('on'),expected);assert.equal(classes.has('unread'),true);assert.equal(list.inert,mobile&&reading);assert.equal(view.inert,mobile&&!reading);
  }
 });
+test('mobile return freezes its outgoing content while cleanup cannot overwrite a new reader',async()=>{
+ const s=fixture(),pending=[],events=[];s.context.MailReaderPan={retire:finish=>pending.push(finish)};
+ const first=s.open('1');s.requests[0].resolve(mail(1));await first;const content=s.view.innerHTML;
+ s.context.mailBodyDispose=Object.assign(()=>events.push('dispose'),{suspend:()=>events.push('suspend')});s.clear();assert.deepEqual(events,['suspend']);assert.equal(s.view.innerHTML,content);
+ const second=s.open('2');s.requests[1].resolve(mail(2));await second;pending.shift()();assert.deepEqual(events,['suspend','dispose']);assert.match(s.view.innerHTML,/Mail 2/);
+ s.clear();pending.shift()();assert.match(s.view.innerHTML,/选择一封邮件/);
+});

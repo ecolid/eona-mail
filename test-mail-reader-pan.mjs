@@ -12,6 +12,7 @@ function fixture(){
  const doc=new Surface(),child=new Surface(),win=new Surface(),query=new Surface(),styles={},frames=new Map(),allFrames=[];let id=0,now=0,mode='reader',selection='',backs=0,left=0;
  query.matches=true;doc.documentElement={clientWidth:390};doc.querySelector=()=>null;
  Object.assign(win,{PointerEvent:class{},performance:{now:()=>now},matchMedia:()=>query,getSelection:()=>({toString:()=>selection}),getComputedStyle:node=>({overflowX:node.horizontal?'auto':'visible'}),requestAnimationFrame(fn){allFrames.push(fn);frames.set(++id,fn);return id},cancelAnimationFrame(id){frames.delete(id)}});child.defaultView=win;
+ win.setTimeout=fn=>{frames.set(++id,fn);return id};win.clearTimeout=id=>frames.delete(id);
  const root={dataset:{},style:{setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]}},reader={style:root.style,contains:n=>n===shell,getBoundingClientRect:()=>({width:390,left:left+parseFloat(styles['--mail-reader-x']||0)})};
  const node=owner=>({ownerDocument:owner,parentElement:null,closest:()=>null,setPointerCapture(){this.captured=true},hasPointerCapture(){return this.captured},releasePointerCapture(){this.captured=false}}),shell=node(doc),text=node(child),frame={getBoundingClientRect:()=>({left:reader.getBoundingClientRect().left+12,top:300})};
  const binding=bindMailReaderPan({root,reader,document:doc,window:win,mode:()=>mode,back:()=>{backs++;mode='list';doc.emit('mail:surface')}}),disposeChild=binding.bindDocument(child,frame);
@@ -61,4 +62,10 @@ test('body coordinates stay stable through reversal without per-move frame geome
  f.emit('pointermove',200,80,{screenX:540,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'40px');
  f.emit('pointermove',180,80,{screenX:560,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'60px');
  f.emit('pointermove',130,80,{screenX:530,screenY:400});f.paint();assert.equal(f.styles['--mail-reader-x'],'30px');assert.equal(reads,before);f.emit('pointercancel');assert.equal(f.styles['--mail-reader-x'],undefined);
+});
+test('retirement preserves outgoing content until offscreen, then releases exactly once',()=>{
+ const f=fixture(),released=[];f.emit('pointerdown');f.emit('pointermove',300,81);f.paint();f.emit('pointerup',300,81);f.binding.retire(()=>released.push('old'));assert.deepEqual(released,[]);f.paint();assert.deepEqual(released,[]);f.left(390);f.paint();assert.deepEqual(released,['old']);f.paint();f.binding.dispose();assert.deepEqual(released,['old']);
+});
+test('a new reading flushes only the previous retirement and has no recurring settlement loop',()=>{
+ const f=fixture();let disposed=0;f.mode('list');f.doc.emit('mail:surface');f.binding.retire(()=>disposed++);f.paint();f.mode('reader');f.left(0);f.doc.emit('mail:surface');assert.equal(disposed,1);f.paint();const callbacks=f.allFrames.length;for(let i=0;i<30;i++)f.paint();assert.equal(f.allFrames.length,callbacks);assert.equal(f.root.dataset.mailReaderPhase,'active');
 });
