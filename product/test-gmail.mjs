@@ -45,7 +45,22 @@ test('historical labels do not become new arrivals; missing metadata and receive
  await store.ingest(raw('old'),source('All',1,'100',['\\Inbox']));
  await store.ingest(raw('old'),source('INBOX',2,'100',['\\Inbox'],{historical:false}));assert.equal(arrivals,0);
  await assert.rejects(()=>store.ingest(raw('missing'),{...source('All',3,'101',[]),gmail:null}),/gmail_metadata_invalid/);
- const bad=config('/tmp/gmail-invalid');for(const more of [{sync:{enabled:true}},{smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}])assert.throws(()=>validateConfig({...bad,accounts:[{...account,...more}]}),/receive_only_required/);
+ const bad=config('/tmp/gmail-invalid');assert.throws(()=>validateConfig({...bad,accounts:[{...account,sync:{enabled:true}}]}),/external_sync_forbidden/);
+ assert.equal(publicAccounts(validateConfig({...bad,accounts:[{...account,smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}]}))[0].send,true);
  await store.db.prepare("INSERT INTO product_source_status(account,folder,state,checked_at) VALUES('google','Sent','ok','now')").run();
  const again=await openStore(c);assert.equal((await again.db.prepare("SELECT COUNT(*) n FROM product_source_status WHERE account='google' AND folder='Sent'").first()).n,1);again.close();
+});
+
+test('Gmail SMTP unknown outcome resolves from the source Sent copy without duplicate send or Sent row',async t=>{
+ const {store,c}=await fixture(t);
+ c.accounts=[{...account,smtp:{host:'smtp.gmail.com',port:465,user:'owner@example.test',password_env:'GOOGLE_PASSWORD'}}];
+ const {productSender}=await import('./connectors.mjs');const {fetchWithIdentity}=await import('../src/index.js');let submissions=0,captured;
+ store.env.MAIL_SENDER=productSender(c,()=> 'synthetic-password',{createTransport:options=>{assert.equal(options.host,'smtp.gmail.com');assert.equal(options.secure,true);assert.equal(options.tls.rejectUnauthorized,true);return {verify:async()=>true,sendMail:async message=>{submissions++;captured=message.raw;throw Error('lost final SMTP response');}};}});
+ const req=(path,body)=>fetchWithIdentity(new Request(c.origin+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),store.env,{authenticated:true,subject:c.owner.id,email:c.owner.email});
+ const save=await fetchWithIdentity(new Request(c.origin+'/api/mail-workspace/drafts/gmail-send',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({rev:0,to:'recipient@example.test',subject:'SMTP source recovery',body:'Synthetic original',from_id:'google'})}),store.env,{authenticated:true,subject:c.owner.id,email:c.owner.email});assert.equal(save.status,200);
+ const intent={draft_id:'gmail-send',rev:1,attempt_id:'gmail-once'};const response=await req('/api/mail-workspace/send',intent);assert.equal((await response.json()).message.state,'unknown');assert.equal(submissions,1);
+ await store.ingest(captured,source('All',21,'999',['\\Sent']));await store.ingest(captured,source('Sent',22,'999',['\\Sent']));
+ const rows=(await store.db.prepare('SELECT id,state FROM mail_outbox').all()).results;assert.deepEqual(rows.map(row=>({...row})),[{id:'gmail-once',state:'sent'}]);
+ assert.equal((await(await req('/api/mail-workspace/send',intent)).json()).message.state,'sent');assert.equal(submissions,1);
+ assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM product_source_copies').first()).n,2);
 });

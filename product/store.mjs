@@ -93,7 +93,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       // create the durable responsibility. Unique job keys prevent replay.
       if(config.ai)commands.push(jobs.statement('classify',result.emailId));
       if(config.notifications&&projection.kind==='inbox'&&!input.historical&&firstGmailCopy)commands.push(jobs.statement('notify',result.emailId));
-      if(!accountSyncEnabled(config,account))commands.push(...sourceProjection(db,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt));
+      if(!accountSyncEnabled(config,account))commands.push(...await sourceProjection(db,objects,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt,gmail?identity:null));
       // Complete the adapter's durable incoming responsibility before the
       // source proof/cursor can commit. A failed handoff is safely retried.
       if(projection.kind==='inbox'&&!input.historical&&firstGmailCopy&&env.MAIL_SOURCE_ARRIVAL)await env.MAIL_SOURCE_ARRIVAL(result.emailId);
@@ -103,12 +103,23 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
     return {db,objects,jobs,env,ingest,serialize,close:()=>db.close()};
   }catch(error){db.close();throw error;}
 }
-function sourceProjection(db,owner,parsed,input,emailId,rawKey,proof,at){
+async function sourceProjection(db,objects,owner,parsed,input,emailId,rawKey,proof,at,gmailIdentity=null){
   if(!['sent','drafts'].includes(input.kind))return [];
+  if(gmailIdentity&&input.kind==='sent'&&parsed.messageId){
+    const candidates=(await db.prepare("SELECT id,state,payload_json FROM mail_outbox WHERE owner=? AND message_id=? AND json_extract(payload_json,'$.from_id')=?").bind(owner,parsed.messageId,input.account).all()).results,matches=[];
+    for(const row of candidates){
+      const key=JSON.parse(row.payload_json).raw_key;if(!key)continue;
+      const object=await objects.get(key);if(!object)continue;
+      const raw=Buffer.from(await object.arrayBuffer());
+      if(archiveIdentity(raw,await PostalMime.parse(raw))===gmailIdentity)matches.push(row);
+    }
+    if(matches.length>1)throw Error('product_gmail_sent_identity_ambiguous');
+    if(matches.length===1)return [db.prepare("UPDATE mail_outbox SET state='sent',error='',updated_at=? WHERE owner=? AND id=? AND state IN ('sending','unknown')").bind(at,owner,matches[0].id)];
+  }
   const id=sha(JSON.stringify(proof)).slice(0,48),body=String(parsed.text||'').slice(0,50000);
   const address=x=>({address:x.address||'',name:x.name||''});
   const assets=(parsed.attachments||[]).map((a,i)=>({id:'source-'+sha(JSON.stringify([proof,i])).slice(0,48),name:String(a.filename||'attachment').slice(0,240),type:a.mimeType||'application/octet-stream',size:Buffer.from(a.content).length,content:Buffer.from(a.content)}));
-  const payload={from:address(parsed.from||{}),to:(parsed.to||[]).map(address),cc:(parsed.cc||[]).map(address),bcc:(parsed.bcc||[]).map(address),subject:parsed.subject||'',body,document:{ops:[{insert:body+'\n'}]},attachments:assets.map(({content,...a})=>({...a,url:'/api/mail-workspace/assets/'+a.id})),raw_key:rawKey,source_email_id:emailId};
+  const payload={from_id:input.account,from:address(parsed.from||{}),to:(parsed.to||[]).map(address),cc:(parsed.cc||[]).map(address),bcc:(parsed.bcc||[]).map(address),subject:parsed.subject||'',body,document:{ops:[{insert:body+'\n'}]},attachments:assets.map(({content,...a})=>({...a,url:'/api/mail-workspace/assets/'+a.id})),raw_key:rawKey,source_email_id:emailId};
   const commands=assets.map(a=>db.prepare('INSERT OR IGNORE INTO mail_assets(owner,id,draft_id,name,mime,size,data_base64,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(owner,a.id,'source-'+id,a.name,a.type,a.size,a.content.toString('base64'),at));
   if(input.kind==='sent'){
     commands.push(db.prepare("INSERT OR IGNORE INTO mail_outbox(owner,id,draft_id,draft_rev,payload_json,state,message_id,created_at,updated_at) VALUES(?,?,?,1,?,'sent',?,?,?)").bind(owner,id,'source-'+id,JSON.stringify(payload),parsed.messageId||'',at,at));
