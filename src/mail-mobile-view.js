@@ -218,6 +218,9 @@ export const MAIL_MOBILE_CSS=`
 .mail-side-error{margin:8px 10px;color:var(--e-ui-danger);font:12px/20px var(--e-ui-font)}.mail-side-error .btn{margin-left:4px}
 .mail-pull-status[hidden]{display:none}.mail-pull-status{position:fixed;top:var(--mail-pull-top,var(--e-ui-topbar));left:50%;height:var(--mail-pull-y,0px);overflow:hidden;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:6px;max-width:calc(100% - 32px);color:var(--sub);font:12px/20px var(--e-ui-font);z-index:44;pointer-events:none;white-space:nowrap}.mail-pull-status svg{width:14px;height:14px;flex:none}.mail-pull-status[data-phase=pending] svg{animation:mail-refresh-spin .8s linear infinite}.mail-pull-status[data-phase=complete] svg{display:none}.mail-pull-status[data-phase=settling]{opacity:0}@keyframes mail-refresh-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.mail-pull-status svg{animation:none!important}}
 @media(max-width:860px){
+ /* The exiting reader is visual only; the revealed list owns the next pan. */
+ body:not(.viewing) #view{pointer-events:none}
+ body.viewing #view{pointer-events:auto}
  #list,#view{overscroll-behavior-y:contain}
  #app[data-mail-drawer-drag] #side[data-e-drawer-mobile=true]{transform:translate3d(var(--mail-drawer-x),0,0)!important;visibility:visible!important;transition:none!important;will-change:transform}
  #app[data-mail-drawer-drag] #mask[data-e-drawer-mobile=true]{opacity:var(--mail-drawer-progress)!important;visibility:visible!important;pointer-events:auto!important;transition:none!important}

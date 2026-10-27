@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import {createMailNavigation,normalizeMailNavigation} from './src/mail-navigation-state.js';
 const clone=value=>JSON.parse(JSON.stringify(value));
 const route=(folder='inbox',q='')=>({folder,q,searchOrder:'recent'});
-function fixture(saved=null){
- let target=route(),reader=null,scroll={listScroll:0,readerScroll:0,loaded:100},pending=null;
+function fixture(saved=null,{reuse=false}={}){
+ let target=route(),reader=null,scroll={listScroll:0,readerScroll:0,loaded:100},pending=null,rejectPending=null;
  const stack=[saved?{eonaMailPage:saved}:{}],events=[];let at=0;
  const history={get state(){return stack[at]},get length(){return stack.length},pushState(v){stack.splice(at+1);stack.push(clone(v));at++;events.push('push')},replaceState(v){stack[at]=clone(v);events.push('replace')},back(){events.push('back');at=Math.max(0,at-1)}};
- const nav=createMailNavigation({owner:'a',history,url:'https://mail.test/',readRoute:()=>target,readReader:()=>reader,readScroll:()=>scroll,applyRoute:(r)=>{target=r},restoreList:()=>pending?new Promise(resolve=>pending=resolve):Promise.resolve(),openReader:async r=>{reader=r;events.push('read:'+r.id)},applyScroll:(s,reading)=>{scroll={listScroll:s.listScroll,readerScroll:reading?s.readerScroll:0,loaded:s.loaded}},closeReader:()=>{reader=null;events.push('close')},onError:e=>events.push('error:'+e.message)});
- return {nav,history,stack,events,setRoute:r=>target=r,setReader:r=>reader=r,setScroll:s=>scroll=s,reader:()=>reader,scroll:()=>scroll,defer:()=>pending=true,release:()=>{const fn=pending;pending=null;fn()},pop:()=>nav.pop(history.state)};
+ const nav=createMailNavigation({owner:'a',history,url:'https://mail.test/',readRoute:()=>target,readReader:()=>reader,readScroll:()=>scroll,canReuseList:()=>reuse,applyRoute:(r)=>{target=r},restoreList:()=>{events.push('restore');return pending?new Promise((resolve,reject)=>{pending=resolve;rejectPending=reject}):Promise.resolve()},openReader:async r=>{reader=r;events.push('read:'+r.id)},applyScroll:(s,reading)=>{scroll={listScroll:s.listScroll,readerScroll:reading?s.readerScroll:0,loaded:s.loaded}},closeReader:()=>{reader=null;events.push('close')},onError:e=>events.push('error:'+e.message)});
+ return {nav,history,stack,events,setRoute:r=>target=r,setReader:r=>reader=r,setScroll:s=>scroll=s,reader:()=>reader,scroll:()=>scroll,defer:()=>pending=true,release:()=>{const fn=pending;pending=null;fn()},fail:()=>{pending=null;rejectPending(Error('offline'))},pop:()=>nav.pop(history.state)};
 }
 test('history data is account-scoped, bounded and excludes arbitrary state',()=>{
  assert.equal(normalizeMailNavigation({version:1,owner:'other',route:route()},'a'),null);
@@ -58,4 +58,26 @@ test('an immediate next tap survives the asynchronous native back event',async()
  // The native traversal has moved, but its popstate has not been delivered yet.
  f.nav.open('9','inbox');f.setReader({id:'9',kind:'inbox'});f.nav.pop(destination);await new Promise(setImmediate);
  assert.equal(f.nav.snapshot.reader.id,'9');assert.equal(f.reader().id,'9');assert.equal(f.history.state.eonaMailPage.reader.id,'9');
+});
+
+test('return to the mounted list is immediate and keeps the first native scroll without rereading',async()=>{
+ const f=fixture(null,{reuse:true});f.setScroll({listScroll:400,readerScroll:0,loaded:200});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();
+ f.setScroll({listScroll:520,readerScroll:0,loaded:200});f.nav.input?.();f.pop();await new Promise(setImmediate);
+ assert.equal(f.events.includes('restore'),false);assert.equal(f.nav.restoring,false);assert.equal(f.scroll().listScroll,520);assert.equal(f.nav.snapshot.listScroll,520);
+});
+test('user scrolling wins over slow history restoration before and after native popstate',async()=>{
+ for(const beforePop of [false,true])for(const next of [280,520]){
+  const f=fixture();f.setScroll({listScroll:400,readerScroll:0,loaded:200});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();f.defer();
+  if(beforePop){f.nav.input?.();f.setScroll({listScroll:next,readerScroll:0,loaded:200})}f.pop();
+  if(!beforePop){f.nav.input?.();f.setScroll({listScroll:next,readerScroll:0,loaded:200})}f.release();await new Promise(setImmediate);
+  assert.equal(f.scroll().listScroll,next);assert.equal(f.nav.snapshot.listScroll,next);assert.equal(f.history.state.eonaMailPage.listScroll,next);
+ }
+});
+test('mounted list reuse cannot cross folder or filter identity or skip reload restoration',async()=>{
+ const saved=normalizeMailNavigation({version:1,owner:'a',route:route(),listScroll:330,loaded:200},'a');const reloaded=fixture(saved,{reuse:true});await reloaded.nav.restoreInitial();assert.equal(reloaded.scroll().listScroll,330);assert(reloaded.events.includes('restore'));
+ for(const changed of [route('sent'),route('inbox','changed')]){const f=fixture(null,{reuse:true});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});const next=normalizeMailNavigation({version:1,owner:'a',route:changed,listScroll:90},'a');f.nav.pop({eonaMailPage:next});await new Promise(setImmediate);assert(f.events.includes('restore'));assert.equal(f.scroll().listScroll,90)}
+});
+
+test('failed restoration keeps the new scroll in both the viewport and history',async()=>{
+ const f=fixture();f.setScroll({listScroll:400,readerScroll:0,loaded:200});f.nav.open('8','inbox');f.setReader({id:'8',kind:'inbox'});f.nav.back();f.defer();f.pop();f.nav.input();f.setScroll({listScroll:520,readerScroll:0,loaded:200});f.fail();await new Promise(setImmediate);assert.equal(f.scroll().listScroll,520);assert.equal(f.nav.snapshot.listScroll,520);assert.equal(f.history.state.eonaMailPage.listScroll,520);assert(f.events.includes('error:offline'));
 });

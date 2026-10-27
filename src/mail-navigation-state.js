@@ -9,15 +9,15 @@ export function normalizeMailNavigation(value,owner){
  return {version:1,owner,route,reader:reader(value.reader),listScroll:number(value.listScroll,1e8),readerScroll:number(value.readerScroll,1e8),loaded:number(value.loaded,100000),depth:number(value.depth,10000)};
 }
 export function mailNavigationKey(route){return JSON.stringify([route.folder,route.starred,route.alias,route.box,route.origin,route.category,route.actionOnly,route.q,route.searchOrder,route.directoryGroup||''])}
-export function createMailNavigation({owner,history,url,readRoute,readScroll,readReader,applyRoute,restoreList,openReader,applyScroll,closeReader,onError}){
- const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false;
+export function createMailNavigation({owner,history,url,readRoute,readScroll,readReader,applyRoute,restoreList,openReader,applyScroll,closeReader,onError,canReuseList=()=>false}){
+ const initial=normalizeMailNavigation(history.state?.eonaMailPage,owner);let current=initial||normalizeMailNavigation({version:1,owner,route:readRoute()},owner),applying=!!initial,epoch=0,awaitingBack=false,deferredWrite=false,inputEpoch=0,backInput=0;
  const write=(push=false)=>{if(awaitingBack){deferredWrite=true;return}history[push?'pushState':'replaceState']({...history.state,eonaMail:current.reader?.id||null,eonaMailKind:current.reader?.kind||null,eonaMailPage:current},'',url)};
  const scroll=()=>{if(applying)return;Object.assign(current,readScroll());write()};
  if(!initial)write();else applyRoute(current.route,current.reader);
- const restore=async(snapshot,ticket)=>{
+ const restore=async(snapshot,ticket,input=inputEpoch)=>{
   applying=true;closeReader();applyRoute(snapshot.route,snapshot.reader);
-  try{await restoreList(snapshot,()=>ticket===epoch);if(ticket!==epoch)return;applyScroll(snapshot,false);if(snapshot.reader){await openReader(snapshot.reader);if(ticket!==epoch)return;applyScroll(snapshot,true)}if(ticket===epoch){current=snapshot;write()}}
-  catch(error){if(ticket===epoch)onError(error)}finally{if(ticket===epoch)applying=false}
+  try{await restoreList(snapshot,()=>ticket===epoch);if(ticket!==epoch)return;if(input===inputEpoch)applyScroll(snapshot,false);else snapshot.listScroll=readScroll().listScroll;if(snapshot.reader){await openReader(snapshot.reader);if(ticket!==epoch)return;if(input===inputEpoch)applyScroll(snapshot,true);else Object.assign(snapshot,readScroll())}if(ticket===epoch){current=snapshot;write()}}
+  catch(error){if(ticket===epoch){if(input!==inputEpoch){snapshot.listScroll=readScroll().listScroll;current=snapshot;write()}onError(error)}}finally{if(ticket===epoch)applying=false}
  };
  return {
   get hasInitial(){return !!initial},get restoring(){return applying},get snapshot(){return current},
@@ -32,8 +32,17 @@ export function createMailNavigation({owner,history,url,readRoute,readScroll,rea
   },
   surface(){if(!applying&&!readReader()&&current.reader){current={...current,reader:null,readerScroll:0};write()}},
   save:scroll,
-  back(){if(!current.reader||applying)return false;applying=true;closeReader();if(current.depth>0&&history.length>1){awaitingBack=true;history.back();return true}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
-  pop(value){const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;if(awaitingBack){awaitingBack=false;if(deferredWrite){deferredWrite=false;epoch++;applying=false;current={...current,depth:next.depth+1};write(true);return true}}current=next;restore(next,++epoch);return true},
+  input(){inputEpoch++},
+  back(){if(!current.reader||applying)return false;backInput=inputEpoch;applying=true;closeReader();if(current.depth>0&&history.length>1){awaitingBack=true;history.back();return true}applying=false;current={...current,reader:null,readerScroll:0};write();return true},
+  pop(value){
+   const next=normalizeMailNavigation(value?.eonaMailPage,owner);if(!next)return false;
+   const returning=!!current.reader&&!next.reader,input=awaitingBack?backInput:inputEpoch;
+   if(awaitingBack){awaitingBack=false;if(deferredWrite){deferredWrite=false;epoch++;applying=false;current={...current,depth:next.depth+1};write(true);return true}}
+   // Reading never unmounts its list. Reveal that live viewport directly; a
+   // second asynchronous restore could overwrite the user's first scroll.
+   if(returning&&mailNavigationKey(next.route)===mailNavigationKey(normalizeMailNavigation({version:1,owner,route:readRoute()},owner).route)&&canReuseList(next)){epoch++;applying=true;closeReader();current={...next,...readScroll(),reader:null,readerScroll:0};applying=false;write();return true}
+   current=next;restore(next,++epoch,input);return true;
+  },
   restoreInitial(){if(!initial)return Promise.resolve();return restore(initial,++epoch)},
  };
 }
@@ -43,6 +52,7 @@ export function installMailNavigation(owner){
  const readReader=()=>!document.body.classList.contains('viewing')?null:state.workspaceMail?{id:String(state.workspaceMailKind==='sent'?state.sentSelected:state.cur),kind:'workspace-message',parent:state.workspaceSelected,messageKind:state.workspaceMailKind}:state.workspaceSelected?{id:state.workspaceSelected.id,kind:state.workspaceSelected.kind}:state.sentSelected?{id:state.sentSelected,kind:'sent'}:state.cur?{id:String(state.cur),kind:'inbox'}:null;
  const closeReader=()=>{pendingScroll?.();pendingScroll=null;clearMailReader()};
  const nav=createMailNavigation({owner,history,url:location.href,readRoute:route,readReader,
+  canReuseList:snapshot=>activeMailPage?.key===mailPageKey()&&list.getAttribute('aria-busy')!=='true'&&!list.querySelector('.mail-page-skeleton,.mail-list-error')&&!!list.querySelector('.mail-workspace-title,.mail-results-bar')&&(['contacts','important','subscriptions'].includes(state.folder)?activeMailPage?.directoryLimit||80:listMore.offset||100)>=snapshot.loaded,
   readScroll:()=>({listScroll:list.scrollTop,readerScroll:view.scrollTop,loaded:['contacts','important','subscriptions'].includes(state.folder)?activeMailPage?.directoryLimit||80:listMore.offset||100}),
   applyRoute:(next,reader)=>{pendingScroll?.();pendingScroll=null;invalidateMailSearch();Object.assign(state,next);state.queryScope=['drafts','contacts','important','subscriptions','sent'].includes(state.folder)?state.folder:'mail';state.queries||={};state.queries[state.queryScope]=next.q;document.getElementById('q').value=next.q;state.cur=reader?.kind==='inbox'?reader.id:null;state.curMail=null;state.sentSelected=reader?.kind==='sent'?reader.id:null;state.readerFolder=state.queryScope;activateMailQueryScope()},
   restoreList:async(snapshot,current)=>{
@@ -57,6 +67,9 @@ export function installMailNavigation(owner){
    const abort=new AbortController(),observer=new MutationObserver(()=>{if(ready()){view.scrollTop=snapshot.readerScroll;stop()}}),stop=()=>{observer.disconnect();abort.abort();if(pendingScroll===stop)pendingScroll=null};pendingScroll=stop;observer.observe(view,{subtree:true,childList:true,attributes:true,attributeFilter:['data-mail-ready']});for(const type of ['pointerdown','touchstart','wheel','keydown'])document.addEventListener(type,stop,{capture:true,passive:true,signal:abort.signal});
   },closeReader,onError:error=>mailToast(error.message||'页面恢复失败，请重试。',{tone:'error'})});
  const save=()=>{if(!scrollFrame)scrollFrame=requestAnimationFrame(()=>{scrollFrame=0;nav.save()})};
+ // Native input takes ownership before its default scroll, even while the
+ // previous history read is pending. Do not synthesize a scroll to prove it.
+ for(const type of ['pointerdown','touchstart','wheel','keydown'])list.addEventListener(type,()=>nav.input(),{capture:true,passive:true});
  list.addEventListener('scroll',save,{passive:true});view.addEventListener('scroll',save,{passive:true});window.addEventListener('pagehide',()=>nav.save());
  window.addEventListener('popstate',event=>{if(nav.pop(event.state))event.stopImmediatePropagation()},{capture:true});
  document.addEventListener('mail:surface',()=>nav.surface());return nav;
