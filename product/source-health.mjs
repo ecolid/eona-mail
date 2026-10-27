@@ -1,3 +1,4 @@
+import {accountSyncEnabled} from './config.mjs';
 const stamp=clock=>new Date(clock()).toISOString();
 export const SOURCE_KINDS=['inbox','sent','drafts','trash','archive','junk'];
 export async function initializeSourceHealth(db){await db.exec(`CREATE TABLE IF NOT EXISTS product_source_inventory(account TEXT PRIMARY KEY,folders_json TEXT NOT NULL DEFAULT '[]',state TEXT NOT NULL,checked_at TEXT NOT NULL,last_success TEXT NOT NULL DEFAULT '',error TEXT NOT NULL DEFAULT '');
@@ -39,7 +40,7 @@ export async function sourceHealthAPI(path,body,store,config,{clock=Date.now}={}
   }
   if(!folder||!/^\d+$/.test(body.validity)||!Array.isArray(body.uids)||body.uids.length>1000000||body.uids.some(x=>typeof x!=='string'||!/^\d+$/.test(x))||new Set(body.uids).size!==body.uids.length)throw Error('source_coverage_invalid');
   let rows=(await store.db.prepare('SELECT uid FROM product_source_copies WHERE account=? AND folder=? AND validity=?').bind(account.id,folder.name,body.validity).all()).results;
-  if(['sent','drafts'].includes(folder.kind)){
+  if(accountSyncEnabled(config,account)&&['sent','drafts'].includes(folder.kind)){
    const table=folder.kind==='sent'?'mail_sent_sources':'mail_draft_sources';rows=[...rows,...(await store.db.prepare('SELECT uid FROM '+table+' WHERE owner=? AND account=? AND folder IN (?,?) AND validity=?').bind(config.owner.id,account.id,folder.name,body.wire_folder||folder.name,body.validity).all()).results];
   }
   const known=new Set(rows.map(r=>String(r.uid))),missing=body.uids.filter(uid=>!known.has(uid));

@@ -4,6 +4,7 @@ import argparse,base64,imaplib,json,os,pathlib,re,ssl,urllib.request,urllib.pars
 secret_spec=importlib.util.spec_from_file_location('mail_secret_files',pathlib.Path(__file__).with_name('secret-files.py'));secret_files=importlib.util.module_from_spec(secret_spec);secret_spec.loader.exec_module(secret_files)
 spec=importlib.util.spec_from_file_location("mail_imap_protocol",pathlib.Path(__file__).with_name("imap-protocol.py"));protocol=importlib.util.module_from_spec(spec);spec.loader.exec_module(protocol)
 inventory_spec=importlib.util.spec_from_file_location('mail_source_inventory',pathlib.Path(__file__).with_name('source-inventory.py'));inventory=importlib.util.module_from_spec(inventory_spec);inventory_spec.loader.exec_module(inventory)
+gmail_spec=importlib.util.spec_from_file_location('mail_gmail_metadata',pathlib.Path(__file__).with_name('gmail.py'));gmail=importlib.util.module_from_spec(gmail_spec);gmail_spec.loader.exec_module(gmail)
 
 raw_spec=importlib.util.spec_from_file_location('mail_original_reader',pathlib.Path(__file__).parent/'sync/sent.py');original_reader=importlib.util.module_from_spec(raw_spec);raw_spec.loader.exec_module(original_reader)
 
@@ -30,8 +31,9 @@ def uids(client,start,end='*'):
     if status!='OK':raise ValueError('source_search_failed')
     return sorted({int(x) for x in (values[0] or b'').split() if int(x)>=start and (end=='*' or int(x)<=end)})
 
-def read_original(client,uid):
-    status,parts=client.uid('fetch',str(uid),'(UID FLAGS INTERNALDATE BODY.PEEK[])')
+def read_original(client,uid,gmail_metadata=False):
+    attributes='UID FLAGS INTERNALDATE'+(' X-GM-MSGID X-GM-LABELS' if gmail_metadata else '')
+    status,parts=client.uid('fetch',str(uid),'('+attributes+' BODY.PEEK[])')
     records=[x for x in parts or [] if isinstance(x,tuple) and len(x)==2]
     if status!='OK':raise ValueError('source_fetch_failed')
     if len(records)==1 and isinstance(records[0][1],bytes) and records[0][1]:
@@ -43,7 +45,7 @@ def read_original(client,uid):
         except RuntimeError as error:
             if str(error) not in ['sent_body_incomplete','sent_literal_incomplete','sent_body_changed','sent_size_missing','sent_original_too_large']:raise
             raise RuntimeError('source_original_unavailable') from error
-        flags_status,flags_parts=client.uid('fetch',str(uid),'(UID FLAGS INTERNALDATE)')
+        flags_status,flags_parts=client.uid('fetch',str(uid),'('+attributes+')')
         header=b' '.join(p for p in flags_parts or [] if isinstance(p,bytes))
         if flags_status!='OK':raise ValueError('source_flags_failed')
     else:raise ValueError('source_fetch_ambiguous')
@@ -79,7 +81,7 @@ def collect_folder(client,api,account,folder,previous=None,limit=100,audit=False
             return set(api.call('/internal/product/known-copies',{'account':account['id'],'folder':folder['name'],'validity':validity,'uids':[str(x) for x in items]}).get('uids',[])) if items else set()
         def receive(uid,historical):
             attempted.add(uid)
-            try:header,raw=read_original(client,uid)
+            try:header,raw=read_original(client,uid,True) if account.get('imap',{}).get('provider')=='gmail' else read_original(client,uid)
             except RuntimeError as error:
                 if str(error)!='source_original_unavailable':raise
                 gap=next((g for g in state['gaps'] if g['uid']==str(uid) and g['validity']==validity),None)
@@ -90,7 +92,9 @@ def collect_folder(client,api,account,folder,previous=None,limit=100,audit=False
                 return False
             date=re.search(rb'\bINTERNALDATE\s+"([^"]+)"',header)
             internal_date=email.utils.parsedate_to_datetime(date[1].decode('ascii')).astimezone(datetime.timezone.utc).isoformat() if date else None
-            api.call('/internal/product/ingest',{'raw_base64':base64.b64encode(raw).decode(),'source':{'account':account['id'],'folder':folder['name'],'validity':validity,'uid':str(uid),'kind':folder['kind'],'historical':historical,'seen':b'\\Seen' in header,'internal_date':internal_date}})
+            source={'account':account['id'],'folder':folder['name'],'validity':validity,'uid':str(uid),'kind':folder['kind'],'historical':historical,'seen':b'\\Seen' in header,'internal_date':internal_date}
+            if account.get('imap',{}).get('provider')=='gmail':source['gmail']=gmail.metadata(header,inventory.decode_folder)
+            api.call('/internal/product/ingest',{'raw_base64':base64.b64encode(raw).decode(),'source':source})
             state['gaps']=[g for g in state['gaps'] if not (g['uid']==str(uid) and g['validity']==validity)]
             return True
         for historical,items in groups:
@@ -136,7 +140,7 @@ def run_once(config,credentials,api,connect=imaplib.IMAP4_SSL):
                 except (ValueError,KeyError):last_audit=0
                 audit=time.time()-last_audit>=240
                 try:
-                    if config.get('sync',{}).get('enabled') and folder['kind'] in ['sent','drafts']:
+                    if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and folder['kind'] in ['sent','drafts']:
                         if audit:
                             status,_=client.select('"'+protocol.modified_utf7(folder['name']).replace('\\','\\\\').replace('"','\\"')+'"',readonly=True)
                             if status!='OK':raise RuntimeError('source_folder_unavailable')
@@ -150,7 +154,7 @@ def run_once(config,credentials,api,connect=imaplib.IMAP4_SSL):
         except Exception:
             api.call('/internal/product/source-inventory',{'account':account['id'],'state':'error','folders':[]})
             for folder in settings['folders']:
-                if config.get('sync',{}).get('enabled') and folder['kind'] in ['sent','drafts']:continue
+                if config.get('sync',{}).get('enabled') and account.get('sync',{}).get('enabled',True) and folder['kind'] in ['sent','drafts']:continue
                 old=previous.get((account['id'],folder['name']),{})
                 state={'account':account['id'],'folder':folder['name'],'validity':old.get('validity',''),'last_uid':old.get('last_uid',0),'backfill_cursor':old.get('backfill_cursor',0),'backfill_until':old.get('backfill_until',0),'state':'error','gaps':old.get('gaps',json.loads(old.get('gaps_json','[]')))}
                 api.call('/internal/product/source-status',state)

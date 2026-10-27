@@ -11,6 +11,8 @@ import {initializeMailDirectory} from '../src/mail-directory.js';
 import {initializeMailSync} from '../src/mail-sync-schema.js';
 import {openJobs} from './jobs.mjs';
 import {mailSourceReceivedAt,repairMailHeaderEncoding} from '../src/mail-source-metadata.js';
+import {accountSyncEnabled} from './config.mjs';
+import {gmailSource} from './gmail.mjs';
 
 const sha=raw=>createHash('sha256').update(raw).digest('hex');
 export const archiveIdentity=(raw,parsed)=>sha(parsed.messageId?JSON.stringify({message_id:parsed.messageId,from:parsed.from,to:parsed.to,cc:parsed.cc,date:parsed.date,subject:parsed.subject,text:parsed.text,html:parsed.html,attachments:(parsed.attachments||[]).map(a=>({name:a.filename,mime:a.mimeType,sha:sha(Buffer.from(a.content))}))}):raw);
@@ -41,9 +43,15 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       CREATE TABLE IF NOT EXISTS product_source_status(account TEXT NOT NULL,folder TEXT NOT NULL,validity TEXT NOT NULL DEFAULT '',last_uid INTEGER NOT NULL DEFAULT 0,backfill_cursor INTEGER NOT NULL DEFAULT 0,backfill_until INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL,checked_at TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',PRIMARY KEY(account,folder));`);
     if(!(await db.prepare('PRAGMA table_info(product_source_status)').all()).results.some(c=>c.name==='gaps_json'))await db.exec("ALTER TABLE product_source_status ADD COLUMN gaps_json TEXT NOT NULL DEFAULT '[]'");
     await db.exec('CREATE INDEX IF NOT EXISTS product_source_email ON product_source_copies(email_id)');
+    await db.exec('CREATE TABLE IF NOT EXISTS product_gmail_copies(account TEXT NOT NULL,folder TEXT NOT NULL,validity TEXT NOT NULL,uid TEXT NOT NULL,message_id TEXT NOT NULL,labels_json TEXT NOT NULL,PRIMARY KEY(account,folder,validity,uid),FOREIGN KEY(account,folder,validity,uid) REFERENCES product_source_copies(account,folder,validity,uid))');
+    await db.exec('CREATE INDEX IF NOT EXISTS product_gmail_identity ON product_gmail_copies(account,message_id)');
     for(const account of config.accounts)await db.prepare("INSERT INTO mailbox_routes(mailbox,alias,role,note) VALUES(?,?,'main','') ON CONFLICT(mailbox) DO UPDATE SET alias=excluded.alias").bind(account.address,account.address).run();
     if(config.sync?.enabled)await db.exec(await readFile(new URL('./state-schema.sql',import.meta.url),'utf8'));
-    if(config.sync?.enabled)for(const account of config.accounts)for(const folder of account.imap?.folders||[])if(['sent','drafts'].includes(folder.kind))await db.prepare('DELETE FROM product_source_status WHERE account=? AND folder=?').bind(account.id,folder.name).run();
+    if(config.sync?.enabled){
+      const readonly=config.accounts.filter(a=>a.imap&&!accountSyncEnabled(config,a)).map(a=>a.id);
+      await db.batch([db.prepare('DELETE FROM product_receive_only_accounts'+(readonly.length?' WHERE account NOT IN ('+readonly.map(()=>'?').join(',')+')':'')).bind(...readonly),...readonly.map(id=>db.prepare('INSERT OR IGNORE INTO product_receive_only_accounts VALUES(?)').bind(id))]);
+    }
+    for(const account of config.accounts.filter(a=>accountSyncEnabled(config,a)))for(const folder of account.imap?.folders||[])if(['sent','drafts'].includes(folder.kind))await db.prepare('DELETE FROM product_source_status WHERE account=? AND folder=?').bind(account.id,folder.name).run();
     await initializeSourceHealth(db);await initializeServiceAPI(db);
     const jobs=await openJobs(db,{clock});
     let chain=Promise.resolve();
@@ -61,6 +69,8 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       if(!account||typeof input.folder!=='string'||input.folder.length>300||typeof input.validity!=='string'||!input.validity||input.validity.length>100||!/^[a-zA-Z0-9_-]{1,100}$/.test(String(input.uid))||!SOURCE_KINDS.includes(input.kind))throw Error('product_source_proof_invalid');
       if(config.mode!=='demo'&&(!(await sourceFolders(db,account)).some(f=>f.name===input.folder&&f.kind===input.kind)))throw Error('product_source_folder_unconfigured');
       if(config.mode!=='demo'&&[input.uid,input.validity].some(x=>!/^\d+$/.test(String(x))||Number(x)<1||Number(x)>4294967295))throw Error('product_source_uid_invalid');
+      const gmail=gmailSource(account,input),projection=gmail?{...input,kind:gmail.kind}:input;
+      const firstGmailCopy=!gmail||!await db.prepare('SELECT 1 FROM product_gmail_copies WHERE account=? AND message_id=? LIMIT 1').bind(account.id,gmail.message_id).first();
       raw=Buffer.from(raw);if(raw.length<20||raw.length>50*1024*1024)throw Error('product_raw_size_invalid');
       const hash=sha(raw),proof=[account.id,input.folder,input.validity,String(input.uid)];
       const old=await db.prepare('SELECT * FROM product_source_copies WHERE account=? AND folder=? AND validity=? AND uid=?').bind(...proof).first();
@@ -69,18 +79,24 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       const identity=archiveIdentity(raw,parsed);
       const receivedAt=mailSourceReceivedAt(parsed,input.internal_date,clock());
       if(!receivedAt)throw Error('product_source_date_unavailable');
-      const result=await archiveRaw(env,raw,{alias:account.address,envelopeFrom:parsed.from?.address||'',imported:true,sourceKind:input.kind,isRead:!!input.seen,skipAI:!config.ai&&!(env.AI&&!input.historical),archiveIdentity:identity,receivedAt});
+      const result=await archiveRaw(env,raw,{alias:account.address,envelopeFrom:parsed.from?.address||'',imported:true,sourceKind:projection.kind,isRead:!!input.seen,skipAI:!config.ai&&!(env.AI&&!input.historical),archiveIdentity:identity,receivedAt});
       if(!result.emailId)throw Error('product_archive_receipt_missing');
       const rawKey='source/'+hash+'.eml';await objects.put(rawKey,raw,{customMetadata:{raw_sha256:hash}});
       const commands=[db.prepare('INSERT INTO product_source_copies(account,folder,validity,uid,email_id,raw_key,raw_sha,source_at,kind,seen) VALUES(?,?,?,?,?,?,?,?,?,?)').bind(...proof,result.emailId,rawKey,hash,new Date(clock()).toISOString(),input.kind,!!input.seen)];
+      if(gmail)commands.push(db.prepare('INSERT INTO product_gmail_copies VALUES(?,?,?,?,?,?)').bind(...proof,gmail.message_id,JSON.stringify(gmail.labels)));
+      if(gmail?.starred&&result.stored){
+        if(config.sync?.enabled)commands.push(db.prepare('UPDATE product_state_guard SET remote_apply=1 WHERE id=1'));
+        commands.push(db.prepare('UPDATE emails SET is_starred=1 WHERE id=?').bind(result.emailId));
+        if(config.sync?.enabled)commands.push(db.prepare('UPDATE product_state_guard SET remote_apply=0 WHERE id=1'));
+      }
       // Retrying after a crash between archive and source receipt must still
       // create the durable responsibility. Unique job keys prevent replay.
       if(config.ai)commands.push(jobs.statement('classify',result.emailId));
-      if(config.notifications&&input.kind==='inbox'&&!input.historical)commands.push(jobs.statement('notify',result.emailId));
-      if(!config.sync?.enabled)commands.push(...sourceProjection(db,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),input,result.emailId,rawKey,proof,receivedAt));
+      if(config.notifications&&projection.kind==='inbox'&&!input.historical&&firstGmailCopy)commands.push(jobs.statement('notify',result.emailId));
+      if(!accountSyncEnabled(config,account))commands.push(...sourceProjection(db,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt));
       // Complete the adapter's durable incoming responsibility before the
       // source proof/cursor can commit. A failed handoff is safely retried.
-      if(input.kind==='inbox'&&!input.historical&&env.MAIL_SOURCE_ARRIVAL)await env.MAIL_SOURCE_ARRIVAL(result.emailId);
+      if(projection.kind==='inbox'&&!input.historical&&firstGmailCopy&&env.MAIL_SOURCE_ARRIVAL)await env.MAIL_SOURCE_ARRIVAL(result.emailId);
       await db.batch(commands);
       return {id:result.emailId,stored:result.stored,raw_sha256:hash};
     });}

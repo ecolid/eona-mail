@@ -1211,7 +1211,7 @@ export async function archiveRaw(env, rawBuf, meta) {
         'SELECT id, attachment_keys FROM emails WHERE ' + identityWhere
       ).bind(identityValue).first();
       if (dup) {
-        if(archiveFolder==='inbox')await env.MAILDB.prepare("UPDATE emails SET folder='inbox' WHERE id=? AND folder IN ('sent','drafts')").bind(dup.id).run();
+        if(archiveFolder==='inbox'&&(!meta.sourceKind||meta.sourceKind==='inbox'))await env.MAILDB.prepare("UPDATE emails SET folder='inbox' WHERE id=? AND folder IN ('sent','drafts')").bind(dup.id).run();
         if (env.MAIL_NOTICE_CAPTURE_ENABLED==='1' && meta.nativeArrival && !meta.imported) {
           await nativeIngressStatement(env,msgId,new Date().toISOString()).run();
         }

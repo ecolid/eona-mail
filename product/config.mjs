@@ -17,12 +17,17 @@ export function validateConfig(input,{base=process.cwd()}={}){
   if(!Array.isArray(accounts)||new Set(accounts.map(a=>a.id)).size!==accounts.length)throw Error('product_accounts_invalid');
   for(const account of accounts){
     if(!identifier(account.id)||!email(account.address)||account.name?.length>200)throw Error('product_account_invalid');
+    if(account.sync!==undefined&&(!account.sync||typeof account.sync.enabled!=='boolean'))throw Error('product_account_sync_invalid');
     for(const kind of ['imap','smtp']){
       const transport=account[kind];if(!transport)continue;
       if(typeof transport.host!=='string'||!/^[a-zA-Z0-9.:-]{1,253}$/.test(transport.host)||typeof transport.user!=='string'||/[\r\n]/.test(transport.user)||!secretRef(transport.password_env))throw Error('product_transport_invalid');
       if(kind==='smtp'&&![465,587].includes(transport.port))throw Error('product_smtp_port_invalid');
       if(kind==='imap'&&(transport.port!==993||!Array.isArray(transport.folders)||!transport.folders.length||transport.folders.some(f=>typeof f.name!=='string'||!f.name||f.name.length>300||/[\r\n\0]/.test(f.name)||!['inbox','sent','drafts','trash','archive','junk'].includes(f.kind))))throw Error('product_imap_folders_invalid');
     }
+  }
+  for(const account of accounts)if(account.imap?.provider!==undefined){
+    if(account.imap.provider!=='gmail'||account.imap.host!=='imap.gmail.com')throw Error('product_imap_provider_invalid');
+    if(account.sync?.enabled!==false||account.smtp)throw Error('product_gmail_receive_only_required');
   }
   if(accounts.some(a=>a.imap&&a.imap.discovery!==undefined&&!['configured','all'].includes(a.imap.discovery)))throw Error('product_discovery_invalid');
   if(input.sync!==undefined&&(!input.sync||typeof input.sync.enabled!=='boolean'))throw Error('product_sync_invalid');
@@ -73,4 +78,5 @@ export async function loadSecrets(config,environment=process.env){
     return value;
   };
 }
-export function publicAccounts(config){return config.accounts.map(a=>({id:a.id,address:a.address,name:a.name||'',receive:!!a.imap,send:!!a.smtp,folders:(a.imap?.folders||[]).map(f=>({...f}))}));}
+export function accountSyncEnabled(config,account){return !!config.sync?.enabled&&account.sync?.enabled!==false;}
+export function publicAccounts(config){return config.accounts.map(a=>({id:a.id,address:a.address,name:a.name||'',receive:!!a.imap,send:!!a.smtp,sync:accountSyncEnabled(config,a),folders:(a.imap?.folders||[]).map(f=>({...f}))}));}

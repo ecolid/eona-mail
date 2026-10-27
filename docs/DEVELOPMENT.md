@@ -150,3 +150,13 @@ and compares synchronous release against the observed frame cadence, capped at
 The normal-speed trajectory and first native input remain separate checks. Run
 against the previous package before the candidate, and exercise a real synthetic
 star/unstar mutation afterward to verify data invalidation still works.
+
+## Gmail 只收信接入
+
+Gmail 的标签目录共享同一原信。接入使用 `imap.provider: "gmail"`、账号级 `sync.enabled: false`，不配置 SMTP；其他账号继续沿实例同步策略。完整 `LIST` 决定可读取目录和特殊角色，开启 `discovery: "all"`。每个 UID 的只读原件读取同时取得 `X-GM-MSGID`、`X-GM-LABELS`，保留原件散列、目录证明和来源标签。Gmail 元数据缺失必须失败，不能将聚合目录猜成收件箱。
+
+收件箱、已发送、草稿与垃圾箱展示按邮件标签归属；“所有邮件”和自定义标签不再把已发送提升到收件箱。同一封信同时在收件箱和已发送时，两种业务视图均保留；每目录 UID 证明分别完整，已发送/草稿投影按 Gmail 邮件身份去重。历史导入静默，同一新邮件新增多个标签副本只创建一次到达责任。已知历史邮件后续增加标签不能变成新信提醒。
+
+账号的收信权限与远端改信权限分开。只收信账号不进入写入型工作区/状态同步；本地读、星标、删除不建立会卡住其他账号的远端写入责任。Google 应用专用密码实际具备邮件读写和发信能力，产品只收信是配置及执行边界，不能称该凭据为厂商只读令牌。凭据先进入实例拥有者既有加密档案，再写入受限运行秘密文件；真值不进产品仓库、测试或日志。
+
+接入验收从源端每目录 UID 和 Gmail 身份集合对到账本及原件封装，分别计唯一邮件与目录副本，核附件与已发送归属。覆盖聚合目录先到、自发自收、多标签、新信、历史再打标、缺元数据、重试和只收信账号隔离；真实新信使用自然到达或已授权探针，不擅自外发测试邮件。

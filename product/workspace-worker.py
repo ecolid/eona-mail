@@ -31,7 +31,7 @@ def run_once(config,credentials,connect=imaplib.IMAP4_SSL):
     root=pathlib.Path(config['data_root']);db=sqlite3.connect(root/'mail.db',timeout=30)
     identity=db.execute('SELECT owner,mode FROM product_meta WHERE id=1').fetchone()
     if identity!=(config['owner']['id'],'personal'):db.close();raise ValueError('product_sync_owner_mismatch')
-    accounts=[SimpleNamespace(key=a['id'],user=a['address'],config=a) for a in config['accounts'] if a.get('imap')]
+    accounts=[SimpleNamespace(key=a['id'],user=a['address'],config=a) for a in config['accounts'] if a.get('imap') and a.get('sync',{}).get('enabled',True)]
     reports=[]
     try:
         with (root/'workspace-sync.lock').open('a') as lock:
