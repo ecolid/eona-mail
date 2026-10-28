@@ -1,0 +1,1905 @@
+{
+  "schema": 1,
+  "product": "eona-mail",
+  "families": [
+    {
+      "id": "query-continuity",
+      "trigger": "reusable",
+      "contract": "实时条件、清空、旧响应、分页和空结果；保留面板与滚动节点",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-FILTER-CONTINUITY-2026-10-26.md",
+        "wiki:04-drills-audits/MAIL-HEADER-REVERSAL-2026-10-27.md"
+      ],
+      "browser": [
+        "filter-live-continuity-and-anchor"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a slower prior search cannot replace the latest visible list"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "an old pagination response cannot append to a new search or change its cursor"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a current list failure preserves content and offers an explicit retry"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "leaving for settings invalidates a pending list response and its errors"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "pagination failure retains rows and retries only on the explicit action"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "typing invalidates an older response before the debounce starts the next request"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "filtering and clearing retain a matching selected mail, unrelated results clear it"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a late selection rejection cannot clear a newer matching query"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "returning after selection retains already loaded pages and their cursor"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "resource refresh cannot supersede the foreground request and its visible operation commit"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "one foreground failure has one visible owner even when the cache also emits an error"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "failure stays below the fixed heading and uses the existing animated row commit"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a new filter replaces previous pagination only after its result arrives"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "reversing a filter during its row animation commits the latest cached result"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "list verification failure leaves the current reader and its return path usable"
+        },
+        {
+          "file": "test-mail-query-surface.mjs",
+          "name": "first-time filter and search changes keep the actual surface and visible nodes"
+        },
+        {
+          "file": "test-mail-query-surface.mjs",
+          "name": "different mailbox scopes stay isolated and a cached folder restores its own nodes"
+        },
+        {
+          "file": "test-mail-filter-lifecycle.mjs",
+          "name": "filter result commits retain the open panel, trigger, focused choices and repeated reset"
+        },
+        {
+          "file": "test-mail-filter-lifecycle.mjs",
+          "name": "one click clears all quick filters and sort while preserving keywords and mailbox scope"
+        },
+        {
+          "file": "test-mail-filter-lifecycle.mjs",
+          "name": "directory category reset uses the directory owner and keeps the current page"
+        },
+        {
+          "file": "test-mail-filter-lifecycle.mjs",
+          "name": "filter result commits measure only after the selection slot has been reattached"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "search-press",
+      "trigger": "reusable",
+      "contract": "搜索按压、清空、关闭、范围和完整档案命中",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-MOBILE-INTERACTIONS-2026-10-22.md",
+        "wiki:04-drills-audits/MAIL-SEARCH-READING-2026-10-18.md"
+      ],
+      "browser": [
+        "search-first-press-clear-close-and-submit"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-search-press.mjs",
+          "name": "clear and close commit once on press even if keyboard blur moves the original target before click"
+        },
+        {
+          "file": "test-mail-search-press.mjs",
+          "name": "normal field focus, disabled controls, secondary pointers and context clicks keep their native behavior"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "archive API searches recipient and filename, counts and pages from the same predicate"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "selected mail membership follows the full predicate rather than the current page"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "folder choices follow new and removed source resources; failures never become an empty success"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "list metadata reserves translation controls using the same full-detail rule without exposing extra body"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "mail search defaults to recency; relevance accounts for sender display name and keeps paging stable"
+        },
+        {
+          "file": "test-mail-search-api.mjs",
+          "name": "ordinary lists carry a bounded plain-body preview before AI metadata is ready"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "advanced submit requires a real condition and compiles the whole draft"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "all words match across subject, body and saved summary, with stable relevance"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "phrases, exclusion, Unicode width and literal wildcard are respected"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "field, date, unread/starred and attachment filters compose"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "empty clear restores scope and matching never removes ownership predicates"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "workflow descriptions preserve run identity and never invent log errors"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "long queries keep every term and use bounded bindings"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "default search includes actual recipients and attachment names but excludes storage metadata"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "explicit folder search composes with all other fields"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "matching field feedback only includes visible matching names"
+        },
+        {
+          "file": "test-mail-search.mjs",
+          "name": "the shared mobile search submit clears an applied query and keeps local scopes literal"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "selection-scope",
+      "trigger": "reusable",
+      "contract": "所有列表的多选、全选反选、唯一计数、退出和空目录槽",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-LIST-INTERACTIONS-2026-10-23.md"
+      ],
+      "browser": [
+        "selection-inbox",
+        "selection-sent",
+        "selection-drafts",
+        "selection-contacts",
+        "selection-important",
+        "selection-subscriptions",
+        "selection-trash"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "two parallel fingers select only after a deliberate vertical drag; pinch and sideways remain native"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "range reversal contracts new selection while preserving the selection before the gesture"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "selection cannot silently include items outside the authoritative rendered order"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "the delivered list controller script is valid JavaScript before embedding in Mail"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row removal waits for the actual exit, removes only confirmed IDs and handles cancellation"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "restoration moves survivors from their prior positions and reveals only new rows before completing"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "action drawer backdrop closes only outside its bounds and preserves inside controls"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "pointer axis input shares row state, native cancellation releases it, and pairs remain touch-owned"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row paint coalesces input bursts, flushes release and rejects cancelled callbacks"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "reader surface changes reset input without rebuilding a prepared list; scope and selection keep their owners"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "touch-arbitration",
+      "trigger": "reusable",
+      "contract": "先后落指、首次可取消事件、捏合和原生滚动归属",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-LIST-INTERACTIONS-2026-10-23.md",
+        "wiki:04-drills-audits/MAIL-MOBILE-INTERACTIONS-2026-10-22.md"
+      ],
+      "browser": [
+        "row-swipe-tray-reversal-and-staggered-pair"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "row release includes the final unpainted coordinate and localizes movement to the row"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "sequential fingers reserve the first small move before native scrolling can lock"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "two fingers can start on selection circles and keep the first finger anchor across touchstart targets"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "an already native-owned stream never mutates selection, and a fresh pair still works"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "an early pinch remains native; a third finger cancels the current range"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a cancelled undecided pair leaves selection closed, with no partial range"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "one finger in selection mode keeps native scrolling and never becomes a row swipe"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a short right swipe closes an already open row, including a start over its quick controls"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "staggered movement waits for the second contact rather than dropping a delayed parallel pair"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "an upward range uses the first finger anchor and contracts toward earlier messages"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "feedback clearance uses the dock layout rather than its animated entry position"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "opposite vertical contacts never reserve native movement or flash selection"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a slightly staggered slow pair reserves slop before deciding direction"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a committed translated range stays stable when contacts later separate"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "committed selection keeps extending with naturally unequal finger travel and contracts on return"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a held divergence can resume parallel selection in the same committed gesture"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "sticky header cancellation toggles in place and exits selection without changing scroll"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "batch recovery refreshes the authoritative sidebar count after restoring rows"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "successful deletion closes selection before refreshing rows and presenting recovery"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "contact batch keeps only failures selected, emits one aggregate result, and undo restores each prior flag"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "draft batch confirms the count and retains unsaved or failed drafts without pretending all succeeded"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "subscription batch removes each stable source key and undo returns the original inclusion state"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "sent multi-forward reads all selected messages into one unsent compose and a read failure retains selection"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a second finger takes over an uncommitted shell pull after first-finger movement"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "actual list scrolling retains ownership even if a later touchstart is cancellable"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a joining contact retains the original row anchor after a longer shell-owned pull"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "a pair whose first move is already native-owned never flashes selection"
+        },
+        {
+          "file": "test-mail-range-touch.mjs",
+          "name": "empty result keeps a disabled selection action in the same heading slot"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "row-actions",
+      "trigger": "reusable",
+      "contract": "滑出操作后从按钮区收回、松手末坐标和取消",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-LIST-INTERACTIONS-2026-10-23.md"
+      ],
+      "browser": [
+        "row-swipe-tray-reversal-and-staggered-pair",
+        "final-touch"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "two parallel fingers select only after a deliberate vertical drag; pinch and sideways remain native"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "range reversal contracts new selection while preserving the selection before the gesture"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "selection cannot silently include items outside the authoritative rendered order"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "the delivered list controller script is valid JavaScript before embedding in Mail"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row removal waits for the actual exit, removes only confirmed IDs and handles cancellation"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "restoration moves survivors from their prior positions and reveals only new rows before completing"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "action drawer backdrop closes only outside its bounds and preserves inside controls"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "pointer axis input shares row state, native cancellation releases it, and pairs remain touch-owned"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row paint coalesces input bursts, flushes release and rejects cancelled callbacks"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "reader surface changes reset input without rebuilding a prepared list; scope and selection keep their owners"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "refresh-lifecycle",
+      "trigger": "reusable",
+      "contract": "滚离顶部后回顶、固定顶栏、等待重入、失败重试和取消",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-SCROLL-VIEWPORT-2026-10-28.md",
+        "wiki:04-drills-audits/MAIL-FEEDBACK-2026-10-28.md"
+      ],
+      "browser": [
+        "refresh-boundary",
+        "pending-refresh"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "pull refresh returns a result and leaves all feedback to the inline owner"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "joining initial loading does not present initially loaded rows as new mail"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "button refresh emits one completion toast and merging into a pull transfers feedback ownership"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "a persistent list error owns failure feedback and no success or extra toast appears"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "failed refresh resets busy state; navigation cancels old result feedback"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "settings refresh owns its completion message for both preserved and remounted forms"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "each completed manual refresh performs a fresh read and presents its own completion event"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "a fresh attempt retires its prior success even when failure is owned by the list"
+        },
+        {
+          "file": "test-mail-refresh.mjs",
+          "name": "inline retry refreshes workspace, sidebar and list without a second completion surface"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "pull keeps the original heading and scroll owner and groups the same content nodes"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "failure insertion and refreshed markup retain their order beneath the fixed heading"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "disposing the surface restores direct node identity, order and scroll position"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "workspace list shells retain the same header/content contract as received mail"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "returning to cached directories reuses the original surface without nested translations"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "the one indicator follows the active cached clip and never enters moving content"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "the cached native viewport retains its offset through parent rerenders and returns"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "same-page commits keep the original native viewport and scroll offset"
+        },
+        {
+          "file": "test-mail-pull-surface.mjs",
+          "name": "the first completed directory replaces its loading shell instead of retaining it"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "reader-intent",
+      "trigger": "reusable",
+      "contract": "点击即选择，旧详情和失败不能写回新意图",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-FEEDBACK-2026-10-28.md"
+      ],
+      "browser": [
+        "reading-intent"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "read state writes are explicit, reversible, and independent from star/folder state"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "the received operation catalog covers both row and reader presentations, including state reversals"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "quick filters preserve search phrases, replace only owned terms, and use the complete directory"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "a quick choice applies immediately and the same choice restores its own dimension only"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "reopening the same previously unread reader persists read state again without rebuilding it"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "every delivered inline bootstrap parses with its actual combined declarations"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "filters narrow the page task without repeating its scope or exposing inert choices"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "changing reading filter preserves starred scope and unrelated search conditions"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "filter-only result captions keep the current page scope in readable language"
+        },
+        {
+          "file": "test-mail-read-actions.mjs",
+          "name": "failed first filter results replace the loading placeholder with the real scope and an unknown count"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "derived workflow summary is identical in the list preview and complete reader without exposing its text sample"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "a cold detail keeps its already known envelope and summary through the pending phase"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "ready, pending and failed readers return immediately without opening the drawer or losing list position"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "sent readers share the same history and return path, including pending failures"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "Sent selection precedes detail I/O and a superseded failure cannot clear the new detail identity"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "native browser history restores the correct inbox or sent reader without another push"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "changing query clears old desktop content and rejects a late detail response"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "same-id retries use the latest request identity, not just matching mail id"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "switching to an incompatible folder or star view clears the previous reader before its list request"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "navigation cleanup and desktop reading preserve list scroll; mobile back restores its own reading origin"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "deletion feedback waits for storage and undo restores the same mail without reopening another reader"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "failed deletion preserves the reader and produces an error without an undo for a nonexistent change"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "clearing reading drops only reader highlights immediately, including cached rows on failure"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "mobile sync clears cached reading paint without touching independent batch selection"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "mobile return freezes its outgoing content while cleanup cannot overwrite a new reader"
+        },
+        {
+          "file": "test-mail-reader-lifecycle.mjs",
+          "name": "desktop selection commits before I/O and survives failure, retry and a late old response"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "reader-handoff",
+      "trigger": "reusable",
+      "contract": "可操作、退场和历史结算分开；首个原生滚动及下一封",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-RETURN-HANDOFF-2026-10-27.md",
+        "wiki:04-drills-audits/MAIL-NATIVE-RETURN-2026-10-27.md",
+        "wiki:04-drills-audits/MAIL-RETURN-INTENT-2026-10-27.md"
+      ],
+      "browser": [
+        "return-first-input",
+        "first-native-scroll-after-return",
+        "browser-transition",
+        "late-navigation",
+        "page-stack",
+        "reduced-motion-return-and-next-input"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "history data is account-scoped, bounded and excludes arbitrary state"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "directories and searches create usable browser history and save prior scroll"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "a reader return closes immediately and retains forward-reader identity"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "reload seeds the current folder and restores its reader after authoritative list readiness"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "a newer navigation cancels an older pending history restoration"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "workspace-message history retains the actual parent and sent/received identity"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "shared received and sent openers preserve the correspondence history parent"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "a user opening the next mail takes ownership from a slow return restoration"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "an immediate next tap survives the asynchronous native back event"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "return to the mounted list is immediate and keeps the first native scroll without rereading"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "user scrolling wins over slow history restoration before and after native popstate"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "mounted list reuse cannot cross folder or filter identity or skip reload restoration"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "failed restoration keeps the new scroll in both the viewport and history"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "continuous reading scroll cannot exhaust the browser history budget or block the next open"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "browser history refusal cannot disable reading or the local return path"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "scroll persistence coalesces frame updates and flushes the latest state at a bounded rate"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "repeated surface synchronization is idempotent across the return event and its native history event"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "open-return-open-return before native traversal settles issues only one browser back"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "browser traversal cannot restore scroll behind the application after return input begins"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "return during an unfinished reader restoration invalidates its late reopen"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "a list pan supersedes a pending historical reader, while a list-only restore still completes"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "the page never falls through to legacy history while the installed owner is settling"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "a completed browser visual transition closes the target list synchronously without author exit"
+        },
+        {
+          "file": "test-mail-navigation.mjs",
+          "name": "optional return recording cannot interrupt the real history owner and its browser flag"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a slower prior search cannot replace the latest visible list"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "an old pagination response cannot append to a new search or change its cursor"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a current list failure preserves content and offers an explicit retry"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "leaving for settings invalidates a pending list response and its errors"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "pagination failure retains rows and retries only on the explicit action"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "typing invalidates an older response before the debounce starts the next request"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "filtering and clearing retain a matching selected mail, unrelated results clear it"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a late selection rejection cannot clear a newer matching query"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "returning after selection retains already loaded pages and their cursor"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "resource refresh cannot supersede the foreground request and its visible operation commit"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "one foreground failure has one visible owner even when the cache also emits an error"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "failure stays below the fixed heading and uses the existing animated row commit"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "a new filter replaces previous pagination only after its result arrives"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "reversing a filter during its row animation commits the latest cached result"
+        },
+        {
+          "file": "test-mail-list-lifecycle.mjs",
+          "name": "list verification failure leaves the current reader and its return path usable"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "body-boundary",
+      "trigger": "reusable",
+      "contract": "HTML独立文档返回、原生横轴、脚本隔离、链接和高度",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-BODY-RETURN-2026-10-27.md"
+      ],
+      "browser": [
+        "body-return",
+        "reader-families"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-html-policy.mjs",
+          "name": "reading projection strips executable HTML, navigation overrides and automatic focus without changing the stored input"
+        },
+        {
+          "file": "test-mail-html-policy.mjs",
+          "name": "first content is the fixed CSP, independent of email policy or API policy data"
+        },
+        {
+          "file": "test-mail-html-policy.mjs",
+          "name": "template contents and SVG/MathML namespaces cannot retain active descendants or handlers"
+        },
+        {
+          "file": "test-mail-html-policy.mjs",
+          "name": "script-blocked reader callbacks do not hide noscript fallback content"
+        },
+        {
+          "file": "test-mail-rich.mjs",
+          "name": "rich formatting, inline image and attachment survive save, readback and a single SMTP submission"
+        },
+        {
+          "file": "test-mail-rich.mjs",
+          "name": "mail renderer escapes hostile HTML and discards unsupported attributes and protocols"
+        },
+        {
+          "file": "test-mail-rich.mjs",
+          "name": "asset ownership, size, spoofed image and detached attachment cleanup are enforced"
+        },
+        {
+          "file": "test-mail-rich.mjs",
+          "name": "copying a rich draft keeps owner-owned media when the original is discarded"
+        },
+        {
+          "file": "test-mail-rich.mjs",
+          "name": "transport emits multipart alternative plus actual related image and attachment bytes without network access"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "body-files-commit",
+      "trigger": "reusable",
+      "contract": "正文与附件同次呈现，冷读缓存慢失败重试及窄屏排版",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-READER-PAINT-2026-10-28.md"
+      ],
+      "browser": [
+        "body-attachment-commit",
+        "body-layout-320",
+        "body-layout-1280"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-reader-attachments.mjs",
+          "name": "reader attachments expose download and local deletion separately with escaped identity and exact size"
+        },
+        {
+          "file": "test-mail-reader-attachments.mjs",
+          "name": "received, sent and draft readers share file structure and missing originals stay visible without download"
+        },
+        {
+          "file": "test-mail-download.mjs",
+          "name": "missing originals and attachments report a local failure and never trigger a download"
+        },
+        {
+          "file": "test-mail-download.mjs",
+          "name": "duplicate activation coalesces while a real body is pending; a later attempt can retry"
+        },
+        {
+          "file": "test-mail-download.mjs",
+          "name": "an interrupted body, changed owner and disposed page cannot save the wrong account data"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "motion-budget",
+      "trigger": "reusable",
+      "contract": "跟手合帧、快滑末坐标、反向重抓、局部变换与一帧预算",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-MOTION-2026-10-27.md",
+        "wiki:04-drills-audits/MAIL-FAST-MOTION-2026-10-27.md",
+        "wiki:04-drills-audits/MAIL-MOTION-FLOW-2026-10-28.md"
+      ],
+      "browser": [
+        "render-budget",
+        "motion-trajectory",
+        "fast-return",
+        "return-budget"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pull presentation animates only local transforms on one timeline and resumes its live pose"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "fast touch release uses its final coordinate before choosing refresh or navigation"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a held press and initial finger jitter never claim the following vertical scroll"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "repeated pending pulls retain the first native move and never restart or settle their request"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pending refresh ownership still allows a tap-sized row contact and native upward scrolling"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "the native keyboard row opener remains the list gesture surface, while nested controls retain ownership"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "right swipe follows the visible hierarchy: reader back, list drawer, open drawer close"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "reading drag follows the finger, reverses and cancels without moving the drawer"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "reader return consumes its compatibility click and a later tap works immediately"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "return during reader entrance starts from its current position instead of jumping backward"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "only a top-level list refreshes, even when another surface reports refresh capability"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a pending list refresh cannot block return from a newly opened reader"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "drawer and dimming follow every animation frame before release, including reversal"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a close gesture can start on the whole backdrop, not only inside the drawer"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "drawer release consumes compatibility clicks before mail, draft and navigation activation"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "canceled, short and slow owned gestures also consume their release click, while keyboard and expiry work"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "short or canceled drags snap back; a slow deliberate drag has no arbitrary time cutoff"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pull-to-refresh moves the content immediately, holds one request and settles on completion"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pull completion keeps one inline result; leaving the surface prevents stale feedback resurrection"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a below-threshold pull settles without a refresh or a stray click"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a refresh completing after disposal cannot restore a removed drag surface"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "browser edges, nested horizontal scroll, controls, selection and open modals keep ownership"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "multitouch, changed page state and selection cancel the drag and its pending paints"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a new drag supersedes the previous release frame and disposal cancels every paint"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pending pages reuse the real heading and row owners instead of an independently sized loading page"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "touch starts on A, crosses B and releases without leaving A or pressing B"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "crossing the original row edge clears feedback even below the movement threshold"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "native scroll, cancellation, capture loss, surface change, blur, hidden and disposal clear press paint"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "touch suppresses sticky hover until a real mouse returns; keyboard selection stays independent"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "Mail hover policy covers grouped controls and dynamic portal styles without changing selection or focus"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "directory full-row buttons share right-swipe navigation without excluding their text or avatar"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a claimed row swipe bypasses shell refresh/navigation and consumes its compatibility click"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "native pinch can suppress its release click without preventing any touch default"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "native vertical scrolling never prevents touch defaults but isolates a release click"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "consumed release clicks are stopped before earlier document capture dialog controllers"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pull release and return retain one indicator through the shared settling geometry"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "failure already presented in the list settles the pull without a second result"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a fresh drag cancels the previous return timer and refreshes after failure"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "losing the window clears an in-flight pull and ignores its late visible completion"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "temporary diagnostics are opt-in, passive, local, and copy only gesture metadata"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a top-list pull claims the first native small downward move and completes one refresh"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "native small pulls cancel below threshold while native upward and scrolled lists stay available"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "a reserved pull with tap-sized jitter opens the original row exactly once"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "pull reservation cannot activate after a real drag, reversal, cancellation, or release outside the row"
+        },
+        {
+          "file": "test-mail-mobile.mjs",
+          "name": "height-only browser chrome and keyboard resizes do not cancel the current surface or gesture"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "a pan starting inside HTML body returns through the same owner and releases input before back"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "native vertical cancellation after horizontal jitter removes every pending paint and capture"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "return accepted during a drag invalidates queued and late child events, including a new reader"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "body replacement disposes its input binding before the next document is interactive"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "vertical intent, selection, controls, horizontal scrollers, edge and pinch keep their native owner"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "the shell and child use physical coordinates while the frame follows the finger"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "blur clears the drag and a new contact immediately clears only its compatibility click guard"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "return input transfer and visual completion are separate; an old exit cannot complete a new reader"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "a native horizontal body region keeps its complete ancestor path while adjacent text retains reader pan-y"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "desktop geometry settles without a phone exit animation or a recurring frame loop"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "an overlaid navigation surface changes input mode without changing the reader visual identity"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "body coordinates stay stable through reversal without per-move frame geometry"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "retirement preserves outgoing content until offscreen, then releases exactly once"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "a new reading flushes only the previous retirement and has no recurring settlement loop"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "first list input removes the old page without tearing down its body during the contact"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "sent and draft composite bodies suspend once and dispose each old resource once"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "a browser-owned return finishes in the same task and cannot hide a fresh reader"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "the animation page moves while the native reader scroll node has no transform writes"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "covered list focus redirects without disabling its native scroll host"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "fast release carries the final unpainted pointer position into compositor motion"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "fast reversal cancels from the latest input instead of committing the earlier distance"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "first list input cancels release motion and its late completion cannot hide a new reader"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "release budgets use remaining distance and signed speed, with a reduced-motion endpoint"
+        },
+        {
+          "file": "test-mail-reader-pan.mjs",
+          "name": "a fresh reader interrupts release and flushes only the suspended previous body"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "continuous-resources",
+      "trigger": "reusable",
+      "contract": "连续使用不重建整表、不积累监听/节点/空闲帧",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-REPEAT-PAN-2026-10-27.md",
+        "wiki:04-drills-audits/MAIL-PAGE-STACK-2026-10-27.md"
+      ],
+      "browser": [
+        "repeat-resources",
+        "continuous-use"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-scroll-owner.mjs",
+          "name": "phone input has no custom scrollbar portal or capturing scroll owner; desktop can activate and cleanly leave"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "two parallel fingers select only after a deliberate vertical drag; pinch and sideways remain native"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "range reversal contracts new selection while preserving the selection before the gesture"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "selection cannot silently include items outside the authoritative rendered order"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "the delivered list controller script is valid JavaScript before embedding in Mail"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row removal waits for the actual exit, removes only confirmed IDs and handles cancellation"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "restoration moves survivors from their prior positions and reveals only new rows before completing"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "action drawer backdrop closes only outside its bounds and preserves inside controls"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "pointer axis input shares row state, native cancellation releases it, and pairs remain touch-owned"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "row paint coalesces input bursts, flushes release and rejects cancelled callbacks"
+        },
+        {
+          "file": "test-mail-list-actions.mjs",
+          "name": "reader surface changes reset input without rebuilding a prepared list; scope and selection keep their owners"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "feedback-transaction",
+      "trigger": "reusable",
+      "contract": "删除恢复一张反馈卡，等待、失败、重试与迟到结果",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-INTERACTION-JOURNEYS-2026-10-23.md"
+      ],
+      "browser": [],
+      "unit": [
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "a recovery remains one card from ready through pending and completion"
+        },
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "controller completion owns the existing feedback without a second generic result"
+        },
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "failed recovery retains the same identity and one usable retry action"
+        },
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "a false response preserves the controller error and retry instead of reporting completion"
+        },
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "a late failed action cannot replace a newer successful state"
+        },
+        {
+          "file": "test-mail-feedback-view.mjs",
+          "name": "a fast successful recovery skips the intermediate pending flash"
+        },
+        {
+          "file": "test-mail-toggle-queue.mjs",
+          "name": "rapid clicks paint immediately and coalesce writes to the last intent"
+        },
+        {
+          "file": "test-mail-toggle-queue.mjs",
+          "name": "same-frame paired clicks need no write; failure rolls back the last confirmed state"
+        },
+        {
+          "file": "test-mail-toggle-queue.mjs",
+          "name": "identity change prevents a late write from changing the new session"
+        },
+        {
+          "file": "test-mail-toggle-queue.mjs",
+          "name": "only the settled final intent receives success feedback; failure and old owners do not"
+        },
+        {
+          "file": "test-mail-toggle-queue.mjs",
+          "name": "batch intents preserve quiet outcome metadata and explicit failure for aggregate feedback"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "source-date-encoding",
+      "trigger": "reusable",
+      "contract": "原始时间、旧编码、来源身份和去重",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-CONTINUOUS-SOURCE-2026-10-26.md"
+      ],
+      "browser": [],
+      "unit": [
+        {
+          "file": "test-mail-source-metadata.mjs",
+          "name": "source time prefers valid message date, then Received, then provider time, never import time"
+        },
+        {
+          "file": "test-mail-source-metadata.mjs",
+          "name": "unencoded legacy headers use the declared MIME charset, preserving original bytes and parser identity"
+        },
+        {
+          "file": "test-mail-source-metadata.mjs",
+          "name": "valid UTF-8 and RFC2047 headers retain their declared decoding; undeclared bad sender falls back to address"
+        },
+        {
+          "file": "test-mail-source-metadata.mjs",
+          "name": "legacy multipart missing its final delimiter retains the last part charset, but ignores epilogue declarations"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "historical mail without a Date uses provider INTERNALDATE and missing provenance cannot become new mail"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "demo browser sessions isolate every mutation, restart seeds and never connect externally"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "local login, persisted session, logout, write origin and machine roles form a closed boundary"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "archive identity preserves reused Message-IDs, exact source originals, crash retry and owner boundary"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "classification outage never blocks notification; responsibilities survive restart and reject cursor rollback"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "source gaps survive restart and cannot become healthy before the exact original commits"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "imported sent and draft snapshots retain their attachment bytes and original download"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "generic SMTP preserves MIME and idempotent send, while an ambiguous disconnect retains draft"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "standard OIDC works without private claims and rejects a different owner"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "demo rejects every configured external connector and unsafe origins"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "adapter incoming handoff is durable before source proof, retries failures and excludes historical folders"
+        },
+        {
+          "file": "product/test-product.mjs",
+          "name": "mailbox views and counters keep forwarded originals before IMAP proof and deduplicate their later proof"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "sync-completeness",
+      "trigger": "reusable",
+      "contract": "目录发现、最新与历史、正文缺口保留重试，失败不可冒充完整",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-CONTINUOUS-SOURCE-2026-10-26.md",
+        "wiki:04-drills-audits/MAIL-GMAIL-2026-10-27.md"
+      ],
+      "browser": [],
+      "unit": [
+        {
+          "file": "product/test-source-health.mjs",
+          "name": "coverage remains unknown before inventory; new folders are discovered and gaps are counted, not reported healthy"
+        },
+        {
+          "file": "product/test-source-health.mjs",
+          "name": "failed LIST retains known folders and last success; failed folder cannot report empty/complete"
+        },
+        {
+          "file": "product/test-source-health.mjs",
+          "name": "discovery does not expand a configured-only account or accept invented write roles"
+        },
+        {
+          "file": "product/test-source-health.mjs",
+          "name": "UIDVALIDITY changes and a removed directory cannot erase an unresolved original"
+        }
+      ],
+      "python": [
+        {
+          "file": "product/test-imap.py",
+          "name": "test_new_mail_precedes_bounded_history_and_advances_only_receipted_uids"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_first_select_failure_is_error_not_empty_success"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_uidvalidity_reset_preserves_original_keys_and_uses_new_baseline"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_known_exact_proofs_advance_without_redownloading_and_validity_is_scoped"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_workspace_sync_owns_sent_and_draft_collection"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_empty_atomic_literal_uses_shared_verified_partial_reader"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_demo_has_no_source_worker"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_unavailable_original_is_durable_without_starving_history_or_new_mail"
+        },
+        {
+          "file": "product/test-imap.py",
+          "name": "test_unpersisted_gap_stops_scan_and_uidvalidity_change_retains_old_failure"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_gmail_metadata_keeps_provider_identity_labels_and_readonly_original_intact"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_gmail_missing_or_truncated_labels_cannot_commit_a_copy"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_receive_only_account_collects_sent_even_with_other_account_sync_enabled"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_discovery_decodes_names_and_keeps_no_select_out_of_scope"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_failed_list_is_failure_not_empty_inventory"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_uid_set_audit_repairs_old_interior_gap_without_refetching_known_bodies"
+        },
+        {
+          "file": "product/test-source-inventory.py",
+          "name": "test_complete_uid_set_never_downloads_bodies"
+        }
+      ]
+    },
+    {
+      "id": "provider-state",
+      "trigger": "reusable",
+      "contract": "删信恢复、草稿、已发送、双向状态和原件保存",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-GMAIL-2026-10-27.md"
+      ],
+      "browser": [],
+      "unit": [
+        {
+          "file": "test-mail-sync.mjs",
+          "name": "SMTP receives the exact durably archived MIME once, with Bcc in envelope only"
+        },
+        {
+          "file": "test-mail-sync.mjs",
+          "name": "archive failure prevents any SMTP call and preserves the saved draft"
+        },
+        {
+          "file": "test-mail-sync.mjs",
+          "name": "editing leases are owner scoped, renewable, releasable and cannot change draft contents"
+        },
+        {
+          "file": "test-mail-sync.mjs",
+          "name": "sync errors and stale observations remain visible instead of reporting normal"
+        },
+        {
+          "file": "test-mail-sync.mjs",
+          "name": "source directory copies stay out of Inbox and a later actual arrival reuses the same record"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "Gmail aggregate-first intake preserves Sent, one logical mail and all original/label proofs without source writes"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "full Gmail sync queues local state, retains full-folder coverage and leaves draft revision ownership to the workspace"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "Gmail Trash overrides a retained Draft or Sent label and cannot recreate an active workspace record"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "self-sent Inbox is in both Inbox and Sent; a new message alerts once across Gmail label copies"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "historical labels do not become new arrivals; missing metadata and receive-only violations fail closed"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "Gmail SMTP unknown outcome resolves from the source Sent copy without duplicate send or Sent row"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "source Sent confirmation before a late SMTP disconnect stays final and preserves newer draft edits"
+        },
+        {
+          "file": "product/test-gmail.mjs",
+          "name": "SMTP availability does not invent a source-writeback status for a receive-only account"
+        }
+      ],
+      "python": [
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_unchanged_inventory_does_not_rewrite_archive_or_source_state"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_flags_delete_restore_full_lifecycle"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_discovered_folder_flags_stay_in_place_and_restore_returns_to_original"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_copy_lost_reply_never_replayed"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_copyuid_disambiguates_identical_existing_target"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_unknown_ambiguous_copy_preserves_source_and_intent"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_new_edit_during_request_remains_pending"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_crash_after_retire_reconciles_missing_source"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_source_uidvalidity_change_cannot_confirm"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_migrated_local_state_survives_initial_cloud_inventory"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_configuration_change_refuses_old_proof"
+        },
+        {
+          "file": "product/test-state-sync.py",
+          "name": "test_discovered_directory_removed_retains_original_and_other_folders_keep_syncing"
+        },
+        {
+          "file": "product/test-workspace-folders.py",
+          "name": "test_gmail_scope_guard_factory_owns_every_workspace_and_state_effect"
+        },
+        {
+          "file": "product/test-workspace-folders.py",
+          "name": "test_receive_only_account_cannot_open_the_write_capable_workspace_connection"
+        },
+        {
+          "file": "product/test-workspace-folders.py",
+          "name": "test_legacy_wire_journals_and_unicode_product_names_address_the_same_folder"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_single_identity_flags_move_restore_across_multiple_label_proofs"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_lost_move_receipt_reconciles_without_repeating_move"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_source_flags_and_trash_restore_update_archive_without_echo"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_provider_reversal_immediately_after_local_ack_is_not_lost"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_enable_sync_retires_obsolete_readonly_draft_role_without_resurrection"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_new_local_revision_is_not_consumed_by_old_receipt"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_unproven_original_does_not_fail_unrelated_accounts_and_remains_durable"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_other_account_inbox_is_retained_when_gmail_sent_is_trashed"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_old_trash_proof_is_not_presence_in_active_drafts"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_post_auth_capabilities_and_no_blanket_or_targeted_expunge"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_gmail_sent_is_never_appended_even_after_smtp_saved_copy_is_delayed"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_workspace_retirement_uses_provider_recoverable_move_without_backup_append"
+        },
+        {
+          "file": "product/test-gmail-sync.py",
+          "name": "test_real_storage_readonly_draft_first_seen_in_trash_is_adopted_and_never_reappended"
+        }
+      ]
+    },
+    {
+      "id": "draft-send",
+      "trigger": "reusable",
+      "contract": "草稿版本、租约、保存恢复和发信幂等，未知回执不重发",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-INTERACTION-JOURNEYS-2026-10-23.md"
+      ],
+      "browser": [
+        "draft-save-reopen-and-single-isolated-send"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "a save response preserves newer typing and advances the revision for its next write"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "unknown write outcome is recovered by stable-ID readback, not a duplicate write"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "refreshing unchanged server revision preserves a recoverable local draft without inventing a conflict"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "a lost submit response polls its stable receipt and completes without a second send"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "an explicit pre-submit rejection preserves the draft and does not become an ambiguous send"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "source recovery updates the visible sent status without fetching rows or rebuilding the reader"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "recovering an unchanged workspace clears failure state; invalidated reads do not show a false network failure"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "directory search matches visible identity fields, not internal grouping enums"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "important-contact writes preserve an identity not already in the directory and failures roll back"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "subscription removal and recovery each persist; restored result offers no reverse undo"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "failed subscription removal rolls back; old-account recovery cannot write"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "sent row identity and subject survive a later ID-only compact refresh"
+        },
+        {
+          "file": "test-mail-workspace-client.mjs",
+          "name": "a failed sent filter keeps the previous visible result and its recovery context"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "successful send persists an account-owned receipt and removes exactly the submitted draft revision"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "concurrent double submissions, even with different attempt IDs, invoke the transport once"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "ambiguous transport outcome preserves the draft and never replays on repeated or changed send intents"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "explicit SMTP rejection retains the draft; a new user submission after saving can retry"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "newer draft edits survive an earlier successful send; partial acceptance is distinct"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "send rejects stale revisions, forged sender identities and malformed recipients before transport"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "sender reloads current sources, enforces account scope, hides credentials and uses authenticated TLS"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "sent search covers the complete account archive with matching counts, pages and off-page selection"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "empty recipient, subject and body are rejected before any physical sending intent"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "stored owner display name reaches the transport without changing authorized sender address"
+        },
+        {
+          "file": "test-mail-send.mjs",
+          "name": "owner default display name reaches the transport without a per-account replica"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "drafts persist per trusted account; revisions prevent silent overwrites and deletion races"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "important contacts are explicit preferences and folder counts derive from archive records"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "workspace rejects machine roles, cross-site writes, invalid fields and excessive bodies"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "sender labels and defaults persist per owner and follow authorized source changes"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "owner default display name covers future accounts and preserves explicit account overrides"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "compact workspace validates unchanged state with 304, observes writes, and omits sent bodies until detail is opened"
+        },
+        {
+          "file": "test-mail-workspace.mjs",
+          "name": "blocking reports existing rules; undo only removes the exact newly created rule"
+        }
+      ],
+      "python": []
+    },
+    {
+      "id": "identity-release",
+      "trigger": "reusable",
+      "contract": "账号隔离、受限API、密钥轮换、固定包跟版回退保留数据",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-PRIMARY-API-2026-10-26.md",
+        "wiki:04-drills-audits/MAIL-AUTO-FOLLOW-2026-10-26.md"
+      ],
+      "browser": [],
+      "unit": [
+        {
+          "file": "product/test-service-api.mjs",
+          "name": "scope boundary, forged browser identity, read side effects and token rotation"
+        },
+        {
+          "file": "product/test-service-api.mjs",
+          "name": "draft revisions, restricted sender, durable send intent, retries and unknown outcomes"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "demo logout revokes its workspace, rotates browser namespace and refreshes an active cookie"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "demo instances on different localhost ports keep distinct browser cookies"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "concurrent admission reserves the 64 workspace capacity before creating stores"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "expiration and revocation wait for active requests and close each store once"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "shutdown waits for outstanding leases and is idempotent"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "idle expired workspaces are reclaimed without another visitor"
+        },
+        {
+          "file": "product/test-demo-lifecycle.mjs",
+          "name": "a live root cannot be reclaimed; after a process crash only owned directories are removed"
+        },
+        {
+          "file": "product/test-migration.mjs",
+          "name": "migration preserves identities, originals and draft revisions and opens independently"
+        },
+        {
+          "file": "product/test-migration.mjs",
+          "name": "migration refuses a changed source, wrong owner and missing originals"
+        }
+      ],
+      "python": [
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_success_then_no_reinstallation"
+        },
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_failed_release_is_not_retried"
+        },
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_pause_recovers_but_does_not_fetch"
+        },
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_hash_file_set_and_symlink_rejected"
+        },
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_archive_escape_rejected_before_write"
+        },
+        {
+          "file": "scripts/test-follow.py",
+          "name": "test_checked_channel_pause_pin_and_failure_backoff"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "physical-ios",
+      "method": "物理Safari多触点、软键盘和系统历史动画像素需设备补证；CI覆盖事件模型、首个可信原生滚动和几何。"
+    },
+    {
+      "id": "visual-judgment",
+      "method": "CI核位置、尺寸、内容和过渡连续性；整页美感与协调由维护者查看合成画面后判断。"
+    },
+    {
+      "id": "external-delivery",
+      "method": "CI使用隔离IMAP/SMTP与数据；服务商真实联通、收全和设备投递按既有权限单独对账。"
+    },
+    {
+      "id": "shared-catalog",
+      "owner": "Account / Foundation",
+      "method": "账号应用目录及图标的增删排序归Account CI；Mail消费方集成沿Accompany account-applications门禁，不能在Mail维护第二目录。"
+    }
+  ]
+}

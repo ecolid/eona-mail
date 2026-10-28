@@ -10,6 +10,7 @@ const fixture=(port,extra)=>({
   env:{MAIL_PRODUCT_ROOT:root,MAIL_FIXTURE_DENSE:'1',MAIL_FIXTURE_JOURNEYS:'1',MAIL_FIXTURE_CONTROLS:'1',...extra},
 });
 export default defineConfig({
+  metadata:{product:'eona-mail',sourceCommit:process.env.GITHUB_SHA||'local'},
   testDir:'test/browser/specs', fullyParallel:false, workers:1, retries:0,
   timeout:120000, globalTimeout:12*60*1000, expect:{timeout:15000},
   forbidOnly:!!process.env.CI,

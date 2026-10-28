@@ -12,7 +12,7 @@ test('browser evidence rejects missing, incomplete, unbound and failed results',
 test('browser registry is unique and release waits for its required jobs',()=>{
   assert.equal(new Set(scenarios.map(s=>s.id)).size,scenarios.length);
   const workflow=readFileSync(new URL('./.github/workflows/mail.yml',import.meta.url),'utf8');
-  assert.match(workflow,/needs: \[check, browser\]/);
+  assert.match(workflow,/needs: \[check, browser, coverage\]/);
   assert.match(workflow,/browser: \[chromium, webkit\]/);
   assert.doesNotMatch(workflow,/continue-on-error/);
 });

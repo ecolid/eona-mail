@@ -1,6 +1,6 @@
 {
   "name": "eona-mail-product",
-  "version": "0.3.29",
+  "version": "0.3.30",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,7 +14,9 @@
     "check:assets": "python3 scripts/build-mail-editor-assets.py --check && node scripts/build-mail-experience-assets.mjs --check",
     "release": "node scripts/release.mjs",
     "test:browser": "playwright test",
-    "check:browser": "playwright test --list"
+    "check:browser": "playwright test --list",
+    "test:ci": "node scripts/run-ci-contracts.mjs",
+    "check:ci": "python3 scripts/check-product-ci.py"
   },
   "dependencies": {
     "jose": "6.2.12",

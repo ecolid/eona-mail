@@ -23,13 +23,19 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run check:browser
       - run: npm run check:assets
-      - run: npm test
-      - run: python3 product/test-imap.py
-      - run: python3 product/test-source-inventory.py
-      - run: python3 product/test-state-sync.py
-      - run: python3 product/test-workspace-folders.py
-      - run: python3 product/test-gmail-sync.py
-      - run: python3 scripts/test-follow.py
+      - run: npm run check:ci
+      - run: python3 scripts/test-ci-coverage.py
+      - run: npm run test:ci
+      - run: python3 scripts/check-product-ci.py --python test-results/python.json
+      - uses: actions/upload-artifact@v5
+        with:
+          name: mail-contracts-${{ github.sha }}
+          path: |
+            test-results/unit.xml
+            test-results/contracts-source.json
+            test-results/python.json
+          if-no-files-found: error
+          retention-days: 14
       - run: node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
       - run: cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs
       - run: python3 scripts/test-release.py --bundle "$RUNNER_TEMP/mail-bundle"
@@ -47,7 +53,7 @@ jobs:
           python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/mail-health.json")); assert d["ok"] and d["mode"]=="demo"'
           curl --fail --silent http://127.0.0.1:8799/ > "$RUNNER_TEMP/mail-page.html"
   browser:
-    name: Browser motion (${{ matrix.browser }})
+    name: Browser product (${{ matrix.browser }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -69,7 +75,7 @@ jobs:
           node scripts/release.mjs --output "$RUNNER_TEMP/mail-browser-bundle"
           (cd "$RUNNER_TEMP/mail-browser-bundle" && node scripts/verify-release.mjs)
           ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/mail-browser-bundle/node_modules"
-      - name: Run motion, rendering and lifecycle gates
+      - name: Run product journeys, rendering and lifecycle gates
         env:
           MAIL_PRODUCT_ROOT: ${{ runner.temp }}/mail-browser-bundle
         run: npm run test:browser -- --project=${{ matrix.browser }}
@@ -86,9 +92,42 @@ jobs:
       - name: Summarize browser gates
         if: ${{ !cancelled() }}
         run: node scripts/summarize-browser.mjs
+  coverage:
+    name: Product regression coverage
+    needs: [check, browser]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: mail-*-${{ github.sha }}
+          path: ci-evidence
+      - run: python3 scripts/check-product-ci.py --reports ci-evidence
+      - name: Summarize product coverage
+        run: |
+          python3 - <<'PYREPORT'
+          import json,os
+          v=json.load(open('test-results/coverage.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+            f.write('## Mail regression coverage\nSource: '+v['sourceCommit']+'\n\n| Defect family | Result | Unit | Python | Browser / engine |\n| --- | --- | ---: | ---: | ---: |\n')
+            for r in v['families']:f.write('| {id} | {status} | {unit} | {python} | {browserPerEngine} |\n'.format(**r))
+            f.write('\nEvidence boundaries: '+', '.join(r['id'] for r in v['boundaries'])+'\n')
+          PYREPORT
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: mail-coverage-${{ github.sha }}
+          path: test-results/coverage.json
+          if-no-files-found: error
+          retention-days: 14
   development:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [check, browser]
+    needs: [check, browser, coverage]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
