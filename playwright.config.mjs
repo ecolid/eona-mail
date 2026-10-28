@@ -14,7 +14,7 @@ export default defineConfig({
   testDir:'test/browser/specs', fullyParallel:false, workers:1, retries:0,
   timeout:120000, globalTimeout:12*60*1000, expect:{timeout:15000},
   forbidOnly:!!process.env.CI,
-  outputDir:'test-results',
+  outputDir:'test-results/browser',
   reporter:[['line'],['html',{open:'never'}],['json',{outputFile:'test-results/results.json'}]],
   use:{viewport:{width:1440,height:1000},hasTouch:true,actionTimeout:15000,
     screenshot:'only-on-failure',trace:{mode:'retain-on-failure',snapshots:false,screenshots:false,sources:true}},

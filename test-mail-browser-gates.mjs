@@ -18,6 +18,7 @@ test('browser registry is unique and release waits for its required jobs',()=>{
   assert.ok(ids.indexOf('browser')<ids.indexOf('coverage')&&ids.indexOf('coverage')<ids.indexOf('channel-protocol'));
   assert.equal(plan.steps.find(s=>s.id==='browser').run,'npm run test:browser');
   const config=readFileSync(new URL('./playwright.config.mjs',import.meta.url),'utf8');
+  assert.match(config,/outputDir:'test-results\/browser'/,'browser cleanup must preserve unit and protocol reports');
   for(const engine of ['chromium','webkit'])assert.ok(config.includes("browserName:'"+engine+"'"));
   assert.match(workflow,/workflow_dispatch:/);
   assert.doesNotMatch(workflow,/npm (?:ci|run test)|playwright install/);
