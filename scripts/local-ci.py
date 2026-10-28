@@ -72,6 +72,12 @@ def demo(root,temp,environment):
    try:process.wait(timeout=10)
    except subprocess.TimeoutExpired:process.kill();process.wait()
 
+
+def preserve_artifacts(source,output):
+ for name in ['test-results','playwright-report']:
+  path=source/name
+  if path.is_dir():shutil.copytree(path,output/'diagnostics'/name,dirs_exist_ok=True)
+
 def run(output):
  output=output.resolve()
  if output.exists():raise ValueError('local_evidence_destination_exists')
@@ -109,6 +115,7 @@ def run(output):
  except Exception as error:
   report.update(status='failed',error=str(error),completedAt=datetime.datetime.now(datetime.timezone.utc).isoformat());path.write_text(json.dumps(report,indent=2)+'\n');raise
  finally:
+  preserve_artifacts(source,output)
   if source.exists():subprocess.run(['git','worktree','remove','--force',str(source)],cwd=ROOT,check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
   # Keep the checked immutable bundle and logs for publication and diagnosis.
  print(json.dumps({'status':report['status'],'sourceCommit':head,'evidence':str(path),'coverage':json.loads((output/'reports/coverage.json').read_text())['executed']}),flush=True)

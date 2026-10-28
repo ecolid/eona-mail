@@ -71,8 +71,9 @@ body.mail-settings #view{display:none}body.mail-settings #list{width:auto;flex:1
 .mail-source-account summary{display:flex;align-items:center;gap:16px;min-height:72px;padding:12px 0;cursor:pointer;list-style:none;box-sizing:border-box}
 .mail-source-account summary::-webkit-details-marker{display:none}
 .mail-source-account summary:focus-visible{outline:2px solid var(--e-ui-accent);outline-offset:3px;border-radius:6px}
-.mail-source-account summary>svg{width:16px;height:16px;flex:none;color:var(--e-ui-muted);transition:transform var(--e-ui-motion) var(--e-ui-ease)}
-.mail-source-account[open] summary>svg{transform:rotate(180deg)}
+.mail-source-account summary>svg{width:16px;height:16px;flex:none;color:var(--e-ui-muted)}
+.mail-source-account summary>svg>*{transform-box:view-box;transform-origin:center;transition:transform var(--e-ui-motion) var(--e-ui-ease)}
+.mail-source-account[open] summary>svg>*{transform:rotate(180deg)}
 .mail-source-identity{min-width:0;flex:1;font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .mail-source-identity small{display:block;font-size:12px;color:var(--e-ui-muted);font-weight:400;margin-top:5px}
 .mail-source-state{display:grid;gap:5px;text-align:right;font-size:12px;flex:none;color:var(--e-ui-muted)}
@@ -82,5 +83,5 @@ body.mail-settings #view{display:none}body.mail-settings #list{width:auto;flex:1
 .mail-source-folder{display:flex;justify-content:space-between;gap:16px;padding:9px 0;font-size:13px;line-height:20px}
 .mail-source-folder>span:first-child{min-width:0;overflow-wrap:anywhere}.mail-source-folder>span:last-child{flex:none;color:var(--e-ui-muted);font-variant-numeric:tabular-nums}
 @media(max-width:600px){.mail-source-identity{font-size:16px}.mail-source-identity small,.mail-source-state,.mail-source-folders p{font-size:14px}.mail-source-folder{font-size:14px}.mail-source-account summary{gap:10px}}
-@media(prefers-reduced-motion:reduce){.mail-source-account summary>svg{transition:none}}
+@media(prefers-reduced-motion:reduce){.mail-source-account summary>svg>*{transition:none}}
 `;

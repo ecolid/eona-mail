@@ -95,7 +95,9 @@ test('source-health-truth-states-and-failed-refresh',async({page},info)=>{
   await panel.locator('[data-refresh-source]').click();
   await expect(panel.locator('[role=status]')).toBeEmpty();
   await expect(first).toHaveAttribute('open','');
-  const overflow=await panel.evaluate(n=>n.scrollWidth>n.clientWidth+1);expect(overflow).toBe(false);
+  const geometry=await panel.evaluate(n=>{const box=n.getBoundingClientRect();return {width:n.clientWidth,scrollWidth:n.scrollWidth,overflow:[...n.querySelectorAll('*')].map(x=>({tag:x.tagName,className:x.className,text:x.textContent.slice(0,150),width:x.clientWidth,scrollWidth:x.scrollWidth,left:x.getBoundingClientRect().left,right:x.getBoundingClientRect().right})).filter(x=>x.scrollWidth>x.width+1||x.left<box.left-1||x.right>box.right+1)}});
+  await evidence(info,geometry,'source-health-geometry');
+  const overflow=geometry.scrollWidth>geometry.width+1;expect(overflow).toBe(false);
   await evidence(info,{method:'real-health-view-synthetic-provider-states',states:['complete','incomplete','error','stale'],failurePreservesSnapshot:true,retryPreservesDisclosure:true,overflow});
 });
 

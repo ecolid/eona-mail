@@ -24,6 +24,11 @@ class LocalVerification(unittest.TestCase):
   report=copy.deepcopy(self.report);del report['files']['reports/results.json'];self.assertRaisesRegex(ValueError,'missing_evidence',self.verify,report)
  def test_symlink_and_escape_reports_are_rejected(self):
   path=self.root/'reports/unit.xml';path.unlink();path.symlink_to(self.root/'reports/python.json');self.assertRaisesRegex(ValueError,'evidence_changed',self.verify)
+ def test_failure_artifacts_survive_source_cleanup(self):
+  source=self.root/'source';(source/'test-results').mkdir(parents=True);(source/'test-results/failure.png').write_bytes(b'failure frame')
+  gate.preserve_artifacts(source,self.root/'evidence')
+  import shutil;shutil.rmtree(source)
+  self.assertEqual((self.root/'evidence/diagnostics/test-results/failure.png').read_bytes(),b'failure frame')
  def test_public_publisher_requires_verification_before_git_or_network(self):
   p=subprocess.run(['node',str(pathlib.Path(__file__).with_name('publish-development.mjs')),'/nonexistent'],capture_output=True,text=True)
   self.assertNotEqual(p.returncode,0);self.assertIn('complete_local_verification_required',p.stderr)
