@@ -60,7 +60,16 @@ def verify(value,unit_xml,unit_meta,py,browsers,sha):
 def main():
  p=argparse.ArgumentParser();p.add_argument('--python',type=pathlib.Path);p.add_argument('--reports',type=pathlib.Path);p.add_argument('--output',type=pathlib.Path,default=pathlib.Path('test-results/coverage.json'));a=p.parse_args();v=inventory()
  if a.python:return python_tests(a.python)
- if not a.reports:print(json.dumps({'status':'inventory-valid','families':len(v['families'])}));return
+ if not a.reports:
+  listed=json.loads(subprocess.check_output(['node','node_modules/@playwright/test/cli.js','test','--list','--reporter=json'],cwd=ROOT,text=True))
+  titles=set()
+  def visit(suite):
+   titles.update(s['title'] for s in suite.get('specs',[]))
+   for child in suite.get('suites',[]):visit(child)
+  for suite in listed['suites']:visit(suite)
+  for f in v['families']:
+   for title in f['browser']:assert title in titles,'unregistered_browser_case:'+title
+  print(json.dumps({'status':'inventory-valid','families':len(v['families']),'browserCases':len(titles)}));return
  def one(name):
   paths=list(a.reports.rglob(name));assert len(paths)==1,'expected_one:'+name;return paths[0]
  report=verify(v,one('unit.xml').read_bytes(),load(one('contracts-source.json')),load(one('python.json')),[load(p) for p in a.reports.rglob('results.json')],source())

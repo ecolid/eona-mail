@@ -6,7 +6,7 @@ test('filter-live-continuity-and-anchor',async({page},info)=>{
   const f=await prepare(page,{port:8793,path:'/journeys'});
   const trigger=f.locator('.mail-list-filter'),select=f.locator('[data-mail-select-toggle]');
   await trigger.click();const panel=f.locator('.mail-list-filter-panel');
-  const before=await trigger.boundingBox(),selectBefore=await select.boundingBox();
+  const before=await trigger.evaluate(n=>n.getBoundingClientRect().toJSON()),selectBefore=await select.boundingBox();
   await f.evaluate(()=>{
     window.__filterFrames=[];window.__filterSampling=true;
     window.__filterNodes={panel:document.querySelector('.mail-list-filter-panel'),trigger:document.querySelector('.mail-list-filter'),scroll:document.getElementById('mail-list-scroll')};
@@ -33,7 +33,7 @@ test('filter-live-continuity-and-anchor',async({page},info)=>{
   expect(samples.length).toBeGreaterThan(1);
   expect(samples.every(s=>s.rows>0&&!s.placeholder&&s.same)).toBe(true);
   expect(samples.filter(s=>s.open).every(s=>Math.abs(s.x-before.x)<1)).toBe(true);
-  expect((await trigger.boundingBox()).width).toBeCloseTo(before.width,1);
+  expect((await trigger.evaluate(n=>n.getBoundingClientRect().toJSON())).width).toBeCloseTo(before.width,1);
   expect((await select.boundingBox()).x).toBeCloseTo(selectBefore.x,1);
   await evidence(info,{method:'browser-click-and-controlled-response',samples,before,after:await trigger.boundingBox()});
 });
@@ -60,7 +60,7 @@ for(const folder of ['inbox','sent','drafts','contacts','important','subscriptio
 
 test('search-first-press-clear-close-and-submit',async({page},info)=>{
   const f=await prepare(page,{port:8793,path:'/journeys'});
-  await f.locator('.mail-search-options').click();
+  await f.locator('#mail-search-toggle').click();
   const words=f.locator('input[name=words]');await words.fill('邮件主题 1259');await words.focus();
   // Reduced viewport models keyboard occlusion; actual OS IME remains device evidence.
   await page.locator('#screen').evaluate(n=>n.style.height='400px');
@@ -70,17 +70,17 @@ test('search-first-press-clear-close-and-submit',async({page},info)=>{
   await words.fill('邮件主题 1259');await f.locator('.mail-search-options-panel [type=submit]').click();
   await expect(f.locator('#q')).toHaveValue('邮件主题 1259');
   await expect(f.locator('#list .mail-open')).toHaveCount(1);
-  await f.locator('.mail-search-options').click();await words.focus();
+  await f.locator('#mail-search-toggle').click();await words.focus();
   await f.locator('.mail-search-sheet-close').dispatchEvent('pointerdown',{pointerType:'touch',pointerId:32,isPrimary:true,button:0});
-  await expect(f.locator('.mail-search-options-panel')).not.toBeVisible();
+  await expect(f.locator('.mail-search-sheet[open]')).toHaveCount(0);
   await evidence(info,{method:'synthetic-touch-press-and-browser-submit',keyboard:'viewport-height-model',matchedRows:1,clearFirstPress:true,closeFirstPress:true});
 });
 
 test('row-swipe-tray-reversal-and-staggered-pair',async({page},info)=>{
   const f=await prepare(page,{port:8793,path:'/row-actions'});
-  const command=async name=>{await page.locator(`[data-test="${name}"]`).click();await expect(page.locator('#result')).toHaveAttribute('data-command',name);return JSON.parse(await page.locator('#result').textContent()).latest};
-  const reverse=await command('swipe-cycle');expect(reverse.openRows).toBe(0);expect(reverse.reading).toBe(false);
-  const pair=await command('two-sequential');expect(pair.selecting).toBe(true);expect(pair.selected.length).toBeGreaterThan(1);
+  const command=async (name,expected=name)=>{await page.locator(`[data-test="${name}"]`).click();await expect(page.locator('#result')).toHaveAttribute('data-command',expected);return JSON.parse(await page.locator('#result').textContent()).latest};
+  const reverse=await command('swipe-cycle','cycle-closed-settled');expect(reverse.openRows).toBe(0);expect(reverse.reading).toBe(false);
+  const pair=await command('two-sequential','two-sequential-drag');expect(pair.selecting).toBe(true);expect(pair.selected.length).toBeGreaterThan(1);
   const end=await command('release');expect(end.reading).toBe(false);expect(end.pressed).toBe(0);
   await evidence(info,{method:'synthetic-source-events',reverse,pair,end});
 });
@@ -93,7 +93,7 @@ test('draft-save-reopen-and-single-isolated-send',async({page},info)=>{
   const form=f.locator('#mail-compose-form');await expect(form).toBeVisible();
   await form.locator('[name=to]').fill('friend@example.test');await form.locator('[name=subject]').fill(subject);
   await form.locator('[contenteditable=true]').fill('Persist this synthetic body.');
-  await control('fail');await form.locator('[data-compose-save]').click();
+  await control('fail');await f.locator('[data-compose-save]').click();
   await expect(form.locator('[data-compose-retry]')).toBeVisible();
   await expect(form.locator('[name=subject]')).toHaveValue(subject);
   await control('normal');await form.locator('[data-compose-retry]').click();
@@ -106,7 +106,7 @@ test('draft-save-reopen-and-single-isolated-send',async({page},info)=>{
   await expect(form.locator('[contenteditable=true]')).toContainText('Persist this synthetic body.');
   const trace=async()=>{const r=await page.request.get('http://127.0.0.1:8793/__review/trace');return r.json()};
   const before=(await trace()).sends;
-  await form.locator('[data-compose-send]').evaluate(b=>{b.click();b.click()});
+  await f.locator('[data-compose-send]').evaluate(b=>{b.click();b.click()});
   await expect.poll(async()=>(await trace()).sends).toBe(before+1);
   await expect(form).not.toBeVisible();
   expect((await drafts()).some(d=>d.subject===subject)).toBe(false);
