@@ -3,7 +3,9 @@ export async function publishChannel(bundle){
 bundle=resolve(bundle);const meta=JSON.parse(await readFile(join(bundle,'PRODUCT-RELEASE.json'),'utf8'));
 const git=(args,extra={})=>execFileSync('git',args,{encoding:'utf8',...extra}).trim();
 const source=git(['rev-parse','HEAD']);if(meta.releaseModel!=='source-main'||meta.sourceCommit!==source)throw Error('unchecked_source');
-git(['fetch','origin','main','channels/development']);if(git(['rev-parse','origin/main'])!==source)process.exit(0);
+// A single-branch maintainer clone may fetch the channel only into FETCH_HEAD.
+// Bind both authoritative heads explicitly before building the next ancestor.
+git(['fetch','origin','+refs/heads/main:refs/remotes/origin/main','+refs/heads/channels/development:refs/remotes/origin/channels/development']);if(git(['rev-parse','origin/main'])!==source)process.exit(0);
 const previous=git(['rev-parse','origin/channels/development']);
 let prior={};try{prior=JSON.parse(git(['show',previous+':PRODUCT-RELEASE.json']));}catch{}
 if(prior.sourceCommit===source){if(JSON.stringify(prior.files)!==JSON.stringify(meta.files))throw Error('published_source_bundle_changed');return previous;}
