@@ -12,7 +12,14 @@ test('browser evidence rejects missing, incomplete, unbound and failed results',
 test('browser registry is unique and release waits for its required jobs',()=>{
   assert.equal(new Set(scenarios.map(s=>s.id)).size,scenarios.length);
   const workflow=readFileSync(new URL('./.github/workflows/mail.yml',import.meta.url),'utf8');
-  assert.match(workflow,/needs: \[check, browser, coverage\]/);
-  assert.match(workflow,/browser: \[chromium, webkit\]/);
+  const plan=JSON.parse(readFileSync(new URL('./ci/local.json',import.meta.url),'utf8'));
+  const ids=plan.steps.map(s=>s.id);
+  for(const id of ['unit','protocol','browser','coverage','channel-protocol','demo'])assert.ok(ids.includes(id),id);
+  assert.ok(ids.indexOf('browser')<ids.indexOf('coverage')&&ids.indexOf('coverage')<ids.indexOf('channel-protocol'));
+  assert.equal(plan.steps.find(s=>s.id==='browser').run,'npm run test:browser');
+  const config=readFileSync(new URL('./playwright.config.mjs',import.meta.url),'utf8');
+  for(const engine of ['chromium','webkit'])assert.ok(config.includes("browserName:'"+engine+"'"));
+  assert.match(workflow,/workflow_dispatch:/);
+  assert.doesNotMatch(workflow,/npm (?:ci|run test)|playwright install/);
   assert.doesNotMatch(workflow,/continue-on-error/);
 });
