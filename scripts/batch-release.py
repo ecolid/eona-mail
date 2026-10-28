@@ -49,6 +49,7 @@ def prepare(evidence,output,root=ROOT):
  if output.exists():raise ValueError('release_destination_exists')
  if output.is_relative_to(root.resolve()):raise ValueError('release_output_inside_source')
  version=json.loads((root/'package.json').read_text())['version'];batch,entries=selected_batch(root,version);bundle=evidence.parent/'isolated/bundle'
+ gate(root).verify_bundle(evidence,bundle)
  subprocess.run(['node',str(root/'scripts/verify-release.mjs')],cwd=bundle,check=True,stdout=subprocess.DEVNULL)
  meta=json.loads((bundle/'PRODUCT-RELEASE.json').read_text())
  if meta['sourceCommit']!=verification['sourceCommit']or meta['version']!=version:raise ValueError('verified_bundle_source_mismatch')

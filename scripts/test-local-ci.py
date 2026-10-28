@@ -31,6 +31,22 @@ class LocalVerification(unittest.TestCase):
   gate.preserve_artifacts(source,self.root/'evidence')
   import shutil;shutil.rmtree(source)
   self.assertEqual((self.root/'evidence/diagnostics/test-results/failure.png').read_bytes(),b'failure frame')
+ def checked_bundle(self):
+  bundle=self.root/'bundle';bundle.mkdir();(bundle/'runtime.js').write_bytes(b'checked runtime')
+  meta={'files':{'runtime.js':gate.digest(bundle/'runtime.js')},'sourceCommit':self.commit}
+  raw=json.dumps(meta);(self.root/'PRODUCT-RELEASE.json').write_text(raw);(bundle/'PRODUCT-RELEASE.json').write_text(raw)
+  return bundle
+ def test_final_bundle_matches_the_manifest_saved_by_full_verification(self):
+  bundle=self.checked_bundle();gate.verify_bundle(self.root/'verification.json',bundle)
+  (bundle/'runtime.js').write_bytes(b'replaced runtime')
+  self.assertRaisesRegex(ValueError,'checked_bundle_file_changed',gate.verify_bundle,self.root/'verification.json',bundle)
+ def test_replacing_both_bundle_and_its_self_declared_manifest_is_rejected(self):
+  bundle=self.checked_bundle();(bundle/'runtime.js').write_bytes(b'replaced runtime')
+  meta=json.loads((bundle/'PRODUCT-RELEASE.json').read_text());meta['files']['runtime.js']=gate.digest(bundle/'runtime.js');(bundle/'PRODUCT-RELEASE.json').write_text(json.dumps(meta))
+  self.assertRaisesRegex(ValueError,'checked_bundle_manifest_changed',gate.verify_bundle,self.root/'verification.json',bundle)
+ def test_bundle_symlink_cannot_substitute_checked_file(self):
+  bundle=self.checked_bundle();target=bundle/'runtime.js';raw=target.read_bytes();target.unlink();other=self.root/'other.js';other.write_bytes(raw);target.symlink_to(other)
+  self.assertRaisesRegex(ValueError,'checked_bundle_file_changed',gate.verify_bundle,self.root/'verification.json',bundle)
  def test_public_publisher_requires_verification_before_git_or_network(self):
   p=subprocess.run(['node',str(pathlib.Path(__file__).with_name('publish-development.mjs')),'/nonexistent'],capture_output=True,text=True)
   self.assertNotEqual(p.returncode,0);self.assertIn('complete_local_verification_required',p.stderr)
@@ -41,7 +57,8 @@ class ReleasePolicy(unittest.TestCase):
    if args[:2]==('remote','get-url'):return 'https://github.com/ecolid/eona-mail.git'
    if args and args[0]=='ls-remote':return source+' refs/heads/main'
    return source
-  with patch.object(gate,'verify',return_value={'sourceCommit':source}),patch.object(gate,'git',side_effect=git),patch.object(gate,'evidence_path',return_value=pathlib.Path('/evidence/verification.json')),patch.object(pathlib.Path,'unlink'),patch.object(gate.subprocess,'run'),patch.object(gate.subprocess,'check_output',return_value='b'*40),patch.object(gate.urllib.request,'urlopen',side_effect=AssertionError('daily publication must not call GitHub Release API')),patch('sys.argv',['local-ci.py','publish']),contextlib.redirect_stdout(output):gate.main()
+  with patch.object(gate,'verify_bundle')as binding,patch.object(gate,'verify',return_value={'sourceCommit':source}),patch.object(gate,'git',side_effect=git),patch.object(gate,'evidence_path',return_value=pathlib.Path('/evidence/verification.json')),patch.object(pathlib.Path,'unlink'),patch.object(gate.subprocess,'run'),patch.object(gate.subprocess,'check_output',return_value='b'*40),patch.object(gate.urllib.request,'urlopen',side_effect=AssertionError('daily publication must not call GitHub Release API')),patch('sys.argv',['local-ci.py','publish']),contextlib.redirect_stdout(output):gate.main()
+  binding.assert_called_once_with(pathlib.Path('/evidence/verification.json'),pathlib.Path('/evidence/isolated/bundle'))
   result=json.loads(output.getvalue());self.assertIsNone(result['release']);self.assertEqual(result['channelCommit'],'b'*40)
  def test_manual_platform_check_accepts_same_repo_before_and_after_publication(self):
   class Reply:

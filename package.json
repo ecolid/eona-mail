@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "jose": "6.2.12",
-    "nodemailer": "10.1.2",
+    "nodemailer": "10.2.1",
     "openid-client": "6.8.8",
     "parse5": "8.0.1",
     "postal-mime": "2.7.5"

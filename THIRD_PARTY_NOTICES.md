@@ -46,7 +46,7 @@ Foundation 固定界面依赖中的 Eona 自有代码随本项目 MIT 许可。F
 | motion | 14.4.0 | MIT | [LICENSE.md](vendor/npm-licenses/motion/LICENSE.md) |
 | motion-dom | 14.4.0 | MIT | [LICENSE.md](vendor/npm-licenses/motion-dom/LICENSE.md) |
 | motion-utils | 14.1.1 | MIT | [LICENSE.md](vendor/npm-licenses/motion-utils/LICENSE.md) |
-| nodemailer | 10.1.2 | MIT-0 | [LICENSE](vendor/npm-licenses/nodemailer/LICENSE) |
+| nodemailer | 10.2.1 | MIT-0 | [LICENSE](vendor/npm-licenses/nodemailer/LICENSE) |
 | oauth4webapi | 3.8.8 | MIT | [LICENSE.md](vendor/npm-licenses/oauth4webapi/LICENSE.md) |
 | openid-client | 6.8.8 | MIT | [LICENSE.md](vendor/npm-licenses/openid-client/LICENSE.md) |
 | overlayscrollbars | 2.17.0 | MIT | [LICENSE](vendor/npm-licenses/overlayscrollbars/LICENSE) |

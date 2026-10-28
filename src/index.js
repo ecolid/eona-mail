@@ -149,7 +149,7 @@ async function checkToken(env, token) {
   if (!token || !env.INBOX_PASSWORD) return false;
   const [exp, sig] = token.split('.');
   if (!exp || !sig || Date.now() > +exp) return false;
-  return (await hmac(env.INBOX_PASSWORD, 'mailhub:' + exp)) === sig;
+  return timingSafeEqual(await hmac(env.INBOX_PASSWORD, 'mailhub:' + exp),sig);
 }
 
 /** 写一条运行日志到 event_log。日志本身失败也绝不能影响主流程 */
@@ -1400,23 +1400,24 @@ async function handleFetch(request, env, trustedIdentity = null) {
   // 登录
   if (path === '/api/login' && request.method === 'POST') {
     const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-    const failsFrom = async (who) => {
-      const row = await env.MAILDB.prepare(
-        "SELECT COUNT(*) AS n FROM event_log WHERE kind = 'login_fail' AND detail LIKE ? AND created_at > datetime('now', '-15 minutes')"
-      ).bind(who + '%').first();
-      return (row && row.n) || 0;
-    };
-    let locked = false;
+    let reserved;
     try {
-      locked = (await failsFrom(ip)) >= LOGIN_FAILS_PER_IP || (await failsFrom('')) >= LOGIN_FAILS_GLOBAL;
-    } catch (e) { await logEvent(env, 'login_guard_error', e); }
-    if (locked) {
-      await logEvent(env, 'login_locked', ip);
-      return json({ ok: false, error: '猜错太多次,15 分钟后再试' }, 429);
+      reserved=await env.MAILDB.prepare(`INSERT INTO event_log(kind,detail)
+        SELECT 'login_attempt',? WHERE
+        (SELECT COUNT(*) FROM event_log WHERE kind='login_attempt' AND created_at>datetime('now','-15 minutes'))<?
+        AND (SELECT COUNT(*) FROM event_log WHERE kind='login_attempt' AND detail=? AND created_at>datetime('now','-15 minutes'))<?`)
+        .bind(ip,LOGIN_FAILS_GLOBAL,ip,LOGIN_FAILS_PER_IP).run();
+    } catch (e) {
+      await logEvent(env,'login_guard_error','attempt_reservation_failed');
+      return json({ok:false,error:'登录暂时不可用，请稍后再试。'},503);
+    }
+    if(reserved.meta.changes!==1){
+      return json({ok:false,error:'猜错太多次,15 分钟后再试'},429);
     }
     const body = await request.json().catch(() => ({}));
     const given = typeof body.password === 'string' ? body.password : '';
     if (given && env.INBOX_PASSWORD && timingSafeEqual(env.INBOX_PASSWORD, given)) {
+      await env.MAILDB.prepare("DELETE FROM event_log WHERE kind='login_attempt' AND detail=?").bind(ip).run();
       await logEvent(env, 'login_ok', ip);
       const token = await makeToken(env);
       return json({ ok: true }, 200, {

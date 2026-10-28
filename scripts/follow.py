@@ -46,7 +46,7 @@ def cycle(config,state,fetch,install,recover):
     observed=recover()
     if observed and 'installed' in observed:state={**state,'installed':observed['installed']}
     if config.get('paused'):return {**state,'status':'paused'}
-    revision,root=fetch(config.get('pin'))
+    revision,root=fetch(config.get('pin'),state.get('installed'))
     if not SHA.fullmatch(revision):raise ValueError('invalid_revision')
     if revision==state.get('installed'):return {**state,'status':'current','checkedAt':time.time()}
     if revision==state.get('failed'):return {**state,'status':'blocked_failed_release','checkedAt':time.time()}
@@ -76,7 +76,7 @@ def main():
             write(a.config,config);print(json.dumps({'paused':config.get('paused',False),'pin':config.get('pin')}));return
         adapter=config['adapter'];env={**os.environ,'GIT_TERMINAL_PROMPT':'0','GIT_SSH_COMMAND':config['sshCommand']}
         temporary=tempfile.TemporaryDirectory(prefix='release-',dir=base)
-        def fetch(pin):
+        def fetch(pin,installed):
             repo=base/'repository.git'
             if not repo.exists():run(['git','init','--bare',str(repo)])
             git=['git','--git-dir',str(repo)]
@@ -84,7 +84,7 @@ def main():
             channel=run(git+['rev-parse','refs/heads/checked']);revision=pin or channel
             # A pin may only select a previously checked ancestor, never a raw main.
             run(git+['merge-base','--is-ancestor',revision,channel])
-            if not pin and state.get('installed'):run(git+['merge-base','--is-ancestor',state['installed'],revision])
+            if not pin and installed:run(git+['merge-base','--is-ancestor',installed,revision])
             root=pathlib.Path(temporary.name);archive=root/'bundle.tar'
             run(git+['archive','--format=tar','--output',str(archive),revision]);target=root/'code';target.mkdir();extract(archive,target)
             meta=verify(target)

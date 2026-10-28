@@ -40,6 +40,18 @@ def verify(path,root=ROOT):
   return gate.verify(value,(folder/'unit.xml').read_bytes(),json.loads((folder/'contracts-source.json').read_text()),json.loads((folder/'python.json').read_text()),[json.loads((folder/'results.json').read_text())],head)
  return verify_report(json.loads(path.read_text()),plan,head,git('rev-parse','HEAD^{tree}',root=root),path.parent,coverage)
 
+def verify_bundle(evidence,bundle):
+ # Compare to the manifest captured during tests, not a replaceable package's
+ # own claims. Every entry is bound to those exact bytes before publication.
+ folder=pathlib.Path(evidence).resolve().parent;bundle=pathlib.Path(bundle).resolve()
+ expected=folder/'PRODUCT-RELEASE.json';manifest=bundle/'PRODUCT-RELEASE.json'
+ if manifest.is_symlink() or not manifest.is_file() or manifest.read_bytes()!=expected.read_bytes():raise ValueError('checked_bundle_manifest_changed')
+ meta=json.loads(expected.read_text())
+ for name,want in meta['files'].items():
+  relative=pathlib.PurePosixPath(name);path=bundle/name
+  if relative.is_absolute()or '..'in relative.parts or path.is_symlink()or not path.is_file()or not path.resolve().is_relative_to(bundle)or digest(path)!=want:raise ValueError('checked_bundle_file_changed:'+name)
+ return meta
+
 def cached(root=ROOT):
  common=pathlib.Path(git('rev-parse','--path-format=absolute','--git-common-dir',root=root))
  return common/'local-ci'/git('rev-parse','HEAD',root=root)/'evidence-path.json'
@@ -129,13 +141,15 @@ def platform_check():
  print(json.dumps({'status':'passed','scope':'GitHub event and read-token access only','sourceCommit':os.environ['GITHUB_SHA']}))
 
 def main():
- parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=['run','verify','promote','publish','platform']);parser.add_argument('--output',type=pathlib.Path);parser.add_argument('--evidence',type=pathlib.Path);a=parser.parse_args()
+ parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('mode',choices=['run','verify','promote','publish','platform']);parser.add_argument('--output',type=pathlib.Path);parser.add_argument('--evidence',type=pathlib.Path);parser.add_argument('--bundle',type=pathlib.Path);a=parser.parse_args()
  if a.mode=='platform':return platform_check()
  if a.mode=='run':
   if not a.output:parser.error('--output required')
   return run(a.output)
  path=evidence_path(a.evidence);report=verify(path)
- if a.mode=='verify':print(json.dumps({'status':'passed','sourceCommit':report['sourceCommit']}));return
+ if a.mode=='verify':
+  if a.bundle:verify_bundle(path,a.bundle)
+  print(json.dumps({'status':'passed','sourceCommit':report['sourceCommit']}));return
  source=git('rev-parse','HEAD');remote=git('remote','get-url','--push','origin').removesuffix('.git')
  if remote not in ['git@github.com:ecolid/eona-mail','https://github.com/ecolid/eona-mail']:raise ValueError('unexpected_product_remote')
  git('fetch','origin','refs/heads/main:refs/remotes/origin/main')
@@ -144,7 +158,7 @@ def main():
   if git('ls-remote','origin','refs/heads/main').split()[0]!=source:raise ValueError('main_readback_changed')
   print(json.dumps({'main':source,'verification':'local-complete','cloud':'not-required'}));return
  if git('ls-remote','origin','refs/heads/main').split()[0]!=source:raise ValueError('only_checked_current_main_can_publish')
- bundle=path.parent/'isolated/bundle';(bundle/'node_modules').unlink(missing_ok=True)
+ bundle=path.parent/'isolated/bundle';verify_bundle(path,bundle);(bundle/'node_modules').unlink(missing_ok=True)
  subprocess.run(['node','scripts/verify-release.mjs'],cwd=bundle,check=True)
  result=subprocess.check_output(['node',str(ROOT/'scripts/publish-development.mjs'),str(bundle),'--verification',str(path)],cwd=ROOT,env={**os.environ,'MAIL_CI_PYTHON':sys.executable},text=True).strip()
  if not result:raise ValueError('main_changed_during_publication')

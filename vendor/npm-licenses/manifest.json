@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "lockfileSha256": "41e1cba64bf23be4e3f18858e67627935886377312537f17e300eaf6814188ec",
+  "lockfileSha256": "552a11648b189e42c72303671d2c8829652971fe5e54a08b4bf78e7d695eb0a5",
   "packages": [
     {
       "name": "@esbuild/aix-ppc64",
@@ -398,10 +398,10 @@
     },
     {
       "name": "nodemailer",
-      "version": "10.1.2",
+      "version": "10.2.1",
       "license": "MIT-0",
       "optional": false,
-      "integrity": "sha512-rnQn9Rzh8RAwcp42MVsIvxbsv6YZ2a2/av+uyJ/LPU1+2QSlrRgFsWWZTKenyRUqkIl8urOI0c4+CEcmFdsvQw==",
+      "integrity": "sha512-ZrDNsPFoDMwefNs7sJwrYiEJ/CG4ClJWDZv05iNJsEBWa8GRDry1QJHTJxsuTAY9eDDKjX4k+q3SxslXJOao7w==",
       "licenses": [
         {
           "file": "vendor/npm-licenses/nodemailer/LICENSE",

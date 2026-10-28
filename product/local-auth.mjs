@@ -31,16 +31,21 @@ export async function openLocalAuth(db,config,secrets,{clock=Date.now}={}){
     }
     if(path!=='/api/login'||request.method!=='POST')return null;
     await db.prepare('DELETE FROM product_login_attempts WHERE at<?').bind(clock()-900000).run();
-    const key=sha(String(client)),total=(await db.prepare('SELECT COUNT(*) n FROM product_login_attempts').first()).n;
-    const local=(await db.prepare('SELECT COUNT(*) n FROM product_login_attempts WHERE key=?').bind(key).first()).n;
-    if(total>=30||local>=5)return json({error:'尝试次数过多，请稍后再试。'},429);
+    // Reserve before any asynchronous password work. A single conditional
+    // write enforces both limits across concurrent requests and connections.
+    const key=sha(String(client));
+    const reserved=await db.prepare(`INSERT INTO product_login_attempts(key,at)
+      SELECT ?,? WHERE (SELECT COUNT(*) FROM product_login_attempts)<30
+      AND (SELECT COUNT(*) FROM product_login_attempts WHERE key=?)<5`)
+      .bind(key,clock(),key).run();
+    if(reserved.meta.changes!==1)return json({error:'尝试次数过多，请稍后再试。'},429);
     const input=await request.json().catch(()=>({}));
     const given=typeof input.password==='string'&&input.password.length<=512?input.password:'';
     const [salt,expected]=stored.split(':');const actual=await scrypt(given,salt,64);
     if(!timingSafeEqual(actual,Buffer.from(expected,'hex'))){
-      await db.prepare('INSERT INTO product_login_attempts VALUES(?,?)').bind(key,clock()).run();
       return json({error:'密码错误。'},401);
     }
+    await db.prepare('DELETE FROM product_login_attempts WHERE key=?').bind(key).run();
     const value=randomBytes(32).toString('base64url'),age=30*86400;
     await db.prepare('DELETE FROM product_sessions WHERE expires<=?').bind(clock()).run();
     await db.prepare('INSERT INTO product_sessions VALUES(?,?)').bind(sha(value),clock()+age*1000).run();
