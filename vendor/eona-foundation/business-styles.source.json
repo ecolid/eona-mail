@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "ecolid/accompany",
-  "commit": "cbbabba20b3b1c239ccfcd35122de4154c46ed7d",
+  "commit": "f4cacfd81bcb4c15f1c9e20050d58ace8d91d542",
   "file": "config/connectors/eona-ui.css",
-  "sha256": "cbcb9b6c8b321df048e3632c5cfc51eedef5e349935806fef95bb519d07e9254",
+  "sha256": "e121e42d1dbea33ac087e101c6d828e6a486ba13d981a32accff91e0de1286a4",
   "runtimeRulesChanged": false
 }

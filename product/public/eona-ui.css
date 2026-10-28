@@ -86,7 +86,7 @@
 /* 表单不自己占格:display:contents 化骨,字段直接进外层网格 */
 .fi-section-content > form:has(> .setting) { display: contents; }
 .fi-section-content > .setting, .fi-section-content > form > .setting {
-  display: flex; align-items: center; gap: 14px; 
+  display: flex; align-items: center; gap: 14px;
   border: 1px solid var(--e-line); border-radius: 10px;
   padding: 12px 14px; margin: 0; background: var(--e-surface);
 }
