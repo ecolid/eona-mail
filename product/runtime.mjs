@@ -72,12 +72,13 @@ export async function openProduct(input,options={}){
       }
     }catch(error){await personal.close();throw error;}
   }
-  if(config.mode==='demo')visitors=await openDemoSessions({root:join(config.data_root,'demo-workspaces'),create,clock});
-  async function visitor(request){
+  const demoTTL=config.demo_limits?.idle_ms||3600000;
+  if(config.mode==='demo')visitors=await openDemoSessions({root:join(config.data_root,'demo-workspaces'),create,clock,ttl:demoTTL,maxSessions:config.demo_limits?.max_sessions||64});
+  async function visitor(request,allowCreate){
     const value=(request.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(demoCookieName+'='))?.slice(demoCookieName.length+1);
-    const visit=await visitors.acquire(value);
+    const visit=await visitors.acquire(value,{create:allowCreate});
     visit.item.store.env.MAIL_PRODUCT.workspaceId=visit.item.id;
-    return {...visit,cookie:`${demoCookieName}=${visit.key}; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600${config.origin.startsWith('https:')?'; Secure':''}`};
+    return {...visit,cookie:`${demoCookieName}=${visit.key}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.ceil(demoTTL/1000)}${config.origin.startsWith('https:')?'; Secure':''}`};
   }
   const internal=(request)=>sourceAPI(request,personal,config,{secrets,runJobs:()=>personal.runJobs(),clock});
   async function handle(request,{client='local'}={}){
@@ -97,7 +98,17 @@ export async function openProduct(input,options={}){
     }
     let store=personal,demoVisit=null,identity;
     if(config.mode==='demo'){
-      try{demoVisit=await visitor(request);store=demoVisit.item.store;}catch{return json({error:'demo_unavailable'},503);}
+      const entry=path==='/'||path==='/index.html';
+      if(!entry&&!path.startsWith('/api/'))return json({error:'not_found'},404);
+      if(entry&&request.method!=='GET')return json({error:'method_not_allowed'},405,{allow:'GET'});
+      // Only opening the page may create a workspace. Unauthenticated API,
+      // asset and scanner requests cannot allocate SQLite stores or mail data.
+      try{demoVisit=await visitor(request,entry);store=demoVisit.item.store;}catch(error){
+        if(error.message==='demo_session_expired')return json({error:'workspace_expired'},401,{'x-mail-workspace':'expired'});
+        if(error.message==='demo_capacity_reached')return json({error:'demo_capacity_reached'},503,{'retry-after':'60'});
+        console.error(JSON.stringify({event:'mail_demo_unavailable',reason:error.code||'workspace_initialization_failed'}));
+        return json({error:'demo_unavailable'},503);
+      }
       identity={authenticated:true,subject:config.owner.id,email:config.owner.email};
     }else{
       const auth=await authentication.route(request,{client});if(auth)return auth;

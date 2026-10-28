@@ -32,8 +32,8 @@ async function personal(t,more={},options={}){const root=await temporary(t);cons
 
 test('demo browser sessions isolate every mutation, restart seeds and never connect externally',async t=>{
   const root=await temporary(t);const app=await openProduct(config(root),{fetcher:noNetwork});t.after(()=>app.close());
-  const first=await request(app,'/api/emails'),second=await request(app,'/api/emails');
-  const a=cookie(first),b=cookie(second);assert.notEqual(a,b);const list=(await first.json()).emails;assert.equal(list.length,18);assert.equal((await second.json()).emails.length,18);
+  const a=cookie(await request(app,'/')),b=cookie(await request(app,'/'));assert.notEqual(a,b);
+  const first=await request(app,'/api/emails',{cookie:a}),second=await request(app,'/api/emails',{cookie:b});const list=(await first.json()).emails;assert.equal(list.length,18);assert.equal((await second.json()).emails.length,18);
   const id=list[0].id;
   assert.equal((await request(app,'/api/email/'+id+'/star',{method:'POST',cookie:a})).status,200);
   assert.equal((await request(app,'/api/email/'+id+'/trash',{method:'POST',cookie:a})).status,200);
@@ -48,7 +48,7 @@ test('demo browser sessions isolate every mutation, restart seeds and never conn
   assert.equal((await(await request(app,'/api/mail-workspace/sent',{cookie:b})).json()).messages.length,0);
   const page=await(await request(app,'/',{cookie:a})).text();assert.ok(page.includes('window.MailProduct='));assert.ok(page.includes('"applications":[]'));
   for(const path of ['/api/import','/api/icloud-repair/sync','/api/notifications/state','/internal/product/status'])assert.ok([403,404].includes((await request(app,path,{cookie:a})).status));
-  await request(app,'/api/logout',{method:'POST',cookie:a});assert.equal((await request(app,'/api/emails')).status,200);
+  await request(app,'/api/logout',{method:'POST',cookie:a});assert.equal((await request(app,'/api/emails')).status,401);assert.equal((await request(app,'/')).status,200);
 });
 
 test('local login, persisted session, logout, write origin and machine roles form a closed boundary',async t=>{

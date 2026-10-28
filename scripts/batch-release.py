@@ -15,6 +15,7 @@ def selected_batch(root,version):
  if pkg['version']!=version or pkg.get('license')!='MIT':raise ValueError('release_version_or_license_mismatch')
  policy=json.loads((root/'release/policy.json').read_text())
  if policy['repository']!=REPOSITORY or policy['development']!='single-product-main' or policy['releases']!='selected-batch' or policy['automaticDevelopmentReleases']:raise ValueError('single_repository_batch_policy_required')
+ if policy.get('requirePreviewSiteMatch')is not True or not re.fullmatch(r'https://[a-z0-9.-]+',policy.get('pairedPreviewSite','')):raise ValueError('paired_preview_policy_required')
  batch=json.loads((root/'release/batches'/f'{version}.json').read_text())
  if batch.get('schema')!=1 or batch.get('version')!=version or not isinstance(batch.get('prerelease'),bool):raise ValueError('invalid_batch')
  ids=batch.get('changes',[])
@@ -81,11 +82,24 @@ def verify_prepared(folder,evidence,root=ROOT):
   if fresh!=plan:raise ValueError('prepared_release_changed')
  return plan
 
+def verify_preview(plan,root=ROOT):
+ origin=json.loads((root/'release/policy.json').read_text())['pairedPreviewSite']
+ def get(path):
+  request=urllib.request.Request(origin+path,headers={'User-Agent':'mail-batch-readback','Cache-Control':'no-cache'})
+  with urllib.request.urlopen(request,timeout=30)as response:
+   if urllib.parse.urlsplit(response.url).netloc!=urllib.parse.urlsplit(origin).netloc:raise ValueError('preview_redirected')
+   return json.load(response)
+ receipt=get('/_mail_release.json');health=get('/health')
+ expected={'schema':1,'mode':'demo','version':plan['version'],'sourceCommit':plan['sourceCommit'],'archiveSha256':plan['files'][f'eona-mail-{plan["version"]}.tar.gz']}
+ if receipt!=expected or health.get('mode')!='demo' or health.get('ok')is not True:raise ValueError('preview_release_mismatch')
+ return receipt
+
 def publish(folder,evidence,confirmation,root=ROOT):
  if confirmation!=REPOSITORY:raise ValueError('explicit_repository_publication_confirmation_required')
  plan=verify_prepared(folder,evidence,root)
  if git('remote','get-url','origin',root=root).removesuffix('.git')not in ['https://github.com/'+REPOSITORY,'git@github.com:'+REPOSITORY]:raise ValueError('unexpected_repository')
  if git('ls-remote','origin','refs/heads/main',root=root).split()[0]!=plan['sourceCommit']:raise ValueError('only_checked_current_main_can_release')
+ verify_preview(plan,root)
  credential=subprocess.run(['git','credential','fill'],input='protocol=https\nhost=github.com\n\n',capture_output=True,text=True,check=True,env={**os.environ,'GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/usr/bin/false'})
  token=dict(line.split('=',1)for line in credential.stdout.splitlines()if '='in line)['password']
  def api(method,url,body=None,content='application/json'):
@@ -114,9 +128,11 @@ def publish(folder,evidence,confirmation,root=ROOT):
   else:
    asset=api('POST',release['upload_url'].split('{')[0]+'?'+urllib.parse.urlencode({'name':name}),(folder/name).read_bytes(),'application/gzip'if name.endswith('.gz')else 'application/octet-stream')
    if asset.get('digest')!='sha256:'+want or asset['state']!='uploaded':raise ValueError('release_asset_readback_failed')
+ verify_preview(plan,root)
  if release['draft']:api('PATCH',base+'/releases/'+str(release['id']),{'draft':False})
  current=api('GET',base+'/releases/tags/'+plan['tag'])
  if current['draft']or len(current['assets'])!=len(expected)or any(x.get('digest')!='sha256:'+plan['files'][x['name']]for x in current['assets']):raise ValueError('release_readback_failed')
+ verify_preview(plan,root)
  return {'url':current['html_url'],'sourceCommit':plan['sourceCommit'],'tag':plan['tag'],'assetsVerified':len(expected)}
 
 def main():
