@@ -12,6 +12,19 @@
 
 Eona Mail 是邮箱客户端与归档工作台。使用者仍需提供已有邮箱及其 IMAP/SMTP 凭据；运行产品不要求注册 Cloudflare 或使用 Eona 的账号服务。目前一个实例对应一个拥有者，可配置多个邮箱。
 
+## 界面
+
+截图来自隔离合成演示。
+
+![桌面](docs/images/mail-desktop.png)
+
+<details>
+<summary>手机界面</summary>
+
+![手机](docs/images/mail-mobile.png)
+
+</details>
+
 ## 环境
 
 Node.js 24.12 及以上的 24.x、Python 3.12。运行时 npm 依赖使用锁文件安装；IMAP 同步使用 Python 标准库。首次试用不需要真实邮箱、域名或第三方账号。

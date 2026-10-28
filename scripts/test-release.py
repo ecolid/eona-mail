@@ -22,3 +22,14 @@ else:
  state=json.loads(run(['python3',str(root/'scripts/follow.py'),'--config',str(cfg),'once']));assert state['status']=='current' and state['installed']==revision and state['sourceCommit']==source
  again=json.loads(run(['python3',str(root/'scripts/follow.py'),'--config',str(cfg),'once']));assert again['installed']==revision and again['status']=='current'
  print(json.dumps({'sourceCommit':source,'checkedRelease':revision,'mainPreserved':True,'channelHistoryPreserved':True,'followerInstalledAndRechecked':True}))
+ # A rewritten public history must fail closed for an instance still on the old lineage.
+ # The one-time operator installation uses this same verified bundle; normal following then resumes.
+ tree=run(git+['rev-parse',source+'^{tree}']);legacy=subprocess.run(git+['commit-tree',tree],input='Unrelated pre-migration fixture\n',text=True,capture_output=True,check=True,env={**os.environ,'GIT_AUTHOR_NAME':'Mail protocol test','GIT_AUTHOR_EMAIL':'test@users.noreply.github.com','GIT_COMMITTER_NAME':'Mail protocol test','GIT_COMMITTER_EMAIL':'test@users.noreply.github.com'}).stdout.strip()
+ (d/'installed.json').write_text(json.dumps({'installed':legacy}));sentinel=d/'user-data';sentinel.write_bytes(b'synthetic persisted data')
+ blocked=subprocess.run(['python3',str(root/'scripts/follow.py'),'--config',str(cfg),'once'],capture_output=True,text=True)
+ assert blocked.returncode!=0 and json.loads(blocked.stdout)['status']=='check_failed'
+ assert json.loads((d/'installed.json').read_text())['installed']==legacy and sentinel.read_bytes()==b'synthetic persisted data'
+ run(['python3',str(adapter),'install','--revision',revision])
+ migrated=json.loads(run(['python3',str(root/'scripts/follow.py'),'--config',str(cfg),'once']))
+ assert migrated['status']=='current'and migrated['installed']==revision and sentinel.read_bytes()==b'synthetic persisted data'
+ print(json.dumps({'historyCutoverRejectsAutomaticJump':True,'explicitVerifiedCutoverResumesFollowing':True,'userDataUnchanged':True}))
