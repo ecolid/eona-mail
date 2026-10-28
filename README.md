@@ -31,7 +31,7 @@ Node.js 24.12 及以上的 24.x、Python 3.12。运行时 npm 依赖使用锁文
 
 ## 两分钟试用
 
-[在线演示](https://mail.landi.im) 使用当前对外发行批次。每个浏览器会话独立，数据为合成内容，不连接真实邮箱或外发。
+[在线演示](https://demo-mail.eona.top) 使用当前对外发行批次。每个浏览器会话独立，数据为合成内容，不连接真实邮箱或外发。
 
 ```sh
 npm ci --ignore-scripts --no-audit --no-fund

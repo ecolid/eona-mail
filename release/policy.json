@@ -9,6 +9,6 @@
   "externalInstanceUpdates": "explicit-version",
   "repositoryVisibilityChange": "separate-reviewed-action",
   "requireFullLocalEvidence": true,
-  "pairedPreviewSite": "https://mail.landi.im",
+  "pairedPreviewSite": "https://demo-mail.eona.top",
   "requirePreviewSiteMatch": true
 }
