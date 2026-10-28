@@ -9,7 +9,7 @@ const source=page.slice(page.indexOf('const api=async(p,'),page.indexOf('\nconst
 function fixture(fetch,signalFactory=()=>({aborted:false})){
  const calls=[],signals=[],login=[];
  const context={window:{},mailMutationPrefixes,state:{},mailResources:{read:(p,o)=>context.fetchMailResource(p,o).then(r=>r.value),invalidate(){},clear(){}},Headers,fetch:async(...args)=>{calls.push(args);const response=await fetch(...args);return {...response,headers:response.headers||new Headers()}},AbortSignal:{timeout:ms=>{assert.equal(ms,15000);const signal=signalFactory();signals.push(signal);return signal}},EonaUI:{startLogin:()=>login.push('redirect')},show:ok=>login.push(ok)};
- vm.createContext(context);vm.runInContext(source+';globalThis.request=api;',context);
+ vm.createContext(context);vm.runInContext(source+'\n;globalThis.request=api;',context);
  return {request:context.request,calls,signals,login};
 }
 const ok=value=>({ok:true,status:200,headers:new Headers(),json:async()=>value});
