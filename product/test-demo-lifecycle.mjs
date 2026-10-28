@@ -7,6 +7,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {openProduct} from './runtime.mjs';
 import {openDemoSessions} from './demo-sessions.mjs';
+import {validateConfig} from './config.mjs';
 
 const temp=async run=>{const root=await mkdtemp(join(tmpdir(),'mail-demo-lifecycle-'));try{await run(root);}finally{await rm(root,{recursive:true,force:true});}};
 const workspaceNames=async root=>(await readdir(root)).filter(name=>/^[a-f0-9]{64}$/.test(name));
@@ -14,11 +15,36 @@ const cookie=response=>response.headers.get('set-cookie')?.split(';')[0];
 const request=(app,path='/api/emails',token,method='GET')=>app.handle(new Request(app.config.origin+path,{method,headers:token?{cookie:token}:{}}));
 const fixture=closed=>async root=>{await mkdir(root,{recursive:true});await writeFile(join(root,'fixture'),'synthetic');return {async close(){closed.push(root);}};};
 
+test('anonymous scanner traffic cannot allocate workspaces; page admission and idle capacity are bounded',async()=>temp(async root=>{
+  let now=Date.now();
+  const app=await openProduct({schema:1,mode:'demo',origin:'http://127.0.0.1:18789',owner:{id:'demo-test',email:'demo@example.test'},data_root:root,accounts:[],demo_limits:{max_sessions:1,idle_ms:60000}},{clock:()=>now});
+  const directory=join(root,'demo-workspaces');
+  try{
+    const results=await Promise.all(Array.from({length:200},(_,i)=>request(app,i%2?'/api/unknown-'+i:'/debug/'+i)));
+    assert.ok(results.every(r=>[401,404].includes(r.status)));assert.equal((await workspaceNames(directory)).length,0);
+    assert.equal((await request(app,'/',null,'HEAD')).status,405);assert.equal((await workspaceNames(directory)).length,0);
+    const first=await request(app,'/'),a=cookie(first);assert.equal(first.status,200);assert.match(first.headers.get('set-cookie'),/Max-Age=60/);
+    assert.equal((await workspaceNames(directory)).length,1);
+    const full=await request(app,'/');assert.equal(full.status,503);assert.equal(full.headers.get('retry-after'),'60');assert.equal((await full.json()).error,'demo_capacity_reached');
+    const forged=await request(app,'/api/emails',a.replace(/=.*/,'='+'x'.repeat(43)));assert.equal(forged.status,401);assert.equal((await workspaceNames(directory)).length,1);
+    for(let i=0;i<20;i++)assert.equal((await request(app,'/debug/unknown',a)).status,404);
+    assert.equal((await workspaceNames(directory)).length,1);
+    now+=60001;assert.equal((await request(app,'/api/emails',a)).status,401);assert.equal((await workspaceNames(directory)).length,0);
+    const next=await request(app,'/');assert.equal(next.status,200);assert.notEqual(cookie(next),a);
+  }finally{await app.close();}
+}));
+
+test('demo resource limits cannot alter personal mode or accept unbounded values',()=>{
+  const c={schema:1,mode:'demo',origin:'http://127.0.0.1:18789',owner:{id:'demo-test',email:'demo@example.test'},data_root:'/tmp/synthetic',accounts:[]};
+  for(const limits of [{max_sessions:0,idle_ms:60000},{max_sessions:65,idle_ms:60000},{max_sessions:1,idle_ms:1},{max_sessions:1,idle_ms:3600001},{max_sessions:1,idle_ms:60000,unknown:1}])assert.throws(()=>validateConfig({...c,demo_limits:limits}),/demo_limits_invalid/);
+  assert.throws(()=>validateConfig({...c,mode:'personal',auth:{mode:'local'},demo_limits:{max_sessions:1,idle_ms:60000}}),/demo_limits_invalid/);
+});
+
 test('demo logout revokes its workspace, rotates browser namespace and refreshes an active cookie',async()=>temp(async root=>{
   let now=Date.now(),external=0;
   const app=await openProduct({schema:1,mode:'demo',origin:'http://127.0.0.1:18789',owner:{id:'demo-test',email:'demo@example.test'},data_root:root,accounts:[]},{clock:()=>now,fetcher:async()=>{external++;throw Error('unexpected_network');}});
   try{
-    const first=await request(app),a=cookie(first),id=(await first.json()).emails[0].id;
+    const a=cookie(await request(app,'/')),first=await request(app,'/api/emails',a),id=(await first.json()).emails[0].id;
     const page=await(await request(app,'/',a)).text(),namespace=JSON.parse(/window.MailProduct=(\{[^<]+)\<\/script>/.exec(page)[1]).workspaceId;
     assert.match(namespace,/^[a-f0-9]{64}$/);
     assert.equal(first.headers.get('x-mail-workspace'),namespace);
@@ -29,7 +55,8 @@ test('demo logout revokes its workspace, rotates browser namespace and refreshes
     assert.equal((await(await request(app,'/api/emails',a)).json()).emails.length,17);
     const logout=await request(app,'/api/logout',a,'POST');assert.equal(logout.headers.getSetCookie().length,1);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
     assert.equal((await workspaceNames(join(root,'demo-workspaces'))).length,0);
-    const old=await request(app,'/api/emails',a),b=cookie(old);assert.notEqual(b,a);assert.equal((await old.json()).emails.length,18);
+    const denied=await request(app,'/api/emails',a);assert.equal(denied.status,401);assert.equal(denied.headers.get('x-mail-workspace'),'expired');
+    const old=await request(app,'/',a),b=cookie(old);assert.notEqual(b,a);assert.equal((await(await request(app,'/api/emails',b)).json()).emails.length,18);
     assert.notEqual(old.headers.get('x-mail-workspace'),namespace);
     const rejected=await app.handle(new Request(app.config.origin+'/api/mail-workspace/drafts/stale-write',{method:'PUT',headers:{cookie:b,'content-type':'application/json','x-mail-workspace':namespace},body:JSON.stringify({rev:0,to:'friend@example.test',subject:'Stale draft',body:'Must not enter new workspace',from_id:'demo'})}));
     assert.equal(rejected.status,409);assert.equal((await rejected.json()).error,'workspace_changed');assert.equal(rejected.headers.get('x-mail-workspace'),old.headers.get('x-mail-workspace'));
@@ -37,8 +64,10 @@ test('demo logout revokes its workspace, rotates browser namespace and refreshes
     const nextPage=await(await request(app,'/',b)).text();assert.ok(!nextPage.includes('"workspaceId":"'+namespace+'"'));
     now+=3600001;
     const expired=await Promise.all(Array.from({length:4},()=>request(app,'/api/emails',b)));
-    assert.deepEqual(expired.map(response=>response.status),[200,200,200,200]);
-    for(const response of expired)assert.equal((await response.json()).emails.length,18);
+    assert.deepEqual(expired.map(response=>response.status),[401,401,401,401]);
+    for(const response of expired)assert.equal(response.headers.get('x-mail-workspace'),'expired');
+    assert.equal((await workspaceNames(join(root,'demo-workspaces'))).length,0);
+    assert.equal((await request(app,'/',b)).status,200);
     assert.equal(external,0);
   }finally{await app.close();}
   assert.equal((await workspaceNames(join(root,'demo-workspaces'))).length,0);
@@ -51,9 +80,10 @@ test('demo instances on different localhost ports keep distinct browser cookies'
   let b;
   try{
     b=await openProduct({...config,origin:'http://127.0.0.1:18790',data_root:join(root,'b')},options);
-    const first=await request(a),ca=cookie(first),id=(await first.json()).emails[0].id;
+    const ca=cookie(await request(a,'/')),first=await request(a,'/api/emails',ca),id=(await first.json()).emails[0].id;
     await request(a,'/api/email/'+id+'/trash',ca,'POST');
-    const second=await request(b,'/api/emails',ca),cb=cookie(second);assert.notEqual(ca.split('=')[0],cb.split('=')[0]);
+    assert.equal((await request(b,'/api/emails',ca)).status,401);
+    const second=await request(b,'/',ca),cb=cookie(second);assert.notEqual(ca.split('=')[0],cb.split('=')[0]);
     const jar=ca+'; '+cb;
     assert.equal((await(await request(a,'/api/emails',jar)).json()).emails.length,17);
     assert.equal((await(await request(b,'/api/emails',jar)).json()).emails.length,18);

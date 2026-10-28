@@ -1,10 +1,11 @@
 """Regression for batch selection, reproducible packages and public data boundaries."""
-import copy,hashlib,importlib.util,json,pathlib,tarfile,tempfile,unittest
+import copy,hashlib,importlib.util,io,json,pathlib,tarfile,tempfile,unittest
+from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('batch',pathlib.Path(__file__).with_name('batch-release.py'));release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
 class Batches(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.root=pathlib.Path(self.tmp.name);(self.root/'release/batches').mkdir(parents=True);(self.root/'release/changes').mkdir();self.version='0.1.0'
-  self.write('package.json',{'version':self.version,'license':'MIT'});self.write('release/policy.json',{'repository':release.REPOSITORY,'development':'single-product-main','releases':'selected-batch','automaticDevelopmentReleases':False});self.batch={'schema':1,'version':self.version,'prerelease':True,'changes':['one']};self.write('release/batches/0.1.0.json',self.batch);self.write('release/changes/one.json',{'id':'one','summary':'Summary','details':['Verified feature']})
+  self.write('package.json',{'version':self.version,'license':'MIT'});self.write('release/policy.json',{'repository':release.REPOSITORY,'development':'single-product-main','releases':'selected-batch','automaticDevelopmentReleases':False,'pairedPreviewSite':'https://demo.example.test','requirePreviewSiteMatch':True});self.batch={'schema':1,'version':self.version,'prerelease':True,'changes':['one']};self.write('release/batches/0.1.0.json',self.batch);self.write('release/changes/one.json',{'id':'one','summary':'Summary','details':['Verified feature']})
  def write(self,name,value):
   path=self.root/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(json.dumps(value))
  def selected(self):return release.selected_batch(self.root,self.version)
@@ -35,4 +36,27 @@ class Batches(unittest.TestCase):
   bundle=self.bundle();(bundle/'LICENSE').unlink();(bundle/'LICENSE').symlink_to(self.root/'package.json');self.assertRaisesRegex(ValueError,'unsafe_bundle_path',release.archive_bundle,bundle,self.root/'link.gz',self.version)
   self.write('bundle/PRODUCT-RELEASE.json',{'files':{'../package.json':'a'}});self.assertRaisesRegex(ValueError,'unsafe_bundle_path',release.archive_bundle,bundle,self.root/'escape.gz',self.version)
  def test_publish_without_explicit_confirmation_does_not_touch_git_or_network(self):self.assertRaisesRegex(ValueError,'explicit_repository',release.publish,self.root,self.root/'absent',None)
+ def preview(self):
+  plan={'version':self.version,'sourceCommit':'a'*40,'files':{'eona-mail-0.1.0.tar.gz':'b'*64}}
+  receipt={'schema':1,'mode':'demo','version':self.version,'sourceCommit':'a'*40,'archiveSha256':'b'*64}
+  return plan,receipt
+ def replies(self,*values):
+  result=[]
+  for value in values:
+   response=io.BytesIO(json.dumps(value).encode());response.url='https://demo.example.test/';result.append(response)
+  return result
+ def test_preview_must_match_version_source_package_and_demo_mode(self):
+  plan,receipt=self.preview()
+  for change in [{'version':'old'},{'sourceCommit':'c'*40},{'archiveSha256':'d'*64},{'mode':'personal'}]:
+   with self.subTest(change=change),patch.object(release.urllib.request,'urlopen',side_effect=self.replies({**receipt,**change},{'ok':True,'mode':'demo'})):
+    self.assertRaisesRegex(ValueError,'preview_release_mismatch',release.verify_preview,plan,self.root)
+  with patch.object(release.urllib.request,'urlopen',side_effect=self.replies(receipt,{'ok':True,'mode':'demo'})):self.assertEqual(release.verify_preview(plan,self.root),receipt)
+ def test_preview_failure_stops_before_github_credentials_or_mutations(self):
+  plan,_=self.preview();plan['tag']='v'+self.version
+  with patch.object(release,'verify_prepared',return_value=plan),patch.object(release,'git',side_effect=['https://github.com/ecolid/eona-mail',plan['sourceCommit']+' refs/heads/main']),patch.object(release,'verify_preview',side_effect=ValueError('preview_release_mismatch')),patch.object(release.subprocess,'run')as run:
+   self.assertRaisesRegex(ValueError,'preview_release_mismatch',release.publish,self.root,self.root/'proof',release.REPOSITORY,self.root)
+   run.assert_not_called()
+ def test_preview_cannot_redirect_to_another_site(self):
+  plan,receipt=self.preview();responses=self.replies(receipt);responses[0].url='https://other.example.test/'
+  with patch.object(release.urllib.request,'urlopen',side_effect=responses):self.assertRaisesRegex(ValueError,'preview_redirected',release.verify_preview,plan,self.root)
 if __name__=='__main__':unittest.main()

@@ -32,12 +32,13 @@ export async function openDemoSessions({root,create,clock=Date.now,ttl=3600000,m
   }catch(error){await releaseRoot();throw error;}
   const timer=setInterval(()=>serialize(async()=>{if(!closed)await expire();}).catch(()=>{console.error(JSON.stringify({event:'mail_demo_cleanup_failed'}));}),Math.min(ttl,60000));timer.unref();
   return {
-    acquire(key){return serialize(async()=>{
+    acquire(key,{create:allowCreate=true}={}){return serialize(async()=>{
       if(closed)throw Error('demo_closed');
       await expire();
       let item=sessions.get(key);
       if(item&&clock()-item.last>=ttl){retire(item);if(!item.active)await dispose(item);item=null;}
       if(!item){
+        if(!allowCreate)throw Error('demo_session_expired');
         if(items.size>=maxSessions)throw Error('demo_capacity_reached');
         key=randomBytes(32).toString('base64url');
         item={key,id:digest(key),root:join(root,digest(key)),last:clock(),active:0,retired:false};

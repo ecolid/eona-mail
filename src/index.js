@@ -2102,7 +2102,7 @@ const PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>MailHub · eona.top</title>
+<title>Eona Mail</title>
 <meta name="theme-color" content="#F2EADD">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="邮件">

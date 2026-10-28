@@ -34,6 +34,10 @@ export function validateConfig(input,{base=process.cwd()}={}){
   if(input.sync?.enabled&&accounts.some(a=>a.imap&&['inbox','trash'].some(k=>a.imap.folders.filter(f=>f.kind===k).length!==1)))throw Error('product_sync_role_ambiguous');
   if(input.sync?.enabled&&accounts.some(a=>a.imap&&!['sent','drafts','trash'].every(kind=>a.imap.folders.some(f=>f.kind===kind))))throw Error('product_sync_folders_required');
   if(input.mode==='demo'&&input.sync?.enabled)throw Error('demo_external_connections_forbidden');
+  if(input.demo_limits!==undefined){
+    const limits=input.demo_limits;
+    if(input.mode!=='demo'||!limits||Object.keys(limits).some(k=>!['max_sessions','idle_ms'].includes(k))||!Number.isInteger(limits.max_sessions)||limits.max_sessions<1||limits.max_sessions>64||!Number.isInteger(limits.idle_ms)||limits.idle_ms<60000||limits.idle_ms>3600000)throw Error('demo_limits_invalid');
+  }
   if(input.mode==='demo'&&(accounts.length||input.ai||input.notifications||input.readonly_token_env||input.auth?.mode==='oidc'))throw Error('demo_external_connections_forbidden');
   if(input.mode==='personal'&&!['local','oidc'].includes(input.auth?.mode))throw Error('product_auth_required');
   if(input.service_clients!==undefined){

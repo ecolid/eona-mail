@@ -8,5 +8,7 @@
   "automaticDevelopmentReleases": false,
   "externalInstanceUpdates": "explicit-version",
   "repositoryVisibilityChange": "separate-reviewed-action",
-  "requireFullLocalEvidence": true
+  "requireFullLocalEvidence": true,
+  "pairedPreviewSite": "https://mail.landi.im",
+  "requirePreviewSiteMatch": true
 }

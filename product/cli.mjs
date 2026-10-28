@@ -19,6 +19,7 @@ export async function initialize({directory,origin,email,mode='personal',passwor
   const credentials={MAIL_WORKER_TOKEN:randomBytes(32).toString('base64url')};
   if(mode==='personal')credentials.MAIL_PASSWORD_HASH=await passwordHash(password);
   const config={schema:1,mode,origin,data_root:'./data',secrets_file:'./credentials.json',owner,auth:{mode:'local'},accounts:[]};
+  if(mode==='demo')config.demo_limits={max_sessions:16,idle_ms:900000};
   const {validateConfig}=await import('./config.mjs');validateConfig(config,{base:root});
   await mkdir(root,{recursive:true,mode:0o700});
   await writeFile(join(root,'credentials.json'),JSON.stringify(credentials,null,2)+'\n',{flag:'wx',mode:0o600});
