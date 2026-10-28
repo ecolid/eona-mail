@@ -44,13 +44,15 @@ def extract(archive,root):
 def cycle(config,state,fetch,install,recover):
     # Recover an interrupted cutover even if the operator has paused updates.
     observed=recover()
-    if observed and 'installed' in observed:state={**state,'installed':observed['installed']}
+    if observed and 'installed' in observed:
+        if observed['installed']!=state.get('installed'):state={k:v for k,v in state.items()if k not in ['sourceCommit','version','receipt']}
+        state={**state,'installed':observed['installed']}
     if config.get('paused'):return {**state,'status':'paused'}
     revision,root=fetch(config.get('pin'),state.get('installed'))
     if not SHA.fullmatch(revision):raise ValueError('invalid_revision')
-    if revision==state.get('installed'):return {**state,'status':'current','checkedAt':time.time()}
-    if revision==state.get('failed'):return {**state,'status':'blocked_failed_release','checkedAt':time.time()}
     meta=verify(root)
+    if revision==state.get('installed'):return {**state,'status':'current','sourceCommit':meta['sourceCommit'],'version':meta['version'],'checkedAt':time.time()}
+    if revision==state.get('failed'):return {**state,'status':'blocked_failed_release','checkedAt':time.time()}
     try:
         receipt=install(root,revision,meta)
     except Exception as error:

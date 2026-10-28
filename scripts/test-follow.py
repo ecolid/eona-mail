@@ -19,7 +19,10 @@ class FollowTests(unittest.TestCase):
   p=self.fixture();seen=[]
   def fetch(pin,installed):seen.append(installed);return ('b'*40,p)
   result=f.cycle({}, {'installed':'c'*40},fetch,lambda *args:{'healthy':True},lambda:{'installed':'b'*40})
-  self.assertEqual(seen,['b'*40]);self.assertEqual(result['status'],'current')
+  self.assertEqual(seen,['b'*40]);self.assertEqual(result['status'],'current');self.assertEqual(result['sourceCommit'],'a'*40);self.assertEqual(result['version'],'0.2.0')
+ def test_paused_recovery_does_not_report_metadata_for_an_old_installation(self):
+  result=f.cycle({'paused':True},{'installed':'a'*40,'sourceCommit':'c'*40,'version':'old','receipt':{'old':True}},lambda *args:self.fail('fetched'),lambda *args:self.fail('installed'),lambda:{'installed':'b'*40})
+  self.assertEqual(result['installed'],'b'*40);self.assertEqual(result['status'],'paused');self.assertNotIn('sourceCommit',result);self.assertNotIn('receipt',result)
  def test_hash_file_set_and_symlink_rejected(self):
   p=self.fixture();(p/'code').write_text('changed')
   with self.assertRaisesRegex(ValueError,'hash_changed'):f.verify(p)
