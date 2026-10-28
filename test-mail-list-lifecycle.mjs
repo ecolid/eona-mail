@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import {testHooks} from './src/index.js';
 const page=testHooks().PAGE;
 const invalidate=page.slice(page.indexOf('function invalidateMailSearch(){'),page.indexOf('let mailSearchTimer'));
-const load=page.slice(page.indexOf('function showMailListFailure('),page.indexOf('async function loadRoutes(){'))+page.slice(page.indexOf('async function loadList(options={}){'),page.indexOf('// 列表一页'));
+const load=page.slice(page.indexOf('function showMailListFailure('),page.indexOf('async function loadRoutes(){'))+page.slice(page.indexOf('async function loadList(options={}){'),page.indexOf('const PAGE_SIZE='));
 const more=page.slice(page.indexOf('async function loadMore(){'),page.indexOf("$('#list').addEventListener('scroll'"));
 function fixture(){
  const requests=[],notices=[],appended=[],entries=new Map(),events={};

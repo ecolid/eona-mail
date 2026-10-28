@@ -1,0 +1,2 @@
+# Preserve third-party license texts byte for byte, including original line endings.
+vendor/npm-licenses/** -text -whitespace

@@ -1,0 +1,10 @@
+{
+  "Filament-LICENSE.md": {
+    "url": "https://raw.githubusercontent.com/filamentphp/filament/4.x/LICENSE.md",
+    "sha256": "ff32d7be083a930cc22b77dbf3825d20a3e7b15432f216a885eb31ae94d79507"
+  },
+  "Tailwind-LICENSE": {
+    "url": "https://raw.githubusercontent.com/tailwindlabs/tailwindcss/main/LICENSE",
+    "sha256": "60e0b68c0f35c078eef3a5d29419d0b03ff84ec1df9c3f9d6e39a519a5ae7985"
+  }
+}

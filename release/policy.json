@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "repository": "ecolid/eona-mail",
+  "license": "MIT",
+  "development": "single-product-main",
+  "releases": "selected-batch",
+  "selfUse": "checked-development-channel",
+  "automaticDevelopmentReleases": false,
+  "externalInstanceUpdates": "explicit-version",
+  "repositoryVisibilityChange": "separate-reviewed-action",
+  "requireFullLocalEvidence": true
+}

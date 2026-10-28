@@ -295,3 +295,23 @@ controllers remain in use.
 `verify` 重新核本次原始报告、清单、提交/源树、全部步骤和24小时有效期；缺项、改版本、失败、过期、报告篡改均拒绝。`promote --evidence ...` 只有同提交完整通过且当前 main 为祖先时才正常快进并回读。`publish --evidence ...` 只发布已验证的当前 main，发布器本身再次核证据和不可变包；渠道保留旧 release 与源 main 祖先，重入同一来源幂等，生产适配器仍独立保护数据。
 
 开发版与完整测试证据通过既有维护身份发布到私有仓库，服务器继续只读拉原 channels/development 自动跟版，不需要 Mac 常驻，也不新增密钥。GitHub 工作流只手动核它自己的事件/令牌读取环境；日常开发、全量测试和渠道发布均不占托管 runner。平台工作流未执行不能称为通过，线上安装、服务、私人适配和数据仍实际回读。前文历史云端 job 描述保留为旧阶段，当前分工以本节和机器清单为准。
+
+
+## 单一公开主仓与批次 Release（2026-10-28）
+
+唯一产品主仓仍为 ecolid/eona-mail。准备完成后由拥有者批准公开该仓；不另建公开镜像，也不把 Mail 产品并回 Accompany。公开后 main 开发提交可见，Release 是从已验 main 选定的版本。
+
+日常执行完整本地 CI、promote 与 publish：publish 仅推进 channels/development，不再创建逐提交的 dev Release。自用实例沿既有只读渠道自动更新；外部安装者自行选择版本，不默认跟开发渠道。GitHub 检查保留手动、只读、轻量的平台核验，不新增收费运行。
+
+可复现反馈先在主仓解决并补回归，更新项写入 release/changes/*.json；发行时由 release/batches/<package版本>.json 明确选项和预览状态。未选择的反馈留待后批，同一更新项不能重复归入多批。
+
+先提交候选并完成全套本地检查，再生成可审查的批次包：
+
+```sh
+python3 scripts/batch-release.py prepare --evidence /path/to/evidence/verification.json --output /new/release-directory
+python3 scripts/batch-release.py verify --evidence /path/to/evidence/verification.json --output /path/to/release-directory
+```
+
+包由同提交的散列清单生成，含 PRODUCT-RELEASE.json、源码、MIT 与第三方许可；另附发行说明、SHA256SUMS 和不含本机路径/原始日志的检查摘要。首次公开前还须审查全部 Git 引用、提交历史、Release 附件、Actions 日志与制品。prepare 不联网、不推标签、不改仓库可见性。
+
+实际发布沿明确授权执行：先完成仓库可见性审查，再用 publish 与 --confirm-publication ecolid/eona-mail 发布选定批次；它要求仓库已公开、仍是同一已验 main、报告未过期，拒绝覆盖同名版本或变化附件。发行失败可重试，已有标签和附件须一致。

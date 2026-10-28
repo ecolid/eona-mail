@@ -122,44 +122,10 @@ def run(output):
  return path
 
 
-def publish_assets(source,channel,evidence):
- import io,gzip,tarfile,urllib.error,urllib.parse
- repo='ecolid/eona-mail';credential=subprocess.run(['git','credential','fill'],input='protocol=https\nhost=github.com\n\n',capture_output=True,text=True,check=True,env={**os.environ,'GIT_TERMINAL_PROMPT':'0','GIT_ASKPASS':'/usr/bin/false'})
- secret=dict(line.split('=',1)for line in credential.stdout.splitlines()if '='in line)['password']
- def api(method,url,body=None,content='application/json'):
-  if urllib.parse.urlsplit(url).hostname not in ['api.github.com','uploads.github.com']:raise ValueError('unexpected_github_endpoint')
-  raw=json.dumps(body).encode()if isinstance(body,dict)else body
-  request=urllib.request.Request(url,data=raw,method=method,headers={'Authorization':'Bearer '+secret,'Accept':'application/vnd.github+json','Content-Type':content,'User-Agent':'mail-local-verified-release'})
-  with urllib.request.urlopen(request,timeout=90)as reply:return json.load(reply)
- base='https://api.github.com/repos/'+repo
- if not api('GET',base)['private']:raise ValueError('local_publication_requires_private_repository')
- tag='dev-'+source[:12]
- try:release=api('GET',base+'/releases/tags/'+tag)
- except urllib.error.HTTPError as error:
-  if error.code!=404:raise
-  release=api('POST',base+'/releases',{'tag_name':tag,'target_commitish':channel,'name':tag,'prerelease':True,'body':'通过完整本地产品回归的开发版本。来源、文件散列和检查证据随包保存。'})
- if git('ls-remote','origin','refs/tags/'+tag).split()[0]!=channel:raise ValueError('existing_release_tag_changed')
- bundle_archive=evidence.parent/('eona-mail-'+tag+'.tar.gz');subprocess.run(['git','archive','--format=tar.gz','--output',str(bundle_archive),channel],cwd=ROOT,check=True)
- report_archive=evidence.parent/('verification-'+source[:12]+'.tar.gz')
- report=json.loads(evidence.read_text())
- with report_archive.open('wb')as destination,gzip.GzipFile(filename='',mode='wb',fileobj=destination,mtime=0)as compressed,tarfile.open(fileobj=compressed,mode='w')as tar:
-  for name in ['verification.json',*sorted(report['files'])]:
-   raw=(evidence.parent/name).read_bytes();item=tarfile.TarInfo(name);item.size=len(raw);item.mode=0o640;tar.addfile(item,io.BytesIO(raw))
- for path in [bundle_archive,report_archive]:
-  sha='sha256:'+digest(path);found=next((asset for asset in release['assets']if asset['name']==path.name),None)
-  if found:
-   if found.get('digest')!=sha:raise ValueError('existing_release_asset_changed')
-  else:
-   url=release['upload_url'].split('{')[0]+'?'+urllib.parse.urlencode({'name':path.name});asset=api('POST',url,path.read_bytes(),'application/gzip')
-   if asset.get('digest')!=sha or asset['state']!='uploaded':raise ValueError('release_asset_readback_mismatch')
- current=api('GET',base+'/releases/tags/'+tag)
- if current['draft']or not current['prerelease']or not all(any(a['name']==p.name and a.get('digest')=='sha256:'+digest(p)for a in current['assets'])for p in [bundle_archive,report_archive]):raise ValueError('release_readback_failed')
- return {'url':current['html_url'],'tag':tag,'assetsVerified':2}
-
 def platform_check():
  token=os.environ['GH_TOKEN'];repo=os.environ['GITHUB_REPOSITORY']
  with urllib.request.urlopen(urllib.request.Request('https://api.github.com/repos/'+repo,headers={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json'}),timeout=30)as reply:data=json.load(reply)
- if not data['private']or data['full_name']!='ecolid/eona-mail' or os.environ['GITHUB_EVENT_NAME']!='workflow_dispatch':raise ValueError('unexpected_platform_context')
+ if data['full_name']!='ecolid/eona-mail' or os.environ['GITHUB_EVENT_NAME']!='workflow_dispatch':raise ValueError('unexpected_platform_context')
  print(json.dumps({'status':'passed','scope':'GitHub event and read-token access only','sourceCommit':os.environ['GITHUB_SHA']}))
 
 def main():
@@ -182,8 +148,7 @@ def main():
  subprocess.run(['node','scripts/verify-release.mjs'],cwd=bundle,check=True)
  result=subprocess.check_output(['node',str(ROOT/'scripts/publish-development.mjs'),str(bundle),'--verification',str(path)],cwd=ROOT,env={**os.environ,'MAIL_CI_PYTHON':sys.executable},text=True).strip()
  if not result:raise ValueError('main_changed_during_publication')
- release=publish_assets(source,result,path)
- print(json.dumps({'checkedSource':source,'channelCommit':result,'verification':'local-complete','evidence':str(path),'release':release}))
+ print(json.dumps({'checkedSource':source,'channelCommit':result,'verification':'local-complete','evidence':str(path),'release':None,'releaseCadence':'selected-batch'}))
 
 if __name__=='__main__':
  try:main()

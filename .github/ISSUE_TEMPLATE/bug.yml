@@ -1,0 +1,23 @@
+name: 缺陷反馈
+description: 提供可复现的完整操作路径
+title: "[Bug] "
+body:
+  - type: input
+    id: version
+    attributes: {label: 版本, description: 发布标签或提交号}
+    validations: {required: true}
+  - type: input
+    id: environment
+    attributes: {label: 系统与浏览器}
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes: {label: 完整操作步骤, description: 包含进入、操作、返回和再次使用；使用合成数据}
+    validations: {required: true}
+  - type: textarea
+    id: result
+    attributes: {label: 预期与实际结果}
+    validations: {required: true}
+  - type: textarea
+    id: evidence
+    attributes: {label: 脱敏证据, description: 不要粘贴真实邮件、密码、令牌或Cookie}

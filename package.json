@@ -1,6 +1,6 @@
 {
   "name": "eona-mail-product",
-  "version": "0.3.33",
+  "version": "0.3.34",
   "private": true,
   "type": "module",
   "engines": {
@@ -35,5 +35,6 @@
     "quill": "2.0.3",
     "sortablejs": "1.15.7",
     "split.js": "1.6.5"
-  }
+  },
+  "license": "MIT"
 }

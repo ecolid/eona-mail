@@ -32,6 +32,14 @@
       "run": "python3 scripts/test-local-ci.py"
     },
     {
+      "id": "licenses",
+      "run": "node scripts/licenses.mjs --check"
+    },
+    {
+      "id": "batch-release-negatives",
+      "run": "python3 scripts/test-batch-release.py"
+    },
+    {
       "id": "unit",
       "run": "npm run test:ci"
     },

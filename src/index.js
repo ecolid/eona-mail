@@ -1383,6 +1383,734 @@ async function handleFetch(request, env, trustedIdentity = null) {
     return json({error:'notification_center_moved',url:'https://'+env.NOTIFICATION_HOST+'/'},410,{'cache-control':'no-store'});
   }
 
+  const publicHost = String(env.PUBLIC_HOST || '').toLowerCase();
+  if (publicHost && url.hostname.toLowerCase() !== publicHost) {
+    if (!path.startsWith('/api/')) {
+      return Response.redirect(`https://${publicHost}${path === '/index.html' ? '/' : path}`, 302);
+    }
+    if (path === '/api/login') {
+      return json({ ok: false, error: `请从 https://${publicHost}/ 登录` }, 403);
+    }
+  }
+
+  // Repair credentials are narrow: they do not authorize inbox reads/import/delete.
+  if (path === '/api/icloud-repair/sync') return env.MAIL_INTEGRATIONS?.repairSync
+    ? env.MAIL_INTEGRATIONS.repairSync(request,env,timingSafeEqual) : json({error:'integration_not_configured'},404);
+
+  // 登录
+  if (path === '/api/login' && request.method === 'POST') {
+    const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+    const failsFrom = async (who) => {
+      const row = await env.MAILDB.prepare(
+        "SELECT COUNT(*) AS n FROM event_log WHERE kind = 'login_fail' AND detail LIKE ? AND created_at > datetime('now', '-15 minutes')"
+      ).bind(who + '%').first();
+      return (row && row.n) || 0;
+    };
+    let locked = false;
+    try {
+      locked = (await failsFrom(ip)) >= LOGIN_FAILS_PER_IP || (await failsFrom('')) >= LOGIN_FAILS_GLOBAL;
+    } catch (e) { await logEvent(env, 'login_guard_error', e); }
+    if (locked) {
+      await logEvent(env, 'login_locked', ip);
+      return json({ ok: false, error: '猜错太多次,15 分钟后再试' }, 429);
+    }
+    const body = await request.json().catch(() => ({}));
+    const given = typeof body.password === 'string' ? body.password : '';
+    if (given && env.INBOX_PASSWORD && timingSafeEqual(env.INBOX_PASSWORD, given)) {
+      await logEvent(env, 'login_ok', ip);
+      const token = await makeToken(env);
+      return json({ ok: true }, 200, {
+        'set-cookie': `mh=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${BROWSER_SESSION_SECONDS}`,
+      });
+    }
+    await logEvent(env, 'login_fail', ip);
+    return json({ ok: false, error: '密码错误' }, 401);
+  }
+
+  // 首页(HTML 自带登录界面)
+  if (path === '/' || path === '/index.html') {
+    const product = env.MAIL_PRODUCT;
+    // 把分类清单注入前端,避免前后端各维护一份写歪
+    let body='<body class="e-ui">';
+    if(trustedIdentity?.authenticated===true){
+      const owner=String(trustedIdentity.subject||trustedIdentity.email||'private-password-owner');
+      const exists=await env.MAILDB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='mail_ui_preferences'").first();
+      const row=exists?await env.MAILDB.prepare('SELECT value FROM mail_ui_preferences WHERE owner=?').bind(owner).first():null;
+      let value;try{value=JSON.parse(row?.value||'{}')}catch{value={}}
+      body='<body '+(product?.authMode==='local'?'':'data-account-auth="true" ')+'data-mail-density="'+normalizeMailLayout(value).density+'" class="e-ui">';
+    }
+    const settings = product ? '<script>window.MailProduct='+JSON.stringify(product).replaceAll('<','\\u003c')+'</script>' : '';
+    const html = PAGE.replace('__CATS__', JSON.stringify(AI_CATEGORIES)).replace('<body class="e-ui">',body)
+      .replace('<script>'+EONA_FOUNDATION_JS,settings+'<script>'+EONA_FOUNDATION_JS);
+    return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store' } });
+  }
+
+  if(path==='/notifications')return env.NOTIFICATION_HOST
+    ? Response.redirect('https://'+env.NOTIFICATION_HOST+'/',302)
+    : new Response(NOTIFICATIONS_PAGE,{headers:{'content-type':'text/html; charset=utf-8','cache-control':'no-store'}});
+
+  const m = (request.headers.get('cookie') || '').match(/(?:^|;\s*)mh=([^;]+)/);
+  const cookieAuthed = trustedIdentity?.authenticated === true || await checkToken(env, m && m[1]);
+
+  const bearer = (request.headers.get('authorization') || '');
+  const presented = bearer.toLowerCase().startsWith('bearer ')
+    ? bearer.slice(7).trim()
+    : '';
+  const machineTokens = String(env.READONLY_TOKENS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 32);
+  const machineAuthed = presented.length >= 32
+    && machineTokens.some((token) => timingSafeEqual(token, presented));
+
+  const importTokens = String(env.IMPORT_TOKENS || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length >= 32);
+  const importAuthed = presented.length >= 32
+    && importTokens.some((token) => timingSafeEqual(token, presented));
+
+  const authed = cookieAuthed || machineAuthed || importAuthed;
+  // 只读身份:cookie 没过、靠机器码进来的
+  const readOnly = machineAuthed && !cookieAuthed;
+  // 只推身份:靠导入码进来的
+  const importOnly = importAuthed && !cookieAuthed && !machineAuthed;
+
+  if (path === '/api/me') return json({ authed, email:authed?trustedIdentity?.email:undefined, read_only: readOnly, import_only: importOnly });
+  if (!path.startsWith('/api/')) return new Response('Not found', { status: 404 });
+  if (!authed) return json({ error: 'unauthorized' }, 401);
+
+  if(path==='/api/notifications' || path==='/api/notifications/legacy') {
+    if(!cookieAuthed || request.method!=='GET')return json({error:'forbidden'},403);
+    const remote=path.endsWith('/legacy')?'/messagehub/v1/legacy':'/messagehub/v1/events'+url.search;
+    if(!env.MAIL_INTEGRATIONS?.notifications)return json({error:'notification_integration_not_configured'},503);
+    try{return json(await env.MAIL_INTEGRATIONS.notifications(remote));}
+    catch{return json({error:'notification_center_unavailable'},503);}
+  }
+
+  // 只推身份的白名单:两个端点,都是 POST。读一封信都不行。
+  if (importOnly && !(request.method === 'POST' && (path === '/api/import' || path === '/api/import/check' || path === '/api/import/fix-dates'))) {
+    return json({ error: 'forbidden', reason: '导入凭据只允许 POST /api/import、/api/import/check、/api/import/fix-dates' }, 403);
+  }
+
+  if(path==='/api/mail-workspace'||path.startsWith('/api/mail-workspace/')){
+    if(!cookieAuthed)return json({error:'forbidden'},403);
+    return mailWorkspaceRequest(request,env,String(trustedIdentity?.subject||trustedIdentity?.email||'private-password-owner'));
+  }
+  if(path==='/api/mail-layout') {
+    if(!cookieAuthed)return json({error:'forbidden'},403);
+    const owner=String(trustedIdentity?.subject||trustedIdentity?.email||'private-password-owner');
+    await env.MAILDB.prepare('CREATE TABLE IF NOT EXISTS mail_ui_preferences(owner TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL)').run();
+    if(request.method==='GET') {
+      const row=await env.MAILDB.prepare('SELECT value FROM mail_ui_preferences WHERE owner=?').bind(owner).first();
+      let value;try{value=JSON.parse(row?.value||'{}')}catch{value={}}
+      return json({preferences:normalizeMailLayout(value)});
+    }
+    if(request.method!=='PUT')return json({error:'method_not_allowed'},405);
+    let input;
+    try{
+      const reader=request.body?.getReader();let size=0,chunks=[];
+      if(!reader)return json({error:'bad_json'},400);
+      for(;;){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>16384){await reader.cancel();return json({error:'preferences_too_large'},413)}chunks.push(part.value)}
+      const raw=new Uint8Array(size);let offset=0;for(const chunk of chunks){raw.set(chunk,offset);offset+=chunk.byteLength}
+      input=JSON.parse(new TextDecoder().decode(raw));
+    }catch{return json({error:'bad_json'},400)}
+    const value=normalizeMailLayout(input);
+    await env.MAILDB.prepare('INSERT INTO mail_ui_preferences(owner,value,updated_at) VALUES(?,?,?) ON CONFLICT(owner) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at').bind(owner,JSON.stringify(value),new Date().toISOString()).run();
+    return json({preferences:value});
+  }
+
+  // ---- 导入:服务器把 IMAP 拉到的 raw 推上来(浏览器身份也可以,只读码不行)
+  if (path === '/api/import/check' && request.method === 'POST') {
+    if (readOnly) return json({ error: 'forbidden' }, 403);
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: 'bad json' }, 400); }
+    const ids = Array.isArray(body.message_ids) ? body.message_ids.map(String).filter(Boolean).slice(0, 500) : [];
+    if (!ids.length) return json({ missing: [] });
+    // D1 一条语句最多 100 个绑定变量,分片查
+    const have = new Set();
+    for (let i = 0; i < ids.length; i += 90) {
+      const chunk = ids.slice(i, i + 90);
+      const { results } = await env.MAILDB.prepare(
+        `SELECT message_id FROM emails WHERE message_id IN (${chunk.map(() => '?').join(',')})`
+      ).bind(...chunk).all();
+      for (const r of results || []) have.add(String(r.message_id));
+    }
+    if(body.source_kind==='inbox')for(const id of have)await env.MAILDB.prepare("UPDATE emails SET folder='inbox' WHERE message_id=? AND folder IN ('sent','drafts')").bind(id).run();
+    return json({ missing: ids.filter((id) => !have.has(id)) });
+  }
+  // 修日期:没有 Date 头的信,第一版导入按导入时刻记了 received_at(QQ 一批全显示 18:34)。
+  // 服务器那边有 IMAP 的 INTERNALDATE,按 Message-ID 把正确时间送回来。只改 received_at。
+  if (path === '/api/import/fix-dates' && request.method === 'POST') {
+    if (readOnly) return json({ error: 'forbidden' }, 403);
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: 'bad json' }, 400); }
+    const items = (Array.isArray(body.items) ? body.items : []).slice(0, 200);
+    let updated = 0;
+    for (const it of items) {
+      const at = receivedAtFromDate(it && it.received_at);
+      const mid = it && String(it.message_id || '');
+      const id = it && Number(it.id || 0);
+      if (!at || (!mid && !id)) continue;
+      // 缺少 Message-ID 的记录使用稳定数据库身份。
+      const r = mid
+        ? await env.MAILDB.prepare('UPDATE emails SET received_at = ? WHERE message_id = ? AND received_at <> ?').bind(at, mid, at).run()
+        : await env.MAILDB.prepare('UPDATE emails SET received_at = ? WHERE id = ? AND received_at <> ?').bind(at, id, at).run();
+      updated += (r && r.meta && r.meta.changes) || 0;
+    }
+    if (updated) await logEvent(env, 'fix_dates', `改了 ${updated} 封的时间`);
+    return json({ ok: true, updated });
+  }
+  if (path === '/api/import' && request.method === 'POST') {
+    if (readOnly) return json({ error: 'forbidden' }, 403);
+    const mailbox = String(request.headers.get('x-mailbox') || '').trim().toLowerCase();
+    if (!mailbox || !mailbox.includes('@')) return json({ error: 'x-mailbox 必须是原邮箱地址' }, 400);
+    const rawBuf = await request.arrayBuffer();
+    if (!rawBuf || rawBuf.byteLength < 20) return json({ error: 'empty' }, 400);
+    if (rawBuf.byteLength > 50 * 1024 * 1024) return json({ error: 'too large' }, 413);
+    const isRead = request.headers.get('x-seen') === '1';
+    const sourceKind=request.headers.get('x-source-kind')||'inbox';
+    if(!['inbox','sent','drafts','trash'].includes(sourceKind))return json({error:'invalid_source_kind'},400);
+    const skipAI = request.headers.get('x-skip-ai') === '1'||sourceKind!=='inbox';
+    const dateHeader = request.headers.get('x-date') || '';
+    try {
+      const stored = await archiveRaw(env, rawBuf, {
+        alias: mailbox, envelopeFrom: '', headerGet: null,
+        receivedAt: receivedAtFromDate(dateHeader), dateFromMessage: true, imported: true, isRead, skipAI, sourceKind,
+      });
+      if (stored.stored) await logEvent(env, 'import_ok', `${mailbox} #${stored.emailId} ${String(stored.subject).slice(0, 80)}`);
+      // 新信(不是历史、没被明确关掉)转一份到 iPhone/Mac 那边;重复的信不转(已经转过或即将从别的路来)
+      let relay = { relayed: false, reason: 'not_new' };
+      if (stored.stored && !skipAI && request.headers.get('x-forward') !== '0') relay = await relayImported(env, rawBuf, stored, mailbox);
+      return json({ ok: true, stored: stored.stored, reason: stored.reason || null, id: stored.emailId || null, message_id: stored.msgId || null, attachmentsAdded: stored.attachmentsAdded || 0, relayed: relay.relayed });
+    } catch (e) {
+      return json({ ok: false, error: String(e).slice(0, 300) }, 500);   // 没入库,让服务器下轮再推
+    }
+  }
+
+  // 机器读取采用明确白名单；新增端点默认拒绝。
+  if (readOnly) {
+    const allowed = request.method === 'GET' && (
+      path === '/api/emails'
+      || /^\/api\/email\/\d+$/.test(path)
+      || /^\/api\/email\/\d+\/raw$/.test(path)
+      // 转发健康只返回计数和时间戳，不包含邮件内容。
+      || path === '/api/forward-health'
+      // 邮箱映射:哪个邮箱转到哪、最近有没有信。Eona 侧的转发灯按它给每个子邮箱点灯。
+      || path === '/api/routes'
+      || path === '/api/export'
+      || path === '/api/file'
+      // B2 备份的灯:只有计数和时间,不含邮件内容
+      || path === '/api/backup-health'
+      // 译文缓存:内容等级和 raw 一样
+      || /^\/api\/email\/\d+\/translation$/.test(path)
+    );
+    if (!allowed) {
+      return json({
+        error: 'forbidden',
+        reason: '只读机器凭据仅允许 GET /api/emails、/api/email/{id}、/api/email/{id}/raw',
+      }, 403);
+    }
+  }
+
+  // Folder options follow the actual archive, including additions/removals.
+  if(path==='/api/search/options' && request.method==='GET'){
+    if(readOnly||importOnly)return json({error:'browser_session_required'},403);
+    const {results}=await env.MAILDB.prepare('SELECT folder,COUNT(*) AS count FROM emails GROUP BY folder ORDER BY folder').all();
+    const labels={inbox:'收件箱',trash:'已删除',spam:'垃圾邮件'};
+    return json({folders:results.map(r=>({value:r.folder,label:labels[r.folder]||r.folder,count:Number(r.count)}))});
+  }
+
+  // ---- 邮件列表
+  if (path === '/api/emails') {
+    return mailConditionalRead(request,env.MAILDB,async()=>{
+    const folder = url.searchParams.get('folder') || 'inbox';
+    const alias = url.searchParams.get('alias');
+    const q = url.searchParams.get('q');
+    const searchOrder=url.searchParams.get('sort')||'recent';
+    if(!['recent','relevance'].includes(searchOrder))return json({error:'排序支持 recent 或 relevance'},400);
+    const starred = url.searchParams.get('starred');
+    const limit = Math.min(+(url.searchParams.get('limit') || 50), 200);
+    const offset = +(url.searchParams.get('offset') || 0);
+
+    // 列表返回 RFC Message-ID，供不同来源按同一邮件身份去重。
+    let sql = `SELECT ${MAIL_READER_PREVIEW_COLUMNS} FROM emails WHERE 1=1`;
+    const binds = [];
+    if(!mailSearchTerms(q).some(t=>!t.exclude&&t.field==='in')){sql+=' AND folder = ?';binds.push(folder);}
+    if (alias) { sql += ' AND alias = ?'; binds.push(alias); }
+    // 邮箱映射筛选同时覆盖原始收件人和显式配置的转发别名。
+    const box = url.searchParams.get('box');
+    if (box) {
+      const scope=mailMailboxScope(env,box);sql+=' AND ('+scope.where+')';binds.push(...scope.binds);
+    }
+    const origin = url.searchParams.get('origin');
+    if (origin) { sql += ' AND lower(origin_to) = ?'; binds.push(origin.toLowerCase()); }
+    // 按 Message-ID 精确找一封(Eona 的 read_mail 用:她库里只有前一段正文,全文在这里)
+    const mid = url.searchParams.get('message_id');
+    if (mid) { sql += ' AND message_id = ?'; binds.push(mid); }
+    if (starred === '1') sql += ' AND is_starred = 1';
+    const category = url.searchParams.get('category');
+    if(category==='营销'){sql+=" AND json_extract(labels_json,'$.marketing_confirmed')=1";}
+    else if (category) { sql += " AND COALESCE(json_extract(labels_json,'$.category'),ai_category) = ?"; binds.push(category); }
+    const nature=url.searchParams.get('tag');
+    if(nature){sql+=" AND EXISTS(SELECT 1 FROM json_each(json_extract(emails.labels_json,'$.tags')) WHERE value=?)";binds.push(nature);}
+    if (url.searchParams.get('action') === '1') sql += ' AND ai_action = 1';
+    let search;try{search=buildMailSearch(q);}catch(error){return json({error:error.message},400);}
+    sql+=search.sql;binds.push(...search.args);
+    // 机器增量读取按自增 ID 游标推进，避免遗漏晚到邮件或批量导入。
+    const labelAfter=url.searchParams.get('labels_after');
+    if(labelAfter!==null){
+      const afterId=Math.max(0,Number(url.searchParams.get('labels_after_id')) || 0);
+      const {results:rows}=await env.MAILDB.prepare(`SELECT id,message_id,subject,from_addr,from_name,origin_to,
+        received_at,ai_category,ai_summary,ai_action,labels_json,labels_rev,labels_updated_at
+        FROM emails WHERE (labels_updated_at,id)>(?,?) ORDER BY labels_updated_at,id LIMIT ?`)
+        .bind(labelAfter.slice(0,40),afterId,String(limit)).all();
+      const last=rows.at(-1);
+      return json({emails:rows,next_labels_after:last?.labels_updated_at || labelAfter,next_labels_after_id:last?.id || afterId});
+    }
+    const sinceRaw = url.searchParams.get('since_id');
+    if (sinceRaw !== null) {
+      const sinceId = Math.max(0, Math.floor(Number(sinceRaw) || 0));
+      sql += ' AND id > ? ORDER BY id ASC LIMIT ?';
+      binds.push(sinceId, String(limit));
+      const { results: page } = await env.MAILDB.prepare(sql).bind(...binds).all();
+      const rows = page || [];
+      return json({ emails: rows.map(projectMailRow), next_since_id: rows.length ? rows[rows.length - 1].id : sinceId, order: 'id' });
+    }
+    const selectedRaw=url.searchParams.get('selected_id');let selected;
+    if(selectedRaw!==null){
+      if(!/^[1-9]\d*$/.test(selectedRaw)||!Number.isSafeInteger(Number(selectedRaw)))return json({error:'邮件标识无效'},400);
+      selected=await env.MAILDB.prepare(sql+' AND id = ?').bind(...binds,selectedRaw).first();
+    }
+    sql=sql.replace('SELECT id,', 'SELECT COUNT(*) OVER() AS search_total, id,');
+    const bodyTerms=search.terms.filter(t=>!t.exclude&&(!t.field||t.field==='body'));
+    if(bodyTerms.length){sql=sql.replace('FROM emails WHERE'," , COALESCE((SELECT substr(text_body,max(1,instr(lower(text_body),lower(json_extract(body_term.value,'$.value')))-45),220) FROM json_each(?) AS body_term WHERE instr(lower(COALESCE(text_body,'')),lower(json_extract(body_term.value,'$.value')))>0 LIMIT 1),'') AS text_preview FROM emails WHERE");binds.unshift(JSON.stringify(bodyTerms));}
+    sql += ' ORDER BY '+(q&&searchOrder==='relevance'?'('+search.rank+') DESC, ':'')+'received_at DESC, id DESC LIMIT ? OFFSET ?';
+    binds.push(...(q&&searchOrder==='relevance'?search.rankArgs:[]),String(limit),String(offset));
+    const { results } = await env.MAILDB.prepare(sql).bind(...binds).all();
+    return json({ emails: results.map(row=>({...projectMailListRow(row),...(q?mailSearchMatches(row,search.terms):{})})), total:results.length?Number(results[0].search_total):0,
+      ...(selectedRaw!==null?{selected_id:selectedRaw,selected_matches:!!selected,selected_email:selected?projectMailListRow(selected):null}:{}) });
+    });
+  }
+
+  // ---- B2 备份的灯
+  if (path === '/api/backup-health') {
+    const cfg = b2Config(env);
+    // 没配时说清缺哪一块(只报有无,不报值):09-13 上线后第一轮没动静,就是靠这个查的
+    if (!cfg) return json({ configured: false, have: {
+      B2_ENDPOINT: !!env.B2_ENDPOINT, B2_BUCKET: !!env.B2_BUCKET, B2_KEY_ID: !!env.B2_KEY_ID, B2_APP_KEY: !!env.B2_APP_KEY,
+      endpoint_shape_ok: /^s3\.[a-z0-9-]+\.backblazeb2\.com$/.test(String(env.B2_ENDPOINT || '')),
+    } });
+    let state = {};
+    try {
+      const { results } = await env.MAILDB.prepare('SELECT k, v FROM backup_state').all();
+      for (const r of results || []) state[r.k] = r.v;
+    } catch (e) { state = {}; }
+    const last = Number(state.last_email_id || 0);
+    // COUNT(*) 与 MAX(id) 都是全表扫(一次一万多行)。这个端点现在挂在状态面板上,
+    // 面板每刷新一次就烧两万行读额度,而 D1 的读额度是**账号共用**的(09-13/09-15 已经撞顶两次)。
+    // 所以计数缓存 10 分钟,要现算加 ?fresh=1;缓存里存的是算好的数,不是查询本身。
+    const fresh = url.searchParams.get('fresh') === '1';
+    let counts = null;
+    if (!fresh) {
+      try {
+        const cached = JSON.parse(state.bh_counts || 'null');
+        if (cached && Date.now() - Number(cached.at || 0) < BACKUP_HEALTH_TTL_MS) counts = cached;
+      } catch (e) { counts = null; }
+    }
+    if (!counts) {
+      const maxRow = await env.MAILDB.prepare('SELECT MAX(id) AS m, COUNT(*) AS n FROM emails').first();
+      const behind = await env.MAILDB.prepare('SELECT COUNT(*) AS n FROM emails WHERE id > ?').bind(last).first();
+      counts = {
+        at: Date.now(),
+        max_email_id: (maxRow && maxRow.m) || 0,
+        email_count: (maxRow && maxRow.n) || 0,
+        backlog: (behind && behind.n) || 0,
+      };
+      await backupStateSet(env, 'bh_counts', JSON.stringify(counts));
+    }
+    return json({
+      configured: true, bucket: cfg.bucket, last_email_id: last,
+      max_email_id: counts.max_email_id, email_count: counts.email_count, backlog: counts.backlog,
+      counted_at: new Date(Number(counts.at)).toISOString(), counts_cached: !fresh,
+      last_ok: state.last_ok || null,
+      fail_streak: Number(state.fail_streak || 0), last_error: state.last_error || null,
+    });
+  }
+
+  // ---- 档案导出(给服务器做异地备份):emails 按 id 升序分页,其余小表整张给
+  if (path === '/api/export') {
+    const sinceId = Math.max(0, +(url.searchParams.get('since_id') || 0));
+    const limit = Math.min(Math.max(1, +(url.searchParams.get('limit') || 500)), 1000);
+    const { results: emailsRows } = await env.MAILDB.prepare(
+      'SELECT * FROM emails WHERE id > ? ORDER BY id ASC LIMIT ?'
+    ).bind(sinceId, String(limit)).all();
+    const small = {};
+    for (const table of ['aliases', 'mailbox_routes', 'blocked_senders']) {
+      try { small[table] = (await env.MAILDB.prepare(`SELECT * FROM ${table}`).all()).results || []; }
+      catch (e) { small[table] = []; }
+    }
+    const last = emailsRows.length ? emailsRows[emailsRows.length - 1].id : sinceId;
+    return json({ emails: emailsRows, next_since_id: last, done: emailsRows.length < limit, ...small });
+  }
+
+  // ---- 分身地址列表
+  if (path === '/api/aliases') {
+    const { results } = await env.MAILDB.prepare(
+      'SELECT alias, label, email_count, is_blocked, first_seen FROM aliases ORDER BY email_count DESC'
+    ).all();
+    return json({ aliases: results });
+  }
+
+  if (path === '/api/routes' && request.method === 'GET') {
+    const declared = (await env.MAILDB.prepare(
+      'SELECT mailbox, hop, alias, role, eona_reads, note, updated_at FROM mailbox_routes ORDER BY mailbox'
+    ).all()).results || [];
+    // 只需路由声明的调用读取声明表，不触发邮件计数全表聚合。
+    if (url.searchParams.get('declared') === '1') return json({ routes: declared, declared_only: true });
+    const stats = await routeStats(env, { fresh: url.searchParams.get('fresh') === '1' });
+    const mailboxStats=env.MAIL_MAILBOX_STATS?await env.MAIL_MAILBOX_STATS(env):null;
+    const grouped = stats.grouped;
+    const observed = [], byAlias = [];
+    for (const g of grouped) {
+      if (g.o) { const hit = observed.find((x) => x.mailbox === g.o); if (hit) { hit.n += g.n; if (g.last_seen > hit.last_seen) hit.last_seen = g.last_seen; } else observed.push({ mailbox: g.o, n: g.n, last_seen: g.last_seen }); }
+      const ha = byAlias.find((x) => x.alias === g.a); if (ha) { ha.n += g.n; if (g.last_seen > ha.last_seen) ha.last_seen = g.last_seen; } else byAlias.push({ alias: g.a, n: g.n, last_seen: g.last_seen });
+    }
+    // 主邮箱名下有多少信 = 与 /api/emails?box= 同一条谓词:落在它三种分身地址下的,或原始收件人就是它的。
+    // 转发后再由 IMAP 导入的邮件可能仍归入中转邮箱别名，
+    // 只按分身地址算 Gmail 是 0,按原始收件人才对得上。
+    const boxLastSeen = (mailbox) => { const forms=boxAliasForms(mailbox,env.MAIL_ALIAS_DOMAIN),b=String(mailbox).toLowerCase();return grouped.filter(g=>forms.includes(g.a)||g.o===b).reduce((at,g)=>g.last_seen>at?g.last_seen:at,'')||null; };
+    const boxCount = (mailbox) => { const forms = boxAliasForms(mailbox,env.MAIL_ALIAS_DOMAIN); const b = String(mailbox).toLowerCase(); let n = 0; for (const g of grouped) if (forms.includes(g.a) || g.o === b) n += g.n; return n; };
+    const seen = new Map(observed.map((r) => [r.mailbox, r]));
+    const rows = declared.map((d) => {
+      const actual=mailboxStats?.get(String(d.mailbox).toLowerCase());
+      const o = seen.get(String(d.mailbox).toLowerCase());
+      return { ...d, observed_count: o ? o.n : 0, last_seen: actual?actual.last_seen:boxLastSeen(d.mailbox), box_count: actual?actual.count:boxCount(d.mailbox) };
+    });
+    const declaredSet = new Set(declared.map((d) => String(d.mailbox).toLowerCase()));
+    const undeclared = observed.filter((o) => !declaredSet.has(o.mailbox) && likelyMine(o));
+    // 封数是**算好的数**,不是此刻现算的。把算的时刻给出去,左栏才说得清「这是几点的数」。
+    return json({ routes: rows, undeclared, by_alias: byAlias, by_category: stats.byCategory,
+                  counted_at: mailboxStats ? new Date().toISOString() : stats.countedAt ? new Date(stats.countedAt).toISOString() : null });
+  }
+  if (path === '/api/routes' && request.method === 'POST') {
+    if (readOnly) return json({ error: 'forbidden' }, 403);
+    const body = await request.json().catch(() => ({}));
+    const mailbox = String(body.mailbox || '').trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(mailbox)) return json({ error: 'mailbox 不是一个邮箱地址' }, 400);
+    await env.MAILDB.prepare(
+      `INSERT INTO mailbox_routes (mailbox, hop, alias, role, eona_reads, note)
+       VALUES (?,?,?,?,?,?)
+       ON CONFLICT(mailbox) DO UPDATE SET hop=excluded.hop, alias=excluded.alias, role=excluded.role,
+         eona_reads=excluded.eona_reads, note=excluded.note, updated_at=datetime('now')`
+    ).bind(
+      mailbox,
+      String(body.hop || '').trim().toLowerCase() || null,
+      String(body.alias || '').trim().toLowerCase() || null,
+      String(body.role || '').trim().slice(0, 40) || null,
+      body.eona_reads === false || body.eona_reads === 0 ? 0 : 1,
+      String(body.note || '').trim().slice(0, 500) || null,
+    ).run();
+    return json({ ok: true, mailbox });
+  }
+  if (path === '/api/routes/delete' && request.method === 'POST') {
+    if (readOnly) return json({ error: 'forbidden' }, 403);
+    const body = await request.json().catch(() => ({}));
+    const mailbox = String(body.mailbox || '').trim().toLowerCase();
+    await env.MAILDB.prepare('DELETE FROM mailbox_routes WHERE mailbox = ?').bind(mailbox).run();
+    return json({ ok: true });
+  }
+
+  if (path === '/api/forward-health') {
+    const configured = Boolean((env.FORWARD_TO || '').trim());
+    const counts = {};
+    const last = {};
+    for (const kind of ['forward_ok', 'forward_error', 'forward_skipped']) {
+      const row = await env.MAILDB.prepare(
+        "SELECT COUNT(*) AS n, MAX(created_at) AS latest FROM event_log"
+        + " WHERE kind = ? AND created_at >= datetime('now', '-1 day')",
+      ).bind(kind).first();
+      counts[kind] = Number(row?.n || 0);
+      last[kind] = row?.latest || null;
+    }
+    return json({
+      configured,
+      ok_24h: counts.forward_ok,
+      error_24h: counts.forward_error,
+      skipped_24h: counts.forward_skipped,
+      last_ok: last.forward_ok,
+      last_error: last.forward_error,
+    });
+  }
+
+  if (path === '/api/logs') {
+    const limit = Math.min(+(url.searchParams.get('limit') || 50), 500);
+    const kind = url.searchParams.get('kind');
+    let sql = 'SELECT id, kind, detail, created_at FROM event_log';
+    const binds = [];
+    if (kind) { sql += ' WHERE kind = ?'; binds.push(kind); }
+    sql += ' ORDER BY id DESC LIMIT ?';
+    binds.push(String(limit));
+    const { results } = await env.MAILDB.prepare(sql).bind(...binds).all();
+    return json({ logs: results });
+  }
+
+  // ---- 手动打一条 ntfy 测试推送,直接看 ntfy 服务器的应答
+  if (path === '/api/test-push') {
+    if (!env.NTFY_TOPIC) return json({ ok: false, error: 'NTFY_TOPIC 未配置' }, 400);
+    const server = env.NTFY_SERVER;
+    try {
+      const r = await pushNtfy(env, {
+        title: 'MailHub 测试推送',
+        message: '收到这条说明推送链路正常 · ' + new Date().toISOString(),
+        priority: 4,
+        tags: ['white_check_mark'],
+      });
+      await logEvent(env, r.ok ? 'ntfy_push' : 'ntfy_error', 'test-push HTTP ' + r.status + ' id=' + r.id);
+      return json({
+        ok: r.ok, status: r.status, message_id: r.id, server, topic: env.NTFY_TOPIC,
+        已认证: !!env.NTFY_TOKEN,
+      });
+    } catch (e) {
+      await logEvent(env, 'ntfy_error', 'test-push ' + e);
+      return json({ ok: false, error: String(e), server, topic: env.NTFY_TOPIC }, 502);
+    }
+  }
+
+  // ---- 给还没打标的邮件补跑 AI(手动触发,一次最多 20 封)
+  if (path === '/api/ai-backfill') {
+    if (!env.AI) return json({ ok: false, error: 'AI 绑定未配置' }, 400);
+    const limit = Math.min(+(url.searchParams.get('limit') || 10), 20);
+    const done = await backfillTags(env, limit);
+    const u = await aiUsageToday(env);
+    return json({ 本次处理: done.length, 结果: done, 今日累计: u });
+  }
+
+  if(path==='/api/labels/retry' && request.method==='POST'){
+    if(readOnly || importOnly)return json({error:'forbidden'},403);
+    const body=await request.json().catch(()=>({}));
+    const ids=[...new Set((Array.isArray(body.ids)?body.ids:[]).map(Number).filter(n=>Number.isSafeInteger(n)&&n>0))].slice(0,20);
+    let queued=0;
+    for(const id of ids)queued+=Number((await env.MAILDB.prepare(`UPDATE emails SET ai_at=NULL,ai_tries=0
+      WHERE id=? AND json_extract(labels_json,'$.state')='fallback'`).bind(id).run()).meta?.changes || 0);
+    return json({ok:true,queued,notice_replay:false});
+  }
+
+  // ---- 今日 AI 用量与阀门状态
+  if (path === '/api/ai-usage') {
+    const u = await aiUsageToday(env);
+    const g = await aiGate(env);
+    return json({
+      日期UTC: utcDay(),
+      调用次数: u.calls,
+      输入token: u.inTok,
+      输出token: u.outTok,
+      已用neurons: u.neurons,
+      免费额度: AI_FREE_NEURONS,
+      阀门上限: g.limit,
+      阀门状态: g.open ? '开启(可继续打标)' : '已关闭(今日暂停打标)',
+      占免费额度: (u.neurons / AI_FREE_NEURONS * 100).toFixed(1) + '%',
+    });
+  }
+
+  // ---- 单封邮件详情 / 正文 / 原始文件
+  let mm = path.match(/^\/api\/email\/(\d+)$/);
+  if (mm) {
+    const row = await env.MAILDB.prepare('SELECT * FROM emails WHERE id = ?').bind(mm[1]).first();
+    if (!row) return json({ error: 'not found' }, 404);
+    // 机器读取邮件不得写入已读状态；交互阅读才触发该副作用。
+    if (!row.is_read && !readOnly) {
+      await env.MAILDB.prepare('UPDATE emails SET is_read = 1 WHERE id = ?').bind(mm[1]).run();
+    }
+    return json({ email: projectMailRow(row) });
+  }
+
+  // ---- 翻译:读缓存(只读码也能读,Eona 用得上);翻(只有浏览器身份,花的是免费 AI 额度)
+  mm = path.match(/^\/api\/email\/(\d+)\/translation$/);
+  if (mm && request.method === 'GET') {
+    let row = null;
+    try { row = await env.MAILDB.prepare('SELECT * FROM translations WHERE email_id = ?').bind(mm[1]).first(); } catch (e) { row = null; }
+    if (!row || row.lang !== 'zh') return json({ ok: true, cached: false });
+    return json({ ok: true, cached: true, model: row.model, truncated: !!row.truncated, created_at: row.created_at,
+      paragraphs: JSON.parse(row.paragraphs || '[]'), translated: JSON.parse(row.translated || '[]') });
+  }
+  mm = path.match(/^\/api\/email\/(\d+)\/translate$/);
+  if (mm && request.method === 'POST') {
+    if (readOnly || importOnly) return json({ error: 'forbidden' }, 403);
+    let input={};try{input=await request.clone().json();}catch{}
+    if(input.format==='inline-v1'){
+      const row=await env.MAILDB.prepare('SELECT id,subject FROM emails WHERE id=?').bind(mm[1]).first();
+      if(!row)return json({error:'not found'},404);
+      let segments;try{segments=validateInlineSegments([row.subject||'',...validateInlineSegments(input.segments)]);}catch{return json({ok:false,error:'邮件过长，暂时无法全文翻译。'},413);}
+      const hash=await inlineSourceHash(segments);
+      await env.MAILDB.prepare('CREATE TABLE IF NOT EXISTS translations_inline(email_id INTEGER PRIMARY KEY,source_hash TEXT NOT NULL,model TEXT,segments TEXT,translated TEXT,created_at TEXT DEFAULT (datetime(\'now\')))').run();
+      await env.MAILDB.prepare('CREATE TABLE IF NOT EXISTS translations_inline_parts(email_id INTEGER NOT NULL,source_hash TEXT NOT NULL,model TEXT,segments TEXT,translated TEXT,created_at TEXT DEFAULT (datetime(\'now\')),PRIMARY KEY(email_id,source_hash))').run();
+      const have=await env.MAILDB.prepare('SELECT * FROM translations_inline_parts WHERE email_id=? AND source_hash=?').bind(row.id,hash).first()||await env.MAILDB.prepare('SELECT * FROM translations_inline WHERE email_id=? AND source_hash=?').bind(row.id,hash).first();
+      if(have){try{const values=JSON.parse(have.translated);if(values.length!==segments.length)throw Error('translation_cache_invalid');values.forEach((text,i)=>validateTranslatedText(segments[i],text));return json({ok:true,cached:true,version:1,translated:values});}catch{}}
+      try{
+        const result=await cachedInlineTranslation(env,row.id,segments);
+        await env.MAILDB.prepare('INSERT INTO translations_inline_parts(email_id,source_hash,model,segments,translated) VALUES(?,?,?,?,?) ON CONFLICT(email_id,source_hash) DO UPDATE SET translated=excluded.translated,model=excluded.model,created_at=datetime(\'now\')').bind(row.id,hash,result.model,JSON.stringify(segments),JSON.stringify(result.translated)).run();
+        return json({ok:true,cached:result.cached,version:1,translated:result.translated});
+      }catch(error){await logEvent(env,'translate_inline_error','#'+row.id+' '+(error.name==='TimeoutError'?'translation_timeout':/^translation_[a-z_]+$/.test(error.message)?error.message:'translation_unavailable'));return json({ok:false,error:error.message==='translation_budget'?'今日翻译额度已用完，请稍后再试。':error.name==='TimeoutError'?'翻译等待超时，请重试。原邮件已保留。':'翻译暂时不可用，原邮件已保留。请重试。'},error.message==='translation_budget'?429:502);}
+    }
+    const force = url.searchParams.get('force') === '1';
+    await ensureTranslationsTable(env);
+    if (!force) {
+      const have = await env.MAILDB.prepare('SELECT * FROM translations WHERE email_id = ?').bind(mm[1]).first();
+      if (have && have.lang === 'zh') return json({ ok: true, cached: true, model: have.model, truncated: !!have.truncated, created_at: have.created_at,
+        paragraphs: JSON.parse(have.paragraphs || '[]'), translated: JSON.parse(have.translated || '[]') });
+    }
+    const row = await env.MAILDB.prepare('SELECT id, text_body FROM emails WHERE id = ?').bind(mm[1]).first();
+    if (!row) return json({ error: 'not found' }, 404);
+    if (!env.AI) return json({ ok: false, error: '这个部署没有接 AI' }, 503);
+    const gate = await aiGate(env);
+    if (!gate.open) return json({ ok: false, error: `今天的免费 AI 额度用完了(${Math.round(gate.used)}/${gate.limit} neurons),明早再翻` }, 429);
+    let r;
+    try { r = await translateText(env, row.text_body); }
+    catch (e) { await logEvent(env, 'translate_error', `#${row.id} ${e}`); return json({ ok: false, error: '翻译失败:' + String(e).slice(0, 160) }, 502); }
+    await env.MAILDB.prepare(
+      'INSERT INTO translations (email_id, lang, model, paragraphs, translated, truncated, created_at) VALUES (?, \'zh\', ?, ?, ?, ?, datetime(\'now\')) '
+      + 'ON CONFLICT(email_id) DO UPDATE SET lang = excluded.lang, model = excluded.model, paragraphs = excluded.paragraphs, translated = excluded.translated, truncated = excluded.truncated, created_at = excluded.created_at'
+    ).bind(row.id, r.model, JSON.stringify(r.paragraphs), JSON.stringify(r.translated), r.truncated ? 1 : 0).run();
+    await logEvent(env, 'translate_ok', `#${row.id} ${r.model} ${r.paragraphs.length} 段 in ${r.inTok}/out ${r.outTok}`);
+    return json({ ok: true, cached: false, model: r.model, truncated: r.truncated, paragraphs: r.paragraphs, translated: r.translated });
+  }
+
+  mm = path.match(/^\/api\/email\/(\d+)\/attachment\/delete$/);
+  if (mm && request.method === 'POST') {
+    if (readOnly || importOnly) return json({ error: 'forbidden' }, 403);
+    let body = {};
+    try { body = await request.json(); } catch (e) { return json({ error: 'bad json' }, 400); }
+    const key = String(body.key || '');
+    const row = await env.MAILDB.prepare('SELECT id, attachment_keys FROM emails WHERE id = ?').bind(mm[1]).first();
+    if (!row) return json({ error: 'not found' }, 404);
+    let keys = [];
+    try { keys = JSON.parse(row.attachment_keys || '[]'); } catch (e) { keys = []; }
+    const idx = keys.findIndex((k) => k && k.key === key && key.startsWith('att/'));
+    if (idx < 0) return json({ error: '这封信没有这个附件' }, 404);
+    await env.ATTACH.delete(key);
+    keys[idx] = { ...keys[idx], key: null, deleted: '手动删除', deleted_at: new Date().toISOString() };   // 时间给前端按本地时区显示
+    await env.MAILDB.prepare('UPDATE emails SET attachment_keys = ? WHERE id = ?').bind(JSON.stringify(keys), row.id).run();
+    await logEvent(env, 'att_delete', `#${row.id} ${keys[idx].name} (${keys[idx].size} B)`);
+    return json({ ok: true, attachments: keys });
+  }
+
+  mm = path.match(/^\/api\/email\/(\d+)\/html$/);
+  if (mm) {
+    const row = await env.MAILDB.prepare('SELECT html_key FROM emails WHERE id = ?').bind(mm[1]).first();
+    if (!row || !row.html_key) return new Response('无 HTML 正文', { status: 404 });
+    const obj = await env.ATTACH.get(row.html_key);
+    if (!obj) return new Response('已被清理', { status: 404 });
+    const html=sanitizeMailHTML(await new Response(obj.body).text());
+    if(url.searchParams.get('format')==='json')return Response.json({html,policy:mailHTMLPolicy()},{headers:{'cache-control':'no-store'}});
+    return new Response(html, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        // 正文可由同站父页读取以翻译；仍不允许脚本、表单、弹窗或顶层导航。
+        'content-security-policy': 'sandbox allow-same-origin; '+mailHTMLPolicy(),
+        'cache-control': 'no-store',
+      },
+    });
+  }
+
+  mm = path.match(/^\/api\/email\/(\d+)\/raw$/);
+  if (mm) {
+    const row = await env.MAILDB.prepare('SELECT raw_key FROM emails WHERE id = ?').bind(mm[1]).first();
+    if (!row) return new Response('not found', { status: 404 });
+    const obj = await env.ATTACH.get(row.raw_key);
+    if (!obj) return new Response('已被清理', { status: 404 });
+    return new Response(obj.body, {
+      headers: {
+        'content-type': 'message/rfc822',
+        'content-disposition': `attachment; filename="mail-${mm[1]}.eml"`,
+      },
+    });
+  }
+
+  // ---- 附件下载(仅允许 att/ 前缀)
+  if (path === '/api/file') {
+    const key = url.searchParams.get('key') || '';
+    if (!key.startsWith('att/')) return new Response('forbidden', { status: 403 });
+    const obj = await env.ATTACH.get(key);
+    if (!obj) return new Response('not found', { status: 404 });
+    const name = key.split('/').pop().replace(/^\d+-/, '');
+    return new Response(obj.body, {
+      headers: {
+        'content-type': obj.httpMetadata?.contentType || 'application/octet-stream',
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+      },
+    });
+  }
+
+  // ---- 操作:星标 / 删除 / 恢复
+  mm = path.match(/^\/api\/email\/(\d+)\/(star|unstar|read|unread|trash|restore)$/);
+  if (mm && request.method === 'POST') {
+    const id = mm[1], op = mm[2];
+    const sql = {
+      read: "UPDATE emails SET is_read = 1 WHERE id = ?",
+      unread: "UPDATE emails SET is_read = 0 WHERE id = ?",
+      star: "UPDATE emails SET is_starred = 1 WHERE id = ?",
+      unstar: "UPDATE emails SET is_starred = 0 WHERE id = ?",
+      trash: "UPDATE emails SET folder = 'trash' WHERE id = ?",
+      restore: "UPDATE emails SET folder = 'inbox' WHERE id = ?",
+    }[op];
+    await env.MAILDB.prepare(sql).bind(id).run();
+    return json({ ok: true });
+  }
+
+  // ---- 拉黑发件人(pattern 支持 % 通配,如 %@spam.com)
+  if (path === '/api/block' && request.method === 'POST') {
+    const { pattern, note } = await request.json().catch(() => ({}));
+    if (!pattern) return json({ error: 'pattern required' }, 400);
+    const written=await env.MAILDB.prepare(
+      'INSERT OR IGNORE INTO blocked_senders (pattern, note) VALUES (?, ?)'
+    ).bind(pattern.toLowerCase(), note || '').run();
+    const block=await env.MAILDB.prepare('SELECT id,pattern FROM blocked_senders WHERE pattern=?').bind(pattern.toLowerCase()).first();
+    return json({ok:true,added:written.meta.changes>0,block});
+  }
+  if(path==='/api/block'&&request.method==='DELETE'){
+    const {id,pattern}=await request.json().catch(()=>({}));
+    if(!Number.isSafeInteger(id)||typeof pattern!=='string')return json({error:'黑名单记录无效。'},400);
+    const result=await env.MAILDB.prepare('DELETE FROM blocked_senders WHERE id=? AND pattern=?').bind(id,pattern.toLowerCase()).run();
+    return result.meta.changes?json({ok:true}):json({error:'黑名单已变化，请刷新后处理。'},409);
+  }
+
+  // ---- 拉黑/恢复某个分身地址
+  if (path === '/api/alias/toggle-block' && request.method === 'POST') {
+    const { alias, blocked } = await request.json().catch(() => ({}));
+    if (!alias) return json({ error: 'alias required' }, 400);
+    await env.MAILDB.prepare(
+      `INSERT INTO aliases (alias, is_blocked) VALUES (?, ?)
+       ON CONFLICT(alias) DO UPDATE SET is_blocked = ?`
+    ).bind(alias.toLowerCase(), blocked ? 1 : 0, blocked ? 1 : 0).run();
+    return json({ ok: true });
+  }
+
+  return json({ error: 'not found' }, 404);
+}
+
+export default {
+  email: handleEmail,
+  fetch: handleFetch,
+  scheduled: handleScheduled,
+};
+
+// ---------------------------------------------------------------- 网页收件箱(单文件)
+const PAGE = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MailHub · eona.top</title>
+<meta name="theme-color" content="#F2EADD">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="邮件">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/mail-v2/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/mail-v2/icon-32.png">
+<link rel="manifest" href="/assets/mail-v2/manifest.webmanifest">
+<style>
+
 :root{--bg:#fafafa;--card:#ffffff;--ink:#18181b;--sub:#71717a;--line:#e4e4e7;--acc:#18181b;--accbg:#f4f4f5;--blue:#2563eb;--bluebg:#eef2ff;--blueink:#4338ca;--chip:#f4f4f5;--chipink:#3f3f46;--danger:#dc2626;--ok:#15803d;--okbg:#dcfce7;--needbg:#fee2e2;--needink:#b91c1c;--r:6px;--shadow:0 1px 2px rgba(0,0,0,.04)}
 :root.dark{--bg:#09090b;--card:#0f0f11;--ink:#fafafa;--sub:#a1a1aa;--line:#27272a;--acc:#fafafa;--accbg:#1f1f23;--blue:#60a5fa;--bluebg:#1e1b4b;--blueink:#c7d2fe;--chip:#1f1f23;--chipink:#d4d4d8;--ok:#86efac;--okbg:#14321f;--needbg:#3f1d1d;--needink:#fca5a5;--shadow:none}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1908,7 +2636,6 @@ async function loadList(options={}){
   entry.queryKey=queryKey;entry.page=listMore;
   return {ok:true,ids:page.ids,count:emails.length};
 }
-// 列表一页 100 封，按滚动位置加载下一页。
 const PAGE_SIZE=100;
 function listUrl(offset){
   let u='/api/emails?folder='+state.folder+'&limit='+PAGE_SIZE+'&offset='+offset;
