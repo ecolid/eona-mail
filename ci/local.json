@@ -45,7 +45,7 @@
     },
     {
       "id": "browser-install",
-      "run": "npx playwright install chromium webkit"
+      "run": "npx playwright install --only-shell chromium webkit"
     },
     {
       "id": "browser",
