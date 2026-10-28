@@ -128,7 +128,7 @@ test('an expired demo response cannot populate an old browser cache or retry a w
  let reloads=0,clears=0,requestHeaders;
  const ctx={window:{MailProduct:{mode:'demo',workspaceId:'old'}},document:{body:{}},location:{reload:()=>reloads++},mailResources:{clear:()=>clears++},Headers,AbortSignal,
   fetch:async(path,options)=>{requestHeaders=options.headers;return new Response('{}',{status:409,headers:{'X-Mail-Workspace':'new'}})}};
- vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('async function fetchMailResource('),page.indexOf('// 线性图标')),ctx);
+ vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('async function fetchMailResource('),page.indexOf('\nconst I=')),ctx);
  await assert.rejects(vm.runInContext("fetchMailResource('/api/mail-workspace/drafts/test',{method:'PUT',body:'{}'})",ctx),error=>error.name==='MailWorkspaceChanged');
  assert.equal(requestHeaders.get('X-Mail-Workspace'),'old');assert.equal(reloads,1);assert.equal(clears,1);assert.equal(ctx.document.body.inert,true);
 });

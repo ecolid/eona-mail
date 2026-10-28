@@ -5,7 +5,7 @@ import {createMailResourceCache,mailMutationPrefixes} from './src/mail-resource-
 import {testHooks} from './src/index.js';
 
 const page=testHooks().PAGE;
-const source=page.slice(page.indexOf('const api=async(p,'),page.indexOf('// 线性图标'));
+const source=page.slice(page.indexOf('const api=async(p,'),page.indexOf('\nconst I='));
 function fixture(fetch,signalFactory=()=>({aborted:false})){
  const calls=[],signals=[],login=[];
  const context={window:{},mailMutationPrefixes,state:{},mailResources:{read:(p,o)=>context.fetchMailResource(p,o).then(r=>r.value),invalidate(){},clear(){}},Headers,fetch:async(...args)=>{calls.push(args);const response=await fetch(...args);return {...response,headers:response.headers||new Headers()}},AbortSignal:{timeout:ms=>{assert.equal(ms,15000);const signal=signalFactory();signals.push(signal);return signal}},EonaUI:{startLogin:()=>login.push('redirect')},show:ok=>login.push(ok)};
