@@ -1783,7 +1783,7 @@ async function loadSide(){
     {k:'inbox',t:'收件箱',i:I.inbox},{k:'starred',t:'星标',i:I.star},{k:'sent',t:'已发送',i:I.send},{k:'drafts',t:'草稿箱',i:I.edit},{k:'contacts',t:'通讯录',i:I.person},{k:'important',t:'重要联系人',i:I.star},{k:'subscriptions',t:'订阅来源',i:I.mail},{k:'trash',t:'垃圾箱',i:I.trash}
   ].map(f=>({...f,key:f.k}))).map(f=>{
     const on=(f.k==='starred'?state.starred:(state.folder===f.k&&plain));
-    const n=f.k==='inbox'?'<span class="n">'+(!MailWorkspace.loaded||MailWorkspace.error?'—':MailWorkspace.data.folders.find(x=>x.folder==='inbox')?.count||0)+'</span>':['sent','drafts','contacts','important','subscriptions'].includes(f.k)?'<span class="n" data-workspace-count="'+f.k+'">'+(!MailWorkspace.loaded||MailWorkspace.error?'—':f.k==='drafts'?MailWorkspace.data.drafts.length:f.k==='contacts'?(MailWorkspace.data.directory||[]).length:f.k==='important'?MailWorkspace.data.contacts.length:f.k==='subscriptions'?(MailWorkspace.data.sources||[]).filter(s=>s.included).length:MailWorkspace.data.sent_total??(MailWorkspace.data.sent||[]).length)+'</span>':'';
+    const n=['inbox','sent','drafts','contacts','important','subscriptions'].includes(f.k)?'<span class="n" data-workspace-count="'+f.k+'">'+mailWorkspaceCount(MailWorkspace.data,f.k,MailWorkspace.loaded&&!MailWorkspace.error)+'</span>':'';
     return '<div class="item'+(on?' on':'')+'" data-nav-key="'+f.k+'" data-pick="'+f.k+'">'+f.i+'<span class="t">'+f.t+'</span>'+n+'</div>';
   }).join('');
   const act='<div class="item'+(state.actionOnly?' on':'')+'" data-action-only data-nav-key="action" onclick="pickAction()">'+I.alert+'<span class="t">需要处理</span>'+'</div>';

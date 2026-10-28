@@ -1266,7 +1266,9 @@
       "evidence": [
         "wiki:04-drills-audits/MAIL-INTERACTION-JOURNEYS-2026-10-23.md"
       ],
-      "browser": [],
+      "browser": [
+        "batch-partial-failure-retry-and-trash-restore"
+      ],
       "unit": [
         {
           "file": "test-mail-feedback-view.mjs",
@@ -1399,7 +1401,9 @@
         "wiki:04-drills-audits/MAIL-CONTINUOUS-SOURCE-2026-10-26.md",
         "wiki:04-drills-audits/MAIL-GMAIL-2026-10-27.md"
       ],
-      "browser": [],
+      "browser": [
+        "source-health-truth-states-and-failed-refresh"
+      ],
       "unit": [
         {
           "file": "product/test-source-health.mjs",
@@ -1670,7 +1674,8 @@
         "wiki:04-drills-audits/MAIL-INTERACTION-JOURNEYS-2026-10-23.md"
       ],
       "browser": [
-        "draft-save-reopen-and-single-isolated-send"
+        "draft-save-reopen-and-single-isolated-send",
+        "rich-draft-assets-link-save-and-reopen"
       ],
       "unit": [
         {
@@ -1881,6 +1886,32 @@
           "name": "test_checked_channel_pause_pin_and_failure_backoff"
         }
       ]
+    },
+    {
+      "id": "sidebar-source-counts",
+      "trigger": "reusable",
+      "contract": "侧栏计数与权威工作区轮询同源，变化就地更新，失败未知，恢复回读",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-RERE-2026-10-28.md"
+      ],
+      "browser": [
+        "sidebar-inbox-authoritative-refresh-failure-recovery"
+      ],
+      "unit": [],
+      "python": []
+    },
+    {
+      "id": "settings-persistence",
+      "trigger": "reusable",
+      "contract": "设置失败保留输入，重试提交，取消和重入读回保存值",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-RERE-2026-10-28.md"
+      ],
+      "browser": [
+        "settings-failure-retry-cancel-and-reentry"
+      ],
+      "unit": [],
+      "python": []
     }
   ],
   "boundaries": [

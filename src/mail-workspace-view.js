@@ -1,5 +1,14 @@
 export function mailSyncNotice(sync,error){if(error)return '同步状态更新失败，已保留当前内容。';if(!sync?.configured)return '';return sync.source_error||sync.accounts?.some(a=>a.state!=='ok')?'原邮箱同步暂未完成，本站内容已保留。':sync.accounts?.length?'':'正在连接原邮箱同步…'}
-export function mailWorkspaceBrowserScript(){return mailSyncNotice.toString()+';('+mailWorkspaceController.toString()+')();';}
+export function mailWorkspaceCount(data,kind,available=true){
+ if(!available)return '—';
+ if(kind==='inbox')return data.folders.find(x=>x.folder==='inbox')?.count||0;
+ if(kind==='drafts')return data.drafts.length;
+ if(kind==='contacts')return data.directory.length;
+ if(kind==='important')return data.contacts.length;
+ if(kind==='subscriptions')return data.sources.filter(s=>s.included).length;
+ return data.sent_total??data.sent.length;
+}
+export function mailWorkspaceBrowserScript(){return mailSyncNotice.toString()+';'+mailWorkspaceCount.toString()+';('+mailWorkspaceController.toString()+')();';}
 function mailWorkspaceController(){
  let owner='',ownerEpoch=0,data={drafts:[],contacts:[],directory:[],sources:[],folders:[],senders:[],sent:[],outbox:[]},loaded=false,loadedAt=0,loading=null,lastError=null;
  const emit=()=>window.dispatchEvent(new Event('mail:workspace'));
@@ -166,7 +175,7 @@ function mailWorkspaceController(){
  };
  const update=()=>{
   for(const node of document.querySelectorAll('[data-mail-sync-status]')){const text=mailSyncNotice(data.sync,lastError);if(node.textContent!==text)node.textContent=text;node.hidden=!text}
-  for(const item of document.querySelectorAll('[data-workspace-count]')){const kind=item.dataset.workspaceCount;item.textContent=!loaded||lastError?'—':kind==='drafts'?data.drafts.length:kind==='contacts'?data.directory.length:kind==='important'?data.contacts.length:kind==='subscriptions'?data.sources.filter(s=>s.included).length:data.sent_total??data.sent.length}
+  for(const item of document.querySelectorAll('[data-workspace-count]'))item.textContent=mailWorkspaceCount(data,item.dataset.workspaceCount,loaded&&!lastError);
   if(!document.body.classList.contains('mail-composing')&&['drafts','contacts','important','subscriptions'].includes(state.folder)){if(document.querySelector('.mail-contact-menu:popover-open'))pendingWorkspaceRender=true;else{pendingWorkspaceRender=false;renderMailWorkspace()}}
  };
  window.addEventListener('mail:workspace',()=>{if(loaded)update()});

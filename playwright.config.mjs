@@ -21,5 +21,5 @@ export default defineConfig({
   projects:[{name:'chromium',use:{browserName:'chromium'}},{name:'webkit',use:{browserName:'webkit'}}],
   webServer:[fixture(8791,{MAIL_FIXTURE_RICH:'1',MAIL_FIXTURE_MOTION:'1'}),
     fixture(8792,{MAIL_FIXTURE_RICH:'1'}),
-    fixture(8793,{MAIL_FIXTURE_PAINT:'1',MAIL_FIXTURE_VISUAL:'1'})],
+    fixture(8793,{MAIL_FIXTURE_PAINT:'1',MAIL_FIXTURE_VISUAL:'1',MAIL_FIXTURE_HEALTH:'1'})],
 });

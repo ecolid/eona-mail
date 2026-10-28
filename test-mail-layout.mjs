@@ -1,3 +1,4 @@
+import {mailWorkspaceCount} from './src/mail-workspace-view.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker,{fetchWithIdentity} from './src/index.js';
@@ -43,9 +44,9 @@ import {testHooks} from './src/index.js';
 const page=testHooks().PAGE;
 test('a declared child mailbox remains one entry after direct historical/source imports',async()=>{
  const side={innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]},mask={};
- const ctx={state:{folder:'inbox',rt:{routes:[{mailbox:'main@example.test',hop:'',box_count:50},{mailbox:'child@example.test',hop:'main@example.test',observed_count:31}],by_alias:[{alias:'child@example.test',n:10}],by_category:[]}},
+ const ctx={mailWorkspaceCount,state:{folder:'inbox',rt:{routes:[{mailbox:'main@example.test',hop:'',box_count:50},{mailbox:'child@example.test',hop:'main@example.test',observed_count:31}],by_alias:[{alias:'child@example.test',n:10}],by_category:[]}},
  api:async()=>({aliases:[{alias:'child@example.test',email_count:10},{alias:'unregistered@example.test',email_count:2}]}),
- MailWorkspace:{load:async()=>{},loaded:true,data:{folders:[{folder:'inbox',count:52}],drafts:[],contacts:[],directory:[],sent_total:0}},
+ MailWorkspace:{load:async()=>{},loaded:true,data:{folders:[{folder:'inbox',count:52}],drafts:[],contacts:[],directory:[],sources:[],sent_total:0}},
  MailExperience:{acceptSideUpdate:()=>true,order:(_,rows)=>rows,sideRendered(){},navigationChanged(){}},mailSortHandle:()=>'',I:new Proxy({},{get:()=>''}),CATS:[],esc:String,mailCatsOpen:true,mailLayout:{},mailboxUsage:{},rankMailboxes:rows=>({visible:rows,collapsed:[]}),$:id=>id==='#side'?side:mask,mailDrawer:{close(){}}};
  vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('async function loadSide(){'),page.indexOf('const mailPages=new Map()')),ctx);await vm.runInContext('loadSide()',ctx);
  assert.equal((side.innerHTML.match(/data-origin="child@example.test"/g)||[]).length,1);
@@ -100,8 +101,8 @@ test('mail account settings derive a deduplicated union of observed mailboxes, s
 test('route read failures remain unknown initially, retain last data on later failure and recover',async()=>{
  const side={innerHTML:'',querySelector:()=>null,querySelectorAll:()=>[]},mask={};let broken=true;
  const source={routes:[{mailbox:'known@example.test',box_count:17}],by_alias:[],by_category:[{c:'工作',n:9}]};
- const ctx={state:{folder:'inbox'},api:async path=>{if(path.startsWith('/api/routes')){if(broken)throw Error('offline');return source}return {aliases:[]}},
- MailWorkspace:{load:async()=>{},loaded:true,data:{folders:[{folder:'inbox',count:17}],drafts:[],contacts:[],directory:[],sent_total:0}},
+ const ctx={mailWorkspaceCount,state:{folder:'inbox'},api:async path=>{if(path.startsWith('/api/routes')){if(broken)throw Error('offline');return source}return {aliases:[]}},
+ MailWorkspace:{load:async()=>{},loaded:true,data:{folders:[{folder:'inbox',count:17}],drafts:[],contacts:[],directory:[],sources:[],sent_total:0}},
  MailExperience:{acceptSideUpdate:()=>true,order:(_,rows)=>rows,sideRendered(){}},mailSortHandle:()=>'',I:new Proxy({},{get:()=>''}),CATS:['工作'],esc:String,mailCatsOpen:true,mailLayout:{},mailboxUsage:{},rankMailboxes:rows=>({visible:rows,collapsed:[]}),$:id=>id==='#side'?side:mask,mailDrawer:{close(){}}};
  vm.createContext(ctx);vm.runInContext(page.slice(page.indexOf('async function loadSide(){'),page.indexOf('const mailPages=new Map()')),ctx);
  await vm.runInContext('loadSide()',ctx);assert.equal(ctx.state.rt,undefined);assert.equal(ctx.state.rtStale,true);assert.match(side.innerHTML,/邮箱与分类读取失败/);assert.match(side.innerHTML,/data-mail-routes-retry/);assert.match(side.innerHTML,/工作<\/span><span class="n">—/);assert.doesNotMatch(side.innerHTML,/data-box=/);
