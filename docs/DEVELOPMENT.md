@@ -263,6 +263,8 @@ controllers remain in use.
 
 ## 浏览器动效与性能 CI
 
+工作流按同分支取消已被替代的候选，main 检查及串行开发渠道发布保留。npm 缓存只保存按锁文件区分的下载缓存，每次仍执行 `npm ci` 重建依赖；不缓存 `node_modules`，也不减少双引擎场景或放宽预算。
+
 `npm run test:browser -- --project=chromium`（或 `webkit`）运行产品自身的合成工作区，无需私人装配、登录、真实邮件或发信权限。先执行 `npx playwright install --with-deps chromium webkit`；CI 依赖使用锁定版本。`test/browser/scenarios.mjs` 是唯一场景清单，维护技能从本产品加载同一夹具与测量器。
 
 每次 PR、main 提交和手动候选检查运行 Chromium 与 WebKit。每个任务单 worker、无自动重试、总时限十二分钟。场景覆盖局部渲染/一帧预算、最终触点、快滑反向/取消/重抓、刷新回顶/等待/失败重试、慢阅读与迟到响应、正文和附件同次提交、首次返回输入、页面栈、连续使用和二十四轮资源清理；另验 320 深色、390 和桌面排版，以及可信浏览器 wheel 的首次滚动交接。
