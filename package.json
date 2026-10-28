@@ -1,6 +1,6 @@
 {
   "name": "eona-mail-product",
-  "version": "0.3.32",
+  "version": "0.3.33",
   "private": true,
   "type": "module",
   "engines": {
@@ -16,7 +16,8 @@
     "test:browser": "playwright test",
     "check:browser": "playwright test --list",
     "test:ci": "node scripts/run-ci-contracts.mjs",
-    "check:ci": "python3 scripts/check-product-ci.py"
+    "check:ci": "python3 scripts/check-product-ci.py",
+    "check:local": "python3 scripts/local-ci.py run"
   },
   "dependencies": {
     "jose": "6.2.12",

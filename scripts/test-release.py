@@ -8,8 +8,10 @@ def run(args,cwd=None,env=None):
 with tempfile.TemporaryDirectory(prefix='mail-channel-test-')as d:
  d=pathlib.Path(d);bare=d/'origin.git';work=d/'work';run(['git','clone','--bare','--no-hardlinks',str(root),str(bare)]);git=['git','--git-dir',str(bare)]
  old=run(['git','rev-list','--max-parents=0',source],cwd=root).splitlines()[0];run(git+['update-ref','refs/heads/main',source]);run(git+['update-ref','refs/heads/channels/development',old]);run(['git','clone','--branch','main',str(bare),str(work)])
- revision=run(['node',str(root/'scripts/publish-development.mjs'),str(a.bundle)],cwd=work,env={**os.environ,'GITHUB_SHA':source});assert len(revision)==40
+ code="import {publishChannel} from "+json.dumps((root/'scripts/development-channel.mjs').as_uri())+";const revision=await publishChannel(process.argv[1]);if(revision)console.log(revision)"
+ revision=run(['node','--input-type=module','-e',code,str(a.bundle)],cwd=work);assert len(revision)==40
  assert run(git+['rev-parse','main'])==source and run(git+['rev-parse','channels/development'])==revision
+ repeated=run(['node','--input-type=module','-e',code,str(a.bundle)],cwd=work);assert repeated==revision and run(git+['rev-parse','channels/development'])==revision
  for ancestor in [source,old]:run(git+['merge-base','--is-ancestor',ancestor,revision])
  adapter=d/'adapter.py';adapter.write_text('''import json,pathlib,sys
 p=pathlib.Path(__file__).with_name('installed.json')

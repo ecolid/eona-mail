@@ -1,166 +1,18 @@
-name: Mail product checks and development release
+name: Mail GitHub platform verification
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 jobs:
-  check:
+  platform:
     runs-on: ubuntu-24.04
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4.2.2
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run check:browser
-      - run: npm run check:assets
-      - run: npm run check:ci
-      - run: python3 scripts/test-ci-coverage.py
-      - run: npm run test:ci
-      - run: python3 scripts/check-product-ci.py --python test-results/python.json
-      - uses: actions/upload-artifact@v5
-        with:
-          name: mail-contracts-${{ github.sha }}
-          path: |
-            test-results/unit.xml
-            test-results/contracts-source.json
-            test-results/python.json
-          if-no-files-found: error
-          retention-days: 14
-      - run: node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
-      - run: cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs
-      - run: python3 scripts/test-release.py --bundle "$RUNNER_TEMP/mail-bundle"
-      - name: Start the independent demo
-        run: |
-          set -euo pipefail
-          node product/cli.mjs init --mode demo --directory "$RUNNER_TEMP/mail-demo" --origin http://127.0.0.1:8799 --email demo@example.test
-          node product/cli.mjs serve --config "$RUNNER_TEMP/mail-demo/mail.json" > "$RUNNER_TEMP/mail-demo.log" 2>&1 &
-          MAIL_DEMO_PID=$!
-          trap 'kill "$MAIL_DEMO_PID"' EXIT
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:8799/health > "$RUNNER_TEMP/mail-health.json"; then break; fi
-            sleep 1
-          done
-          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/mail-health.json")); assert d["ok"] and d["mode"]=="demo"'
-          curl --fail --silent http://127.0.0.1:8799/ > "$RUNNER_TEMP/mail-page.html"
-  browser:
-    name: Browser product (${{ matrix.browser }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        browser: [chromium, webkit]
-    steps:
-      - uses: actions/checkout@v4.2.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - name: Bind browser checks to the immutable release
-        run: |
-          node scripts/release.mjs --output "$RUNNER_TEMP/mail-browser-bundle"
-          (cd "$RUNNER_TEMP/mail-browser-bundle" && node scripts/verify-release.mjs)
-          ln -s "$GITHUB_WORKSPACE/node_modules" "$RUNNER_TEMP/mail-browser-bundle/node_modules"
-      - name: Run product journeys, rendering and lifecycle gates
-        env:
-          MAIL_PRODUCT_ROOT: ${{ runner.temp }}/mail-browser-bundle
-        run: npm run test:browser -- --project=${{ matrix.browser }}
-      - name: Preserve browser evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v5
-        with:
-          name: mail-browser-${{ matrix.browser }}-${{ github.sha }}
-          path: |
-            playwright-report/
-            test-results/
-          if-no-files-found: error
-          retention-days: 14
-      - name: Summarize browser gates
-        if: ${{ !cancelled() }}
-        run: node scripts/summarize-browser.mjs
-  coverage:
-    name: Product regression coverage
-    needs: [check, browser]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4.2.2
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/download-artifact@v5
-        with:
-          pattern: mail-*-${{ github.sha }}
-          path: ci-evidence
-      - run: python3 scripts/check-product-ci.py --reports ci-evidence
-      - name: Summarize product coverage
-        run: |
-          python3 - <<'PYREPORT'
-          import json,os
-          v=json.load(open('test-results/coverage.json'))
-          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
-            f.write('## Mail regression coverage\nSource: '+v['sourceCommit']+'\n\n| Defect family | Result | Unit | Python | Browser / engine |\n| --- | --- | ---: | ---: | ---: |\n')
-            for r in v['families']:f.write('| {id} | {status} | {unit} | {python} | {browserPerEngine} |\n'.format(**r))
-            f.write('\nEvidence boundaries: '+', '.join(r['id'] for r in v['boundaries'])+'\n')
-          PYREPORT
-      - uses: actions/upload-artifact@v5
-        if: ${{ !cancelled() }}
-        with:
-          name: mail-coverage-${{ github.sha }}
-          path: test-results/coverage.json
-          if-no-files-found: error
-          retention-days: 14
-  development:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [check, browser, coverage]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    concurrency:
-      group: mail-development-release
-      cancel-in-progress: false
-    steps:
-      - uses: actions/checkout@v4.2.2
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Publish the checked development channel
+          fetch-depth: 1
+      - name: Verify GitHub event and repository identity
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          test "$(git rev-parse origin/main)" = "$GITHUB_SHA" || exit 0
-          node scripts/release.mjs --output "$RUNNER_TEMP/mail-bundle"
-          (cd "$RUNNER_TEMP/mail-bundle" && node scripts/verify-release.mjs)
-          MAIL_RELEASE=$(node scripts/publish-development.mjs "$RUNNER_TEMP/mail-bundle")
-          test -n "$MAIL_RELEASE" || exit 0
-          MAIL_TAG="dev-${GITHUB_SHA:0:12}"
-          git archive --format=tar.gz --output="$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz" "$MAIL_RELEASE"
-          if ! gh release view "$MAIL_TAG" > /dev/null 2>&1; then
-            gh release create "$MAIL_TAG" --target "$MAIL_RELEASE" --prerelease --title "$MAIL_TAG" --notes '通过独立检查的开发版本。来源与文件散列见 PRODUCT-RELEASE.json。' "$RUNNER_TEMP/eona-mail-$MAIL_TAG.tar.gz"
-          fi
+        run: python3 scripts/local-ci.py platform

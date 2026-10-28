@@ -286,3 +286,12 @@ controllers remain in use.
 `npm run check:ci` 核登记有效；`npm run test:ci` 运行普通产品测试并输出 JUnit；`python3 scripts/check-product-ci.py --python test-results/python.json` 运行协议与跟版回归。双浏览器沿 `test/browser` 单一实现执行。最后 coverage job 核本提交、所有实际用例、两个引擎及无跳过/重试；缺项、失败、空报告和来源不符均不发布。不能用有测试文件或某次旧成功代替本次执行证据。`scripts/test-ci-coverage.py` 以损坏、缺项和伪成功报告验证门禁拒绝。
 
 功能/数据/权限/恢复采用契约测试，页面接线/布局连续性/输入采用浏览器测试，渲染和资源预算采用隔离性能场景。不能因一个层通过就省略另一层已暴露的风险。边界随机器清单维护：主观协调、物理 iOS 与真实服务商/设备投递分别留证；CI 没有把它们自动记为通过。Account/公共组件继续保留唯一归属及消费集成门禁，不复制目录与图标库存。
+
+
+## 本地完整检查与发布（2026-10-28）
+
+产品默认在本地干净工作树运行 Node 24 / Python 3.12 的锁定依赖、全部底层与协议、Chromium/WebKit、覆盖核对、独立 demo、发布与跟版协议。单一清单为 `ci/local.json`，执行 `python3 scripts/local-ci.py run --output /new/evidence/path`；失败停止并保留日志，不以工作目录结果替代已提交源。原缺陷合同、双引擎、断言和性能预算保持。
+
+`verify` 重新核本次原始报告、清单、提交/源树、全部步骤和24小时有效期；缺项、改版本、失败、过期、报告篡改均拒绝。`promote --evidence ...` 只有同提交完整通过且当前 main 为祖先时才正常快进并回读。`publish --evidence ...` 只发布已验证的当前 main，发布器本身再次核证据和不可变包；渠道保留旧 release 与源 main 祖先，重入同一来源幂等，生产适配器仍独立保护数据。
+
+开发版与完整测试证据通过既有维护身份发布到私有仓库，服务器继续只读拉原 channels/development 自动跟版，不需要 Mac 常驻，也不新增密钥。GitHub 工作流只手动核它自己的事件/令牌读取环境；日常开发、全量测试和渠道发布均不占托管 runner。平台工作流未执行不能称为通过，线上安装、服务、私人适配和数据仍实际回读。前文历史云端 job 描述保留为旧阶段，当前分工以本节和机器清单为准。

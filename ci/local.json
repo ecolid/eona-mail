@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "product": "eona-mail",
+  "nodeMajor": 24,
+  "pythonMinor": [
+    3,
+    12
+  ],
+  "steps": [
+    {
+      "id": "dependencies",
+      "run": "npm ci --ignore-scripts --no-audit --no-fund"
+    },
+    {
+      "id": "browser-registration",
+      "run": "npm run check:browser"
+    },
+    {
+      "id": "assets",
+      "run": "npm run check:assets"
+    },
+    {
+      "id": "inventory",
+      "run": "npm run check:ci"
+    },
+    {
+      "id": "coverage-negatives",
+      "run": "python3 scripts/test-ci-coverage.py"
+    },
+    {
+      "id": "local-gate-negatives",
+      "run": "python3 scripts/test-local-ci.py"
+    },
+    {
+      "id": "unit",
+      "run": "npm run test:ci"
+    },
+    {
+      "id": "protocol",
+      "run": "python3 scripts/check-product-ci.py --python test-results/python.json"
+    },
+    {
+      "id": "release",
+      "run": "@release"
+    },
+    {
+      "id": "browser-install",
+      "run": "npx playwright install chromium webkit"
+    },
+    {
+      "id": "browser",
+      "run": "npm run test:browser"
+    },
+    {
+      "id": "coverage",
+      "run": "python3 scripts/check-product-ci.py --reports test-results"
+    },
+    {
+      "id": "channel-protocol",
+      "run": "@channel"
+    },
+    {
+      "id": "demo",
+      "run": "@demo"
+    }
+  ]
+}
