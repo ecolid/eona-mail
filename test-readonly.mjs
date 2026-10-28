@@ -169,13 +169,17 @@ test("凭据比较是定长的", () => {
 
 // -- 只读必须真的只读 -------------------------------------------------------
 
-test("机器读一封信,不许把它标成已读", () => {
-  // 源码门禁保证标为只读的请求不执行已读写入。
-  const guard = /if \(!row\.is_read && !readOnly\)\s*\{/;
-  assert.match(
-    source, guard,
-    "读详情又会标已读了 —— 机器每轮拉一遍就把他的未读清空,而且他不知道是谁标的",
-  );
+test("详情GET没有任何身份的已读写入副作用", async () => {
+  const {SQLiteD1}=await import('./sv/storage.mjs');
+  const {fetchWithIdentity}=await import('./src/index.js');
+  const db=new SQLiteD1(':memory:');db.db.exec(readFileSync(new URL('./schema.sql',import.meta.url),'utf8'));
+  db.db.prepare("INSERT INTO emails(id,alias,from_addr,is_read,received_at) VALUES(1,'owner@example.test','sender@example.test',0,'2026-10-25 00:00:00')").run();
+  try {
+    for(const destination of ['empty','image','style','iframe','document']){
+      const response=await fetchWithIdentity(new Request('https://mail.example.test/api/email/1',{headers:{'sec-fetch-dest':destination}}),{MAILDB:db},{authenticated:true,subject:'owner',email:'owner@example.test'});
+      assert.equal(response.status,200);assert.equal(db.db.prepare('SELECT is_read FROM emails WHERE id=1').get().is_read,0);
+    }
+  }finally{db.close();}
 });
 
 test("源码里的白名单和这份测试重建的那份没跑偏", () => {
@@ -207,4 +211,12 @@ test("转发健康端点只给数字和时间戳,不带 detail 原文", () => {
   const body = source.slice(start, source.indexOf("if (path === '/api/logs')", start));
   assert.ok(!/SELECT[^;]*detail/i.test(body), "转发健康端点把 detail 原文查出来了");
   assert.ok(/COUNT\(\*\)/.test(body), "它应该数计数,而不是列明细");
+});
+
+test('resource GET and HEAD cannot trigger manual notification or AI actions',async()=>{
+ const {fetchWithIdentity}=await import('./src/index.js');
+ for(const path of ['/api/test-push','/api/ai-backfill?limit=20'])for(const method of ['GET','HEAD']){
+  const response=await fetchWithIdentity(new Request('https://mail.example.test'+path,{method}),{MAILDB:{prepare(){throw Error('unexpected storage action')}}},{authenticated:true,subject:'owner',email:'owner@example.test'});
+  assert.equal(response.status,405);assert.equal(response.headers.get('allow'),'POST');
+ }
 });

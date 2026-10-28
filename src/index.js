@@ -1858,6 +1858,7 @@ async function handleFetch(request, env, trustedIdentity = null) {
 
   // ---- 手动打一条 ntfy 测试推送,直接看 ntfy 服务器的应答
   if (path === '/api/test-push') {
+    if(request.method!=='POST')return json({error:'method_not_allowed'},405,{allow:'POST'});
     if (!env.NTFY_TOPIC) return json({ ok: false, error: 'NTFY_TOPIC 未配置' }, 400);
     const server = env.NTFY_SERVER;
     try {
@@ -1880,6 +1881,7 @@ async function handleFetch(request, env, trustedIdentity = null) {
 
   // ---- 给还没打标的邮件补跑 AI(手动触发,一次最多 20 封)
   if (path === '/api/ai-backfill') {
+    if(request.method!=='POST')return json({error:'method_not_allowed'},405,{allow:'POST'});
     if (!env.AI) return json({ ok: false, error: 'AI 绑定未配置' }, 400);
     const limit = Math.min(+(url.searchParams.get('limit') || 10), 20);
     const done = await backfillTags(env, limit);
@@ -1919,10 +1921,8 @@ async function handleFetch(request, env, trustedIdentity = null) {
   if (mm) {
     const row = await env.MAILDB.prepare('SELECT * FROM emails WHERE id = ?').bind(mm[1]).first();
     if (!row) return json({ error: 'not found' }, 404);
-    // 机器读取邮件不得写入已读状态；交互阅读才触发该副作用。
-    if (!row.is_read && !readOnly) {
-      await env.MAILDB.prepare('UPDATE emails SET is_read = 1 WHERE id = ?').bind(mm[1]).run();
-    }
+    // Detail reads are side-effect free, including image/style/navigation requests.
+    // Interactive reading persists state through the explicit read POST route.
     return json({ email: projectMailRow(row) });
   }
 
@@ -2430,7 +2430,7 @@ ${createMailToggleQueue.toString()};
 ${mailResourceCacheBrowserScript()}
 ${mailDownloadBrowserScript()}
 const mailResources=createMailResourceCache(fetchMailResource,{changed:path=>window.dispatchEvent(new CustomEvent('mail:resource',{detail:{path}})),failed:(path,error)=>window.dispatchEvent(new CustomEvent('mail:resource-error',{detail:{path,error}}))});
-const api=async(p,opt={})=>{if(String(opt.method||'GET').toUpperCase()==='GET')return mailResources.read(p,opt);try{return (await fetchMailResource(p,opt)).value}finally{for(const prefix of mailMutationPrefixes(p))mailResources.invalidate(prefix,{discard:prefix.startsWith('/api/email/')});if(p.startsWith('/api/email/')&&String(state.cur)===p.split('/')[3]&&!['star','unstar'].includes(p.split('/').pop()))state.curMail=null}};
+const api=async(p,opt={})=>{if(String(opt.method||'GET').toUpperCase()==='GET')return mailResources.read(p,opt);try{return (await fetchMailResource(p,opt)).value}finally{for(const prefix of mailMutationPrefixes(p))mailResources.invalidate(prefix,{discard:prefix.startsWith('/api/email/')});if(p.startsWith('/api/email/')&&String(state.cur)===p.split('/')[3]&&!['star','unstar','read','unread'].includes(p.split('/').pop()))state.curMail=null}};
 api.peek=p=>mailResources.peek(p);
 async function fetchMailResource(p,opt={}){
   const isRead=String(opt.method||'GET').toUpperCase()==='GET',canRetry=isRead&&!opt.signal;
@@ -2697,7 +2697,8 @@ async function openMail(id,push=true){
   try {({email:e}=await api('/api/email/'+encodeURIComponent(id)));}
   catch(error){if(readerTicket!==mailReaderIntent||String(state.cur)!==String(id))return;$('#view').innerHTML='<div class="e-reader-state" role="alert">'+esc(error.message||'邮件暂时无法打开')+'<div class="e-reader-state-actions"><button class="e-button" data-reader-retry="'+esc(String(id))+'">重试</button><button class="e-button" onclick="returnToMailList()">返回邮件列表</button></div></div>';return;}
   if(readerTicket!==mailReaderIntent||String(state.cur)!==String(e.id))return;
-  const pendingStar=mailStars.pending(String(id));if(pendingStar!==undefined)e.is_starred=pendingStar;e.is_read=1;state.curMail=e;mailResources.update('/api/emails',value=>({...value,emails:value.emails?.map(m=>String(m.id)===String(id)?{...m,is_read:1}:m)}));
+  const pendingStar=mailStars.pending(String(id));if(pendingStar!==undefined)e.is_starred=pendingStar;state.curMail=e;
+  if(!e.is_read)act(id,'read',{quiet:true}).then(ok=>{if(ok===false&&String(state.cur)===String(id))mailToast('已打开邮件，但已读状态更新失败，请重试。',{tone:'error'})});
   const atts=JSON.parse(e.attachment_keys||'[]');
   $('#view').innerHTML=
   '<div class="mail-reader-content">'+mailReaderHeader(e,esc,I,localTime)+

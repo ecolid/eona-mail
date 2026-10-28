@@ -1813,7 +1813,9 @@
         "wiki:04-drills-audits/MAIL-PRIMARY-API-2026-10-26.md",
         "wiki:04-drills-audits/MAIL-AUTO-FOLLOW-2026-10-26.md"
       ],
-      "browser": [],
+      "browser": [
+        "untrusted mail image GET cannot mark another mail read, while explicit reading persists"
+      ],
       "unit": [
         {
           "file": "product/test-service-api.mjs",
@@ -1858,6 +1860,34 @@
         {
           "file": "product/test-migration.mjs",
           "name": "migration refuses a changed source, wrong owner and missing originals"
+        },
+        {
+          "file": "product/test-local-auth.mjs",
+          "name": "local password limit atomically reserves attempts across concurrent connections"
+        },
+        {
+          "file": "product/test-local-auth.mjs",
+          "name": "global password limit also reserves capacity for distinct concurrent clients"
+        },
+        {
+          "file": "product/test-local-auth.mjs",
+          "name": "successful authentication clears this client failures without clearing others"
+        },
+        {
+          "file": "product/test-local-auth.mjs",
+          "name": "legacy Worker login reserves attempts atomically and fails closed on unavailable storage"
+        },
+        {
+          "file": "test-readonly.mjs",
+          "name": "详情GET没有任何身份的已读写入副作用"
+        },
+        {
+          "file": "test-readonly.mjs",
+          "name": "resource GET and HEAD cannot trigger manual notification or AI actions"
+        },
+        {
+          "file": "test-mail-resource-cache.mjs",
+          "name": "detail state mutations preserve pending HTML and other numeric mail identities"
         }
       ],
       "python": [

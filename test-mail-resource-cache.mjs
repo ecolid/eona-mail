@@ -40,3 +40,14 @@ test('a mutated detail cannot expose its old folder or attachments while the aut
  f.requests[1].resolve({value:{email:{id:42,folder:'trash',attachment_keys:'[]'}}});
  assert.deepEqual((await updated).email,{id:42,folder:'trash',attachment_keys:'[]'});
 });
+
+test('detail state mutations preserve pending HTML and other numeric mail identities',async()=>{
+ const f=fixture();
+ const one=f.cache.read('/api/email/1'),other=f.cache.read('/api/email/12'),html=f.cache.read('/api/email/1/html?format=json');await turn();
+ f.requests[0].resolve({value:{email:{id:1,is_read:0}}});f.requests[1].resolve({value:{email:{id:12,is_read:0}}});await one;await other;
+ f.cache.update('/api/email/1',v=>({...v,email:{...v.email,is_read:1}}));
+ assert.equal(f.cache.peek('/api/email/12').email.is_read,0);
+ f.cache.invalidate('/api/email/1',{discard:true});
+ f.requests[2].resolve({value:{html:'<p>immutable original</p>'}});
+ assert.deepEqual(await html,{html:'<p>immutable original</p>'});assert.equal(f.cache.peek('/api/email/12').email.id,12);
+});
