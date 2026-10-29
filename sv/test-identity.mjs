@@ -17,6 +17,7 @@ try{
   let instant=Date.now();
   const {privateKey,publicKey}=await generateKeyPair('RS256');const jwk={...await exportJWK(publicKey),kid:'key1',alg:'RS256',use:'sig'};
   const claims={sub:'owner-id',email:config.owner_email,email_verified:true,eona_private_owner:true};
+  let tokenGate=null,tokenStarted=null;
   let nonce,wrongNonce=false,wrongAudience=false,tokenCalls=0,allowed=true;
   const fetcher=async(url,options)=>{
     const u=new URL(url);assert.equal(u.origin,config.local_url);assert.equal(new Headers(options.headers).get('host'),'account.example.invalid');
@@ -25,7 +26,7 @@ try{
     if(u.pathname.endsWith('/userinfo/'))return Response.json({...claims,eona_private_owner:allowed});
     if(u.pathname.endsWith('/revoke/'))return new Response(null,{status:200});
     if(u.pathname.endsWith('/token/')){
-      tokenCalls++;
+      tokenCalls++;tokenStarted?.();if(tokenGate)await tokenGate;
       const id=await new SignJWT({...claims,nonce:wrongNonce?'wrong':nonce}).setProtectedHeader({alg:'RS256',kid:'key1'}).setIssuer(issuer).setAudience(wrongAudience?'another-client':'mail-client').setIssuedAt().setExpirationTime('15m').sign(privateKey);
       return Response.json({access_token:'access-token',token_type:'Bearer',expires_in:900,refresh_token:'refresh-token',id_token:id});
     }
@@ -54,6 +55,17 @@ try{
   const valid=await start(),done=await callback(valid);assert.equal(done.status,303);assert.equal(done.headers.get('location'),'/api/email/1');
   const sid=done.headers.getSetCookie().find(x=>x.startsWith('__Host-eona-mail-session=')).split(';')[0];
   const request=new Request(origin+'/api/me',{headers:{cookie:sid}});assert.equal((await identity.session(request)).email,claims.email);
+  const pendingFlow=await start();let releaseToken,startedToken;
+  tokenGate=new Promise(resolve=>releaseToken=resolve);const arrived=new Promise(resolve=>startedToken=resolve);tokenStarted=startedToken;
+  const beforeOverlap=tokenCalls,firstCallback=callback(pendingFlow);await arrived;
+  const secondCallback=callback(pendingFlow);releaseToken();
+  const overlap=await Promise.all([firstCallback,secondCallback]);tokenGate=tokenStarted=null;
+  assert.ok(overlap.every(r=>r.status===303),'concurrent callback navigations receive the same completed login');
+  assert.deepEqual(overlap[0].headers.getSetCookie(),overlap[1].headers.getSetCookie());assert.equal(tokenCalls,beforeOverlap+1);
+  const resumedCallback=await callback(pendingFlow);assert.equal(resumedCallback.status,303);assert.deepEqual(resumedCallback.headers.getSetCookie(),overlap[0].headers.getSetCookie());assert.equal(tokenCalls,beforeOverlap+1,'a lost response never exchanges the code twice');
+  const wrongCode=await identity.route(new Request(origin+'/auth/callback?code=other&state='+pendingFlow.state,{headers:{cookie:pendingFlow.flow}}));assert.equal(wrongCode.status,400);
+  assert.equal((await identity.route(new Request(origin+'/auth/account'))).headers.get('location'),'https://account.example.invalid/if/user/');
+  assert.equal((await identity.route(new Request(origin+'/auth/account?view=settings'))).headers.get('location'),'https://account.example.invalid/if/user/#/settings');
   const exchanged=tokenCalls;
   const revisited=await identity.route(new Request(origin+'/auth/callback?code=already-used&state='+valid.state,{headers:{cookie:sid}}));
   assert.equal(revisited.status,303);assert.equal(revisited.headers.get('location'),'/');assert.equal(tokenCalls,exchanged,'refreshing a completed callback must not re-exchange its code');

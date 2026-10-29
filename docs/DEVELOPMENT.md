@@ -325,3 +325,16 @@ python3 scripts/batch-release.py verify --evidence /path/to/evidence/verificatio
 ## Adopting another historical source
 
 A first observation from an additional source establishes that copy's flag and presence baseline. It must preserve canonical flags and folder state already observed through another source. The first source for a genuinely new original still supplies its native flags; later remote edits continue through normal reconciliation. `product/test-state-sync.py` fixes both sides of this handoff.
+
+### Interrupted sign-in navigation
+
+The identity callback coalesces concurrent requests bound to the same browser
+flow, origin, state and authorization code. It retains the completed response for
+one minute, so a cancelled navigation can recover its original session cookie
+without exchanging the code again. Recovery rechecks the live session and shared
+logout generation. Expired flows, different codes, foreign origins and revoked
+sessions retain their existing rejection and bounded restart rules.
+
+Account navigation uses `/auth/account` and `/auth/account?view=settings`; the
+configured issuer owns the destination. Authentication status pages render their
+wordmark locally and make no cross-domain asset requests.

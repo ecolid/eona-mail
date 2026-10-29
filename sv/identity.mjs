@@ -31,7 +31,7 @@ export function accountClaims(claims,config,policy){
 // The provider connection is local, even when its public browser endpoint
 // uses CF. Origins and issuer URLs are explicit configuration, never headers.
 export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onRevoke=async()=>{},authorizeClaims=accountClaims}={}){
-  const db=new SQLiteD1(path),providers=new Map(),refreshes=new Map(),logoutKeys=new Map();
+  const db=new SQLiteD1(path),providers=new Map(),refreshes=new Map(),logoutKeys=new Map(),callbacks=new Map();
   await db.exec(`CREATE TABLE IF NOT EXISTS auth_states(key TEXT PRIMARY KEY,origin TEXT NOT NULL,body TEXT NOT NULL,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS auth_sessions(key TEXT PRIMARY KEY,origin TEXT NOT NULL,body TEXT NOT NULL,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS auth_logout_replays(key TEXT PRIMARY KEY,expires INTEGER NOT NULL);`);
@@ -138,6 +138,11 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
     }
     if(p.login_enabled===false)return failure(request,'account_login_not_enabled',503);
     if(u.pathname==='/auth/logged-out'&&request.method==='GET')return authPage('logged_out',{status:200});
+    if(u.pathname==='/auth/account'&&request.method==='GET'){
+      const target=new URL('/if/user/',p.issuer);
+      if(u.searchParams.get('view')==='settings')target.hash='/settings';
+      return redirect(target);
+    }
     if(u.pathname==='/auth/start'&&request.method==='GET'){
       return beginLogin(request,p,{returnTo:u.searchParams.get('return'),reauth:u.searchParams.get('reauth')==='1'});
     }
@@ -154,6 +159,24 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
         return failure(request,error,400,{action,headers:{'set-cookie':cookie(boundName,'',0)}});
       }
       const secret=readCookie(request,boundName);if(!/^[\w-]{43}$/.test(secret))return unavailableFlow('login_flow_missing');
+      // A navigation can be cancelled after the provider consumes its code.
+      // Coalesce the same browser-bound callback, and retain its verified
+      // result briefly so the next navigation receives the original cookies.
+      const callbackKey=sha(u.origin+'\n'+secret+'\n'+state+'\n'+(u.searchParams.get('code')||''));
+      for(const [key,value] of callbacks)if(value.done&&value.until<=now())callbacks.delete(key);
+      const prior=callbacks.get(callbackKey);
+      async function repeat(entry){
+        const response=await entry.promise;
+        const issued=response.headers.getSetCookie().find(value=>value.startsWith(sessionName(p)+'='));
+        if(issued&&!await session(new Request(u.origin+'/',{headers:{cookie:issued.split(';')[0]}})))return failure(request,'login_flow_revoked');
+        return response.clone();
+      }
+      if(prior)return repeat(prior);
+      if(callbacks.size>=128)return failure(request,'identity_unavailable',503);
+      let finish;
+      const entry={until:now()+60000,done:false,promise:new Promise(resolve=>finish=resolve)};
+      callbacks.set(callbackKey,entry);
+      async function exchange(){
       const hash=sha(secret),row=await db.prepare('SELECT body,expires FROM auth_states WHERE key=? AND origin=?').bind(hash,u.origin).first();
       if(!row)return unavailableFlow('login_flow_expired');
       const flow=JSON.parse(row.body);
@@ -179,6 +202,12 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
         await db.prepare('INSERT INTO auth_sessions VALUES(?,?,?,?)').bind(sha(sid),u.origin,JSON.stringify(body),now()+age*1000).run();
         const res=redirect(flow.returnTo);res.headers.append('set-cookie',cookie(sessionName(p),sid,age));res.headers.append('set-cookie',cookie(boundName,'',0));return res;
       }catch{return failure(request,'login_validation_failed');}
+      }
+      let result;
+      try{result=await exchange();}catch{result=failure(request,'identity_unavailable',503);}
+      entry.done=true;entry.until=now()+60000;finish(result);
+      if(result.status!==303||!result.headers.getSetCookie().some(value=>value.startsWith(sessionName(p)+'=')))callbacks.delete(callbackKey);
+      return result.clone();
     }
     if(['/auth/logout','/api/logout'].includes(u.pathname)&&request.method==='POST'){
       if(request.headers.get('origin')!==u.origin)return json({error:'forbidden_origin'},403);
