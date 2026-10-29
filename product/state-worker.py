@@ -41,6 +41,10 @@ class StateSync:
         if not discovered and any(c['folder'] not in allowed for c in copies):
             raise RuntimeError('state_folder_unconfigured')
         observations = {folder: remote.inventory(folder) for folder in {c['folder'] for c in copies} & allowed}
+        # A newly attached mailbox may hold an independently marked historical
+        # copy. Establish its baseline without rewriting an already observed
+        # canonical message. Later source edits still use the normal deltas.
+        baselined = {row[0] for row in self.db.execute('SELECT DISTINCT c.email_id FROM product_source_copies c JOIN product_copy_state s USING(account,folder,validity,uid)')}
         changes = {}
         with self.db:
             for copy in copies:
@@ -51,7 +55,7 @@ class StateSync:
                 item = items.get(int(copy['uid'])) if validity == str(copy['validity']) else None
                 migrated=self.db.execute('SELECT 1 FROM product_migrated_emails WHERE email_id=?',(copy['email_id'],)).fetchone()
                 first=copy['was_present'] is None
-                initial=first and not migrated
+                initial=first and not migrated and copy['email_id'] not in baselined
                 delta=changes.setdefault(copy['email_id'],[False,False,False])
                 delta[0] |= bool(item and (initial or (not first and bool(copy['seen'])!=bool(item['seen']))))
                 delta[1] |= bool(item and (initial or (not first and bool(copy['was_flagged'])!=bool(item['flagged']))))

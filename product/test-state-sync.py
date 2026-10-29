@@ -52,6 +52,29 @@ class Cases(unittest.TestCase):
         self.remote = Remote()
         self.sync.observe('one', self.remote, FOLDERS)
     def tearDown(self): self.db.close()
+    def test_adding_a_seen_historical_source_keeps_the_existing_canonical_state(self):
+        # A second mailbox can contain an old, independently marked backup of
+        # the same message. Its first observation establishes a baseline.
+        with self.db:
+            self.db.execute("INSERT INTO product_source_copies(account,folder,validity,uid,email_id,raw_key,raw_sha,source_at,kind,seen) VALUES('backup','INBOX','9','1',1,'original','sha','now','inbox',1)")
+        backup=Remote();backup.data['INBOX']['1']={'seen':True,'flagged':True}
+        self.sync.observe('backup',backup,FOLDERS)
+        current=self.db.execute('SELECT is_read,is_starred,folder FROM emails WHERE id=1').fetchone()
+        self.assertEqual(tuple(current),(0,0,'inbox'))
+        self.assertEqual(self.db.execute("SELECT seen FROM product_source_copies WHERE account='backup'").fetchone()[0],1)
+        # Once adopted, an actual source edit still participates in sync.
+        backup.data['INBOX']['1']['flagged']=False
+        self.sync.observe('backup',backup,FOLDERS)
+        backup.data['INBOX']['1']['flagged']=True
+        self.sync.observe('backup',backup,FOLDERS)
+        self.assertEqual(self.db.execute('SELECT is_starred FROM emails WHERE id=1').fetchone()[0],1)
+    def test_first_observation_of_a_new_original_keeps_native_flags(self):
+        with self.db:
+            self.db.execute("INSERT INTO emails VALUES(2,0,0,'inbox')")
+            self.db.execute("INSERT INTO product_source_copies(account,folder,validity,uid,email_id,raw_key,raw_sha,source_at,kind,seen) VALUES('new','INBOX','9','1',2,'new-original','new-sha','now','inbox',1)")
+        remote=Remote();remote.data['INBOX']['1']={'seen':True,'flagged':True}
+        self.sync.observe('new',remote,FOLDERS)
+        self.assertEqual(tuple(self.db.execute('SELECT is_read,is_starred FROM emails WHERE id=2').fetchone()),(1,1))
     def test_unchanged_inventory_does_not_rewrite_archive_or_source_state(self):
         before=self.db.total_changes
         self.sync.observe('one',self.remote,FOLDERS)
