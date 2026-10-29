@@ -321,3 +321,7 @@ python3 scripts/batch-release.py verify --evidence /path/to/evidence/verificatio
 包由同提交的散列清单生成，含 PRODUCT-RELEASE.json、源码、MIT 与第三方许可；另附发行说明、SHA256SUMS 和不含本机路径/原始日志的检查摘要。首次公开前还须审查全部 Git 引用、提交历史、Release 附件、Actions 日志与制品。prepare 不联网、不推标签、不改仓库可见性。
 
 实际发布沿明确授权执行：先完成仓库可见性审查，再用 publish 与 --confirm-publication ecolid/eona-mail 发布选定批次；它要求仓库已公开、仍是同一已验 main、报告未过期，拒绝覆盖同名版本或变化附件。发行失败可重试，已有标签和附件须一致。
+
+## Adopting another historical source
+
+A first observation from an additional source establishes that copy's flag and presence baseline. It must preserve canonical flags and folder state already observed through another source. The first source for a genuinely new original still supplies its native flags; later remote edits continue through normal reconciliation. `product/test-state-sync.py` fixes both sides of this handoff.
