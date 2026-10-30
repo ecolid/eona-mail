@@ -51,6 +51,20 @@ try{
     return {at,flow:res.headers.get('set-cookie').split(';')[0],state:u.searchParams.get('state'),nonce:u.searchParams.get('nonce')};
   }
   async function callback(f,state=f.state,service=identity){nonce=f.nonce;return service.route(new Request(f.at+'/auth/callback?code=code&state='+state,{headers:{cookie:f.flow}}));}
+  config.session_claims={persistent:'test_persistent',expires_at:'test_expires'};
+  assert.equal((await callback(await start())).status,400,'an enabled policy fails closed without signed persistence claims');
+  claims.test_persistent=false;claims.test_expires=Math.floor(instant/1000)+34560000;
+  const temporary=await callback(await start()),temporaryHeader=temporary.headers.getSetCookie().find(x=>x.startsWith('__Host-eona-mail-session='));
+  assert.equal(temporary.status,303);assert.ok(!/Max-Age|Expires=/i.test(temporaryHeader),'temporary login has a session-only cookie');
+  const temporaryRequest=new Request(origin+'/api/me',{headers:{cookie:temporaryHeader.split(';')[0]}});
+  const tempStart=instant;instant+=901000;
+  claims.test_persistent=true;
+  assert.ok(await identity.session(temporaryRequest),'a refreshed token does not replace the browser cookie or extend its database deadline');
+  instant=tempStart+43200001;assert.equal(await identity.session(temporaryRequest),null,'refresh cannot promote a temporary session beyond its 12-hour bound');instant=tempStart;
+  claims.test_persistent=true;claims.test_expires=Math.floor(instant/1000)+120;
+  const remembered=await callback(await start());assert.ok(remembered.headers.getSetCookie().find(x=>x.startsWith('__Host-eona-mail-session=')).endsWith('Max-Age='+Math.floor(claims.test_expires-instant/1000)),'remembered sessions cannot outlive the issuer session');
+  claims.test_expires=Math.floor(instant/1000)-1;assert.equal((await callback(await start())).status,400);
+  delete config.session_claims;delete claims.test_persistent;delete claims.test_expires;tokenCalls=0;
   const f=await start();const bad=await callback(f,'bad-state');assert.equal(bad.status,400);assert.equal(tokenCalls,0);
   const valid=await start(),done=await callback(valid);assert.equal(done.status,303);assert.equal(done.headers.get('location'),'/api/email/1');
   const sid=done.headers.getSetCookie().find(x=>x.startsWith('__Host-eona-mail-session=')).split(';')[0];

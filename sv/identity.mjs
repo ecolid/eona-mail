@@ -6,7 +6,7 @@ import {authPage,isAuthDocument} from './auth-page.mjs';
 
 const sha=x=>createHash('sha256').update(x).digest('hex');
 const opaque=()=>randomBytes(32).toString('base64url');
-const cookie=(name,value,age)=>`${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${age}`;
+const cookie=(name,value,age)=>`${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax${age===null?'':'; Max-Age='+age}`;
 const readCookie=(r,name)=>(r.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(name+'='))?.slice(name.length+1)||'';
 const sessionName=p=>'__Host-eona-'+p.app+'-session';
 const flowName=(p,state)=>'__Host-eona-'+p.app+'-flow'+(state?'-'+sha(state).slice(0,16):'');
@@ -28,9 +28,24 @@ export function accountClaims(claims,config,policy){
   return ['notification','ntfy'].includes(policy.app)&&!!claims&&typeof claims.sub==='string'&&claims.sub.length>0&&claims.sub.length<=256&&!/[\x00-\x1f]/.test(claims.sub)&&claims.email_verified===true&&typeof claims.email==='string'&&claims.email.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(claims.email);
 }
 
+// Opt-in contract with an issuer: only verified ID-token claims determine
+// persistence. Query parameters and userinfo cannot upgrade a browser session.
+function issuedSession(claims,config,now){
+  let age=Math.min(config.session_seconds||34560000,34560000),persistent=true;
+  if(config.session_claims){
+    const p=config.session_claims,choice=claims[p.persistent],expires=claims[p.expires_at];
+    if(typeof choice!=='boolean'||!Number.isFinite(expires))throw Error('session_policy_missing');
+    persistent=choice;
+    age=Math.floor(Math.min(age,expires-now/1000,persistent?age:43200));
+    if(age<1)throw Error('session_policy_expired');
+  }
+  return {age,persistent};
+}
+
 // The provider connection is local, even when its public browser endpoint
 // uses CF. Origins and issuer URLs are explicit configuration, never headers.
 export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onRevoke=async()=>{},authorizeClaims=accountClaims}={}){
+  if(config.session_claims&&['persistent','expires_at'].some(k=>typeof config.session_claims[k]!=='string'||!/^[a-zA-Z][\w.:-]{0,99}$/.test(config.session_claims[k])))throw Error('identity_session_policy_invalid');
   const db=new SQLiteD1(path),providers=new Map(),refreshes=new Map(),logoutKeys=new Map(),callbacks=new Map();
   await db.exec(`CREATE TABLE IF NOT EXISTS auth_states(key TEXT PRIMARY KEY,origin TEXT NOT NULL,body TEXT NOT NULL,expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS auth_sessions(key TEXT PRIMARY KEY,origin TEXT NOT NULL,body TEXT NOT NULL,expires INTEGER NOT NULL);
@@ -198,9 +213,10 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
         const claims=tokens.claims();if(!authorizeClaims(claims,config,p))return failure(request,'application_forbidden',403);
         if(flowGeneration(flow,claims.sub)!==await generation(claims.sub))return failure(request,'login_flow_revoked');
         if(flow.reauth&&(!Number.isFinite(claims.auth_time)||claims.auth_time*1000<flow.startedAt-60000||claims.auth_time*1000>now()+30000))return failure(request,'recent_authentication_required',403,{action:'/auth/start?reauth=1&return='+encodeURIComponent(safeReturn(flow.returnTo))});
-        const sid=opaque(),age=Math.min(config.session_seconds||34560000,34560000),body={claims,access_token:tokens.access_token,refresh_token:tokens.refresh_token,id_token:tokens.id_token,access_until:now()+Number(tokens.expires_in||60)*1000,revocation_generation:flowGeneration(flow,claims.sub)};
+        const {age,persistent}=issuedSession(claims,config,now());
+        const sid=opaque(),body={claims,access_token:tokens.access_token,refresh_token:tokens.refresh_token,id_token:tokens.id_token,access_until:now()+Number(tokens.expires_in||60)*1000,revocation_generation:flowGeneration(flow,claims.sub)};
         await db.prepare('INSERT INTO auth_sessions VALUES(?,?,?,?)').bind(sha(sid),u.origin,JSON.stringify(body),now()+age*1000).run();
-        const res=redirect(flow.returnTo);res.headers.append('set-cookie',cookie(sessionName(p),sid,age));res.headers.append('set-cookie',cookie(boundName,'',0));return res;
+        const res=redirect(flow.returnTo);res.headers.append('set-cookie',cookie(sessionName(p),sid,persistent?age:null));res.headers.append('set-cookie',cookie(boundName,'',0));return res;
       }catch{return failure(request,'login_validation_failed');}
       }
       let result;
