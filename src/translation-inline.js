@@ -42,8 +42,10 @@ export async function translateInline(env,segments,{accountUsage=async()=>{},gat
  if(!candidates.includes('@cf/meta/llama-3.3-70b-instruct-fp8-fast'))candidates.push('@cf/meta/llama-3.3-70b-instruct-fp8-fast');
  let repairs=0;
  async function request(items,context=''){
-  const size=items.reduce((n,x)=>n+x.text.length,0)+context.length;
-  const maxTokens=Math.min(7000,Math.ceil(size*1.3)+Math.max(96,items.length*16));
+  const outputSize=items.reduce((n,x)=>n+x.text.length,0);
+  const size=outputSize+context.length;
+  // Read-only context contributes input tokens, never translated output.
+  const maxTokens=Math.min(7000,Math.ceil(outputSize*1.3)+Math.max(96,items.length*16));
   const reserve=Math.ceil(((size*1.2+900)*26668+maxTokens*204805)/1e6);
   let result,last;
   for(const name of candidates){
