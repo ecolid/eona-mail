@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {translateInline,protectTranslationText,validateInlineSegments,validateTranslatedText} from './src/translation-inline.js';
-import {fetchWithIdentity,testHooks} from './src/index.js';
+import {fetchWithIdentity,testHooks,cachedInlineTranslation} from './src/index.js';
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
@@ -72,4 +72,35 @@ test('provider JSON tails cannot enter cached prose',()=>{assert.throws(()=>vali
 test('session-cached HTML transport preserves the sandbox document and an equally restrictive content policy',async()=>{
  const html='<p>Original mail</p><script>unsafe()</script>',env={MAILDB:{prepare:()=>({bind:()=>({first:async()=>({html_key:'fixture'})})})},ATTACH:{get:async()=>({body:html})}};
  const r=await fetchWithIdentity(new Request('https://mail.eona.top/api/email/1/html?format=json'),env,{authenticated:true});const content=await r.json();assert.match(content.html,/<p>Original mail<\/p>/);assert.doesNotMatch(content.html,/<script\b/);assert.match(html,/<script\b/);for(const directive of ["script-src 'none'","connect-src 'none'","form-action 'none'","base-uri 'none'"])assert(content.policy.includes(directive));assert.equal(r.headers.get('cache-control'),'no-store');
+});
+
+
+test('read-only context is reserved as input only and cannot inflate translated output',async()=>{
+ let maxTokens=0,reserved=0;
+ const result=await translateInline({AI:{run:async(model,input)=>{maxTokens=input.max_tokens;assert.equal(JSON.parse(input.messages.at(-1).content).read_only_context.length,4000);return mockAI.run(model,input);}}},['The service is available.'],{neighborContext:'x'.repeat(4000),gate:async(value)=>{reserved=value;return value<500;}});
+ assert.ok(maxTokens<200);assert.ok(reserved<500);assert.equal(result.translated.length,1);
+});
+
+test('background pauses before the manual allowance while explicit translation remains usable',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'translation-manual-reserve-')),db=new SQLiteD1(join(root,'mail.db'));
+ try{
+  await db.exec('CREATE TABLE backup_state(k TEXT PRIMARY KEY,v TEXT);CREATE TABLE ai_usage(day TEXT PRIMARY KEY,calls INTEGER,in_tokens INTEGER,out_tokens INTEGER,tr_in_tokens INTEGER,tr_out_tokens INTEGER);');
+  await db.prepare('INSERT INTO backup_state VALUES(?,?)').bind('tag_model_extra:'+new Date().toISOString().slice(0,10),'6000').run();
+  let calls=0;const env={MAILDB:db,AI_DAILY_NEURONS:'8000',AI:{run:async(...args)=>{calls++;return mockAI.run(...args);}}};
+  await assert.rejects(cachedInlineTranslation(env,1,['The service is available.'],{automatic:true}),error=>error.message==='translation_budget'&&error.budget.limit===5900);
+  assert.equal(calls,0);const translated=await cachedInlineTranslation(env,1,['The service is available.']);assert.equal(translated.translated.length,1);assert.equal(calls,1);
+  await db.prepare('UPDATE backup_state SET v=? WHERE k=?').bind('8000','tag_model_extra:'+new Date().toISOString().slice(0,10)).run();
+  assert.equal((await cachedInlineTranslation(env,1,['The service is available.'])).cached,true,'existing translations work after budget closes');assert.equal(calls,1);
+ }finally{db.close();await rm(root,{recursive:true,force:true});}
+});
+
+test('budget rejection distinguishes remaining allowance from exhaustion and retains source',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'translation-budget-response-')),db=new SQLiteD1(join(root,'mail.db'));
+ try{
+  await db.exec("CREATE TABLE emails(id INTEGER PRIMARY KEY,subject TEXT,text_body TEXT);INSERT INTO emails VALUES(1,'Hello','Original body');CREATE TABLE backup_state(k TEXT PRIMARY KEY,v TEXT);CREATE TABLE ai_usage(day TEXT PRIMARY KEY,calls INTEGER,in_tokens INTEGER,out_tokens INTEGER,tr_in_tokens INTEGER,tr_out_tokens INTEGER);");
+  const day=new Date().toISOString().slice(0,10);await db.prepare('INSERT INTO backup_state VALUES(?,?)').bind('tag_model_extra:'+day,'7999').run();const env={MAILDB:db,AI:mockAI,AI_DAILY_NEURONS:'8000',PUBLIC_HOST:'mail.example.test'};
+  const post=()=>fetchWithIdentity(new Request('https://mail.example.test/api/email/1/translate',{method:'POST',headers:{origin:'https://mail.example.test','content-type':'application/json'},body:JSON.stringify({format:'inline-v1',segments:['Hello world']})}),env,{authenticated:true});
+  let r=await post();assert.equal(r.status,429);let body=await r.json();assert.equal(body.budget.remaining,1);assert.match(body.error,/余量不足/);assert.equal(body.budget.reset_at,new Date(Date.parse(day+'T00:00:00Z')+86400000).toISOString());
+  await db.prepare('UPDATE backup_state SET v=?').bind('8000').run();r=await post();body=await r.json();assert.equal(body.budget.remaining,0);assert.match(body.error,/已用完/);assert.equal((await db.prepare('SELECT text_body FROM emails WHERE id=1').first()).text_body,'Original body');
+ }finally{db.close();await rm(root,{recursive:true,force:true});}
 });

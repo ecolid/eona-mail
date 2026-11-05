@@ -379,6 +379,8 @@ const AI_DAILY_NEURONS = (env) => Number(env.AI_DAILY_NEURONS || 8000);
 const AI_TRANSLATE_SHARE = (env) => Number(env.AI_TRANSLATE_SHARE || 2500);
 // 为新信分类保留独立额度；翻译和历史重打不得消耗该余量。
 const AI_TAG_RESERVE = (env) => Number(env.AI_TAG_RESERVE || 600);
+// Background work leaves a separate allowance for explicit reading actions.
+const AI_TRANSLATE_MANUAL_RESERVE = (env) => Math.max(0,Number(env.AI_TRANSLATE_MANUAL_RESERVE ?? 1500));
 
 async function aiGate(env, ceiling) {
   const limit = Number(ceiling || AI_DAILY_NEURONS(env));
@@ -393,9 +395,9 @@ async function aiTranslateGate(env, share) {
   if (u.neurons >= total) return { open: false, used: u.neurons, limit: total, why: '今日 AI 总额度到顶' };
   if (share != null && u.trNeurons >= share) return { open: false, used: u.trNeurons, limit: share, why: '今日翻译份额用完,余下的留给打标' };
   // 份额放开(打标积压清空)之后仍然不许烧到顶:给当天后面才到的信留 AI_TAG_RESERVE。
-  const 放开上限 = total - AI_TAG_RESERVE(env);
+  const 放开上限 = Math.max(0,total - AI_TAG_RESERVE(env) - AI_TRANSLATE_MANUAL_RESERVE(env));
   if (share == null && u.neurons >= 放开上限)
-    return { open: false, used: u.neurons, limit: 放开上限, why: '翻译停手,余量留给今天还会到的新信打标' };
+    return { open: false, used: u.neurons, limit: 放开上限, why: '自动翻译暂停，余量留给手动翻译和新信打标' };
   return { open: true, used: share == null ? u.neurons : u.trNeurons, limit: share == null ? 放开上限 : share };
 }
 
@@ -407,7 +409,10 @@ export async function cachedInlineTranslation(env,emailId,segments,{automatic=fa
   return cachedSegments(env,emailId,segments,{refresh,neighborContext,
    gate:async(reserve)=>{
     const g=automatic?await aiTranslateGate(env,null):await aiGate(env);
-    if(!g.open||g.used+reserve>=g.limit)return false;
+    if(!g.open||g.used+reserve>=g.limit){
+     const resetAt=new Date(Date.parse(utcDay()+'T00:00:00Z')+86400000).toISOString();
+     throw Object.assign(Error('translation_budget'),{budget:{used:g.used,limit:g.limit,required:reserve,remaining:Math.max(0,g.limit-g.used),reset_at:resetAt}});
+    }
     heldDay=utcDay();held=reserve;
     await env.MAILDB.prepare(`INSERT INTO backup_state(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET
      v=CAST(CAST(backup_state.v AS REAL)+CAST(excluded.v AS REAL) AS TEXT)`).bind('translation_reserved:'+heldDay,String(reserve)).run();
@@ -1952,7 +1957,7 @@ async function handleFetch(request, env, trustedIdentity = null) {
         const result=await cachedInlineTranslation(env,row.id,segments);
         await env.MAILDB.prepare('INSERT INTO translations_inline_parts(email_id,source_hash,model,segments,translated) VALUES(?,?,?,?,?) ON CONFLICT(email_id,source_hash) DO UPDATE SET translated=excluded.translated,model=excluded.model,created_at=datetime(\'now\')').bind(row.id,hash,result.model,JSON.stringify(segments),JSON.stringify(result.translated)).run();
         return json({ok:true,cached:result.cached,version:1,translated:result.translated});
-      }catch(error){await logEvent(env,'translate_inline_error','#'+row.id+' '+(error.name==='TimeoutError'?'translation_timeout':/^translation_[a-z_]+$/.test(error.message)?error.message:'translation_unavailable'));return json({ok:false,error:error.message==='translation_budget'?'今日翻译额度已用完，请稍后再试。':error.name==='TimeoutError'?'翻译等待超时，请重试。原邮件已保留。':'翻译暂时不可用，原邮件已保留。请重试。'},error.message==='translation_budget'?429:502);}
+      }catch(error){await logEvent(env,'translate_inline_error','#'+row.id+' '+(error.name==='TimeoutError'?'translation_timeout':/^translation_[a-z_]+$/.test(error.message)?error.message:'translation_unavailable'));return json({ok:false,...(error.budget?{budget:error.budget}:{}),error:error.message==='translation_budget'?(error.budget?.remaining>0?'今日翻译余量不足以处理当前内容，已完成的译文会保留。':'今日翻译额度已用完，额度恢复后可继续。'):error.name==='TimeoutError'?'翻译等待超时，请重试。原邮件已保留。':'翻译暂时不可用，原邮件已保留。请重试。'},error.message==='translation_budget'?429:502);}
     }
     const force = url.searchParams.get('force') === '1';
     await ensureTranslationsTable(env);
