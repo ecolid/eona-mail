@@ -25,10 +25,15 @@ test('UI preferences persist per trusted owner and reject machine credentials an
  const value=(await (await call(a)).json()).preferences;assert.equal(value.limit,8);assert.equal(value.visibility['pin@example.com'],'show');
  const html=await (await fetchWithIdentity(new Request('https://mail.eona.top/'),env,a)).text();
  assert.match(html,/<body data-account-auth="true" data-mail-density="comfortable"/);
+ assert.match(html,/window.MailInitialIdentity=\{"authed":true,"email":"a@example.com","read_only":false\}/);
  const otherHTML=await (await fetchWithIdentity(new Request('https://mail.eona.top/'),env,b)).text();
  assert.match(otherHTML,/<body data-account-auth="true" data-mail-density="compact"/);
  const anonymousHTML=await (await fetchWithIdentity(new Request('https://mail.eona.top/'),env,null)).text();
  assert.doesNotMatch(anonymousHTML,/<body[^>]*data-mail-density/);
+ assert.doesNotMatch(anonymousHTML,/window.MailInitialIdentity=/);
+ const response=await fetchWithIdentity(new Request('https://mail.eona.top/'),env,{...a,email:'</script><script>unsafe</script>'});
+ assert.equal(response.headers.get('cache-control'),'no-store');
+ const encoded=await response.text();assert.doesNotMatch(encoded,/<script>unsafe/);assert.ok(encoded.includes('\\u003c/script>'));
  assert.equal((await (await call(b)).json()).preferences.limit,6);
  assert.equal((await call(a,'PUT','{bad')).status,400);
  assert.equal((await call(a,'PUT',JSON.stringify({extra:'x'.repeat(17000)}))).status,413);

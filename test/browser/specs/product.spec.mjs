@@ -112,3 +112,28 @@ test('draft-save-reopen-and-single-isolated-send',async({page},info)=>{
   expect((await drafts()).some(d=>d.subject===subject)).toBe(false);
   await evidence(info,{method:'browser-form-and-isolated-transport',saveFailurePreservesInput:true,retryPersisted:true,reopened:true,sends:1});
 });
+
+
+test('notification-deep-link-prioritizes-reader',async({page},info)=>{
+ let release;const gate=new Promise(resolve=>release=resolve);const requested=[];
+ await page.request.post('http://127.0.0.1:8793/api/email/1259/unread');
+ page.on('request',r=>requested.push(new URL(r.url()).pathname));
+ await page.route('**/api/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(['/api/emails','/api/routes','/api/aliases','/api/mail-workspace'].includes(path))await gate;
+  await route.continue();
+ });
+ try{
+  await page.setViewportSize({width:390,height:800});
+  await page.goto('http://127.0.0.1:8793/?mail=1259');
+  await expect(page.locator('#view .mail-reader-content')).toBeVisible();
+  expect(requested).toContain('/api/email/1259');
+  expect(requested).not.toContain('/api/me');
+  expect(await page.locator('#list .mail-open').count()).toBe(0);
+  release();await expect.poll(()=>page.locator('#list .mail-open').count()).toBeGreaterThan(0);
+  await expect(page.locator('#view .mail-reader-content')).toBeVisible();
+  await page.locator('#back').click();
+  await expect(page.locator('body')).not.toHaveClass(/viewing/);
+  await evidence(info,{method:'blocked-list-and-sidebar',readerBeforeAuxiliary:true,duplicateIdentityReads:0});
+ }finally{release()}
+});

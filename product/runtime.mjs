@@ -10,7 +10,7 @@ import {openLocalAuth} from './local-auth.mjs';
 import {productSender,productAI,productNotifier} from './connectors.mjs';
 import {seedDemo} from './demo.mjs';
 import {openDemoSessions} from './demo-sessions.mjs';
-import {fetchWithIdentity,classifyEmail,saveMailLabels} from '../src/index.js';
+import {fetchWithIdentity,classifyEmail,saveMailLabels,mailPageAssetResponse} from '../src/index.js';
 import {openIdentity} from '../sv/identity.mjs';
 import {openMailIcons} from '../sv/home-icons.mjs';
 import {writeResponse} from '../sv/http-response.mjs';
@@ -87,6 +87,7 @@ export async function openProduct(input,options={}){
     if(url.origin!==config.origin&&!(config.mode==='personal'&&machinePath(path)&&url.origin===config.internal_url))return json({error:'wrong_origin'},403);
     if(path==='/health')return json({ok:true,product:'mail',schema:1,mode:config.mode});
     const icon=icons(request);if(icon)return icon;
+    const pageAsset=await mailPageAssetResponse(request);if(pageAsset)return pageAsset;
     if(assets.has(path))return new Response(assets.get(path),{headers:{'content-type':'text/css','cache-control':'public,max-age=3600'}});
     if(!['GET','HEAD'].includes(request.method)&&((request.headers.has('origin')&&request.headers.get('origin')!==config.origin)||request.headers.get('sec-fetch-site')==='cross-site'))return json({error:'forbidden'},403);
     if(path==='/v1'||path.startsWith('/v1/'))return serviceAPI(request,personal,config,{secrets});
