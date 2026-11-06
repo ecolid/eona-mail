@@ -2522,7 +2522,7 @@ async function enterInbox(){
   if(!id){await refresh();return;}
   // Start the backing list before selecting the reader. Its selection proof
   // must not dismiss a deep link to mail outside the inbox or first page.
-  loadList().catch(()=>{});
+  loadList({preserveReader:true}).catch(()=>{});
   refreshMailSearchOptions();
   try{await openMail(id)}catch{
     // Keep the URL through login; never put a credential or mail body in it.
@@ -2654,6 +2654,9 @@ async function loadList(options={}){
   try{({emails,total,selected_matches,selected_email}=await api(listUrl(0),{fresh:!!options.fresh}));}
   catch(error){
     if(ticket!==mailListIntent)return;
+    // Opening an unread notification can settle its read write while this
+    // list is in flight. Re-read the invalidated version once in this intent.
+    if(error.name==='MailReadSuperseded'&&!options.superseded)return loadList({...options,superseded:true});
     $('#list').querySelector('.mail-search-pending')?.remove();
     page.done=true;
     $('#list').setAttribute('aria-busy','false');
@@ -2662,7 +2665,7 @@ async function loadList(options={}){
     showMailListFailure(error.name==='TimeoutError'?'邮件读取超时，请重试。':error.message||'邮件列表暂时无法加载');return;
   }
   if(ticket!==mailListIntent)return;
-  if(selectedId&&String(selectedId)===String(state.cur)&&typeof selected_matches==='boolean'){
+  if(!options.preserveReader&&selectedId&&String(selectedId)===String(state.cur)&&typeof selected_matches==='boolean'){
     if(selected_matches)setMailSelectionPending(false);else clearMailReader();
   }
   $('#list').setAttribute('aria-busy','false');

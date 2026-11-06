@@ -1966,7 +1966,8 @@
           "file": "test-mail-notice-link.mjs",
           "name": "unverified bootstrap still requires the identity API"
         }
-      ]
+      ],
+      "python": []
     }
   ],
   "boundaries": [

@@ -116,6 +116,7 @@ test('draft-save-reopen-and-single-isolated-send',async({page},info)=>{
 
 test('notification-deep-link-prioritizes-reader',async({page},info)=>{
  let release;const gate=new Promise(resolve=>release=resolve);const requested=[];
+ await page.request.post('http://127.0.0.1:8793/api/email/1259/unread');
  page.on('request',r=>requested.push(new URL(r.url()).pathname));
  await page.route('**/api/**',async route=>{
   const path=new URL(route.request().url()).pathname;
