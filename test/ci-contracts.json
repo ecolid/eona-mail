@@ -1942,6 +1942,31 @@
       ],
       "unit": [],
       "python": []
+    },
+    {
+      "id": "notification-startup",
+      "trigger": "reusable",
+      "contract": "通知目标正文优先于侧栏和收件箱；已验证文档不重复查询身份，未验证页面保留鉴权",
+      "evidence": [
+        "docs/DEVELOPMENT.md"
+      ],
+      "browser": [
+        "notification-deep-link-prioritizes-reader"
+      ],
+      "unit": [
+        {
+          "file": "test-mail-notice-link.mjs",
+          "name": "notification reader does not wait for a slow backing list or sidebar"
+        },
+        {
+          "file": "test-mail-notice-link.mjs",
+          "name": "verified document bootstrap skips the duplicate identity request"
+        },
+        {
+          "file": "test-mail-notice-link.mjs",
+          "name": "unverified bootstrap still requires the identity API"
+        }
+      ]
     }
   ],
   "boundaries": [

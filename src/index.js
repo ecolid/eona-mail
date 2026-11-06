@@ -1378,6 +1378,30 @@ async function handleEmail(message, env, ctx) {
   }
 }
 
+// Cache only public product code. Identity, preferences and mail data stay in
+// the no-store document/API; script URLs identify their exact immutable bytes.
+let compiledMailPage;
+async function mailPageResources(){
+  return compiledMailPage ||= (async()=>{
+    const assets=new Map();let html=PAGE.replace('__CATS__',JSON.stringify(AI_CATEGORIES));
+    const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+    for(const match of scripts){
+      const code=match[1],hash=await sha256Hex(code),path='/assets/mail-page/'+hash+'.js';
+      assets.set(path,{code,hash});html=html.replace(match[0],'<script defer src="'+path+'"></script>');
+    }
+    return {html,assets};
+  })();
+}
+export async function mailPageAssetResponse(request){
+  const path=new URL(request.url).pathname;
+  if(!/^\/assets\/mail-page\/[a-f0-9]{64}\.js$/.test(path))return null;
+  const asset=(await mailPageResources()).assets.get(path);if(!asset)return null;
+  const headers={'content-type':'application/javascript; charset=utf-8','cache-control':'public,max-age=31536000,immutable','x-content-type-options':'nosniff',etag:'"'+asset.hash+'"'};
+  if(!['GET','HEAD'].includes(request.method))return new Response(null,{status:405,headers:{...headers,allow:'GET, HEAD'}});
+  if(request.headers.get('if-none-match')===headers.etag)return new Response(null,{status:304,headers});
+  return new Response(request.method==='HEAD'?null:asset.code,{headers});
+}
+
 // ---------------------------------------------------------------- fetch handler (API + 网页收件箱)
 async function handleFetch(request, env, trustedIdentity = null) {
   const url = new URL(request.url);
@@ -1397,6 +1421,8 @@ async function handleFetch(request, env, trustedIdentity = null) {
       return json({ ok: false, error: `请从 https://${publicHost}/ 登录` }, 403);
     }
   }
+
+  const pageAsset=await mailPageAssetResponse(request);if(pageAsset)return pageAsset;
 
   // Repair credentials are narrow: they do not authorize inbox reads/import/delete.
   if (path === '/api/icloud-repair/sync') return env.MAIL_INTEGRATIONS?.repairSync
@@ -1446,8 +1472,12 @@ async function handleFetch(request, env, trustedIdentity = null) {
       body='<body '+(product?.authMode==='local'?'':'data-account-auth="true" ')+'data-mail-density="'+normalizeMailLayout(value).density+'" class="e-ui">';
     }
     const settings = product ? '<script>window.MailProduct='+JSON.stringify(product).replaceAll('<','\\u003c')+'</script>' : '';
-    const html = PAGE.replace('__CATS__', JSON.stringify(AI_CATEGORIES)).replace('<body class="e-ui">',body)
-      .replace('<script>'+EONA_FOUNDATION_JS,settings+'<script>'+EONA_FOUNDATION_JS);
+    // This identity was verified for this no-store document. APIs still verify
+    // every request; the browser need not repeat /api/me before opening a link.
+    const bootstrap = trustedIdentity?.authenticated === true
+      ? '<script>window.MailInitialIdentity='+JSON.stringify({authed:true,email:trustedIdentity.email,read_only:false}).replaceAll('<','\\u003c')+'</script>' : '';
+    const html = (await mailPageResources()).html.replace('<body class="e-ui">',body)
+      .replace('</head>',settings+bootstrap+'</head>');
     return new Response(html, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control':'no-store' } });
   }
 
@@ -2481,15 +2511,20 @@ async function doLogin(){
 $('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
 async function enterInbox(){
-  // A trusted page already has its account's density before the first paint.
-  // Password-only entry must learn the preference before painting list rows.
-  const layout=loadMailLayout().then(()=>loadSide()).catch(()=>{});
+  // Account pages already carry density; auxiliary navigation is not a
+  // prerequisite for the notification's exact message.
+  const layout=loadMailLayout().catch(()=>{});
+  layout.then(()=>loadSide()).catch(()=>{});
   if(!document.body.dataset.mailDensity)await layout;
-  await refresh();
   if(window.MailNavigation?.hasInitial)return;
   const ids=new URLSearchParams(location.search).getAll('mail');
-  if(ids.length!==1 || !/^[1-9][0-9]{0,14}$/.test(ids[0]) || !Number.isSafeInteger(Number(ids[0])))return;
-  try{await openMail(ids[0])}catch{
+  const id=ids.length===1 && /^[1-9][0-9]{0,14}$/.test(ids[0]) && Number.isSafeInteger(Number(ids[0]))?ids[0]:null;
+  if(!id){await refresh();return;}
+  // Start the backing list before selecting the reader. Its selection proof
+  // must not dismiss a deep link to mail outside the inbox or first page.
+  loadList().catch(()=>{});
+  refreshMailSearchOptions();
+  try{await openMail(id)}catch{
     // Keep the URL through login; never put a credential or mail body in it.
     if($('#app').style.display!=='none'){
       document.body.classList.remove('viewing');
@@ -2840,7 +2875,8 @@ ${mailComposeBrowserScript()}
 ${mailMobileBrowserScript()}
 
 async function accountLogout(){const r=await api('/api/logout',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});location.href=r.logout_url||'/'}
-api('/api/me').then(async r=>{show(r.authed);mailTools.setIdentity(r.email);const owner=mailClientOwner(r.email);MailWorkspace.setOwner(owner);setMailboxUsageOwner(owner);MailExperience.setOwner(owner);if(r.authed){window.MailNavigation||=installMailNavigation(owner);await enterInbox();await window.MailNavigation.restoreInitial()}}).catch(()=>{if(document.body.dataset.accountAuth){const slot=$('#session-status');slot.replaceChildren(document.createTextNode('暂时无法连接邮箱。'),Object.assign(document.createElement('button'),{textContent:'重试',onclick:()=>location.reload()}));}else show(false)});
+const initialMailIdentity=window.MailInitialIdentity;delete window.MailInitialIdentity;
+(initialMailIdentity?.authed===true?Promise.resolve(initialMailIdentity):api('/api/me')).then(async r=>{show(r.authed);mailTools.setIdentity(r.email);const owner=mailClientOwner(r.email);MailWorkspace.setOwner(owner);setMailboxUsageOwner(owner);MailExperience.setOwner(owner);if(r.authed){window.MailNavigation||=installMailNavigation(owner);await enterInbox();await window.MailNavigation.restoreInitial()}}).catch(()=>{if(document.body.dataset.accountAuth){const slot=$('#session-status');slot.replaceChildren(document.createTextNode('暂时无法连接邮箱。'),Object.assign(document.createElement('button'),{textContent:'重试',onclick:()=>location.reload()}));}else show(false)});
 </script>
 </body>
 </html>`;

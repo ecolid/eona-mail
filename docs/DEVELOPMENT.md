@@ -342,3 +342,7 @@ wordmark locally and make no cross-domain asset requests.
 ## OIDC session persistence
 
 An instance may opt in with identity.session_claims = {persistent: "claim_name", expires_at: "claim_name"}. Both values must come from the verified ID token: a boolean persistence choice and an absolute expiry in Unix seconds. Missing or expired claims reject new logins. A temporary session emits a host-only session cookie without Max-Age or Expires and has a maximum server lifetime of twelve hours. Persistent sessions are bounded by the issuer expiry and the existing instance limit. Refresh cannot extend the stored session deadline or turn a temporary cookie into a persistent one. Existing sessions keep their original deadline; applications without this optional contract retain their current policy. Browser session restoration may preserve a session cookie; shared devices should use private browsing and sign out explicitly.
+
+## 通知直达与启动资源
+
+页面已验证身份时只在本次 `no-store` 文档注入最小身份，浏览器不重复请求 `/api/me`；所有业务 API 保持逐请求鉴权。通知指定邮件先于侧栏和收件箱就绪，历史恢复由导航所有者执行一次。四个固定脚本按 SHA-256 命名并有序 defer，匿名仅可读取这些公开产品代码，不分配演示工作区；身份、偏好和正文不进入脚本缓存。回归阻塞真实页面的辅助请求，要求正文先可用、列表完成不关闭阅读且可返回，并核脚本内容散列、缓存、方法和未知路径。
