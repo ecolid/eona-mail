@@ -1,8 +1,18 @@
 {
+  "artifact": "eona-foundation/1.14.9/standalone-v1",
   "files": {
     "eona-foundation.css": "43f923a2572a21d4020ed244abf22fbe46a8b7adbf24f09cb4a5bc1cdc4caa36",
-    "eona-foundation.js": "f22edd9a88ed5e5d4d32c48c149601f3ce895931f1c89d340925a378baaf34d4"
+    "eona-foundation.js": "783443e322c52bbc2a9b7e3bb54b44e7269455c5e579da8e59d3e8591a134162"
   },
+  "profile": "standalone-v1",
   "schema": 1,
+  "source": {
+    "files": {
+      "eona-foundation.css": "43f923a2572a21d4020ed244abf22fbe46a8b7adbf24f09cb4a5bc1cdc4caa36",
+      "eona-foundation.js": "f22edd9a88ed5e5d4d32c48c149601f3ce895931f1c89d340925a378baaf34d4"
+    },
+    "schema": 1,
+    "version": "1.14.9"
+  },
   "version": "1.14.9"
 }
