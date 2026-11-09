@@ -16,6 +16,12 @@ import {gmailSource} from './gmail.mjs';
 
 const sha=raw=>createHash('sha256').update(raw).digest('hex');
 export const archiveIdentity=(raw,parsed)=>sha(parsed.messageId?JSON.stringify({message_id:parsed.messageId,from:parsed.from,to:parsed.to,cc:parsed.cc,date:parsed.date,subject:parsed.subject,text:parsed.text,html:parsed.html,attachments:(parsed.attachments||[]).map(a=>({name:a.filename,mime:a.mimeType,sha:sha(Buffer.from(a.content))}))}):raw);
+// Forwarders can re-encode MIME and append a final line break. Keep all
+// headers, interior text, and attachment bytes in the existing identity.
+const transportBody=value=>typeof value==='string'?value.replace(/\r\n/g,'\n').replace(/\n+$/,''):value;
+const transportIdentity=(raw,parsed)=>archiveIdentity(raw,{
+  ...parsed,text:transportBody(parsed.text),html:transportBody(parsed.html),
+});
 export async function openStore(config,{root=config.data_root,clock=Date.now}={}){
   await mkdir(root,{recursive:true,mode:0o700});
   const db=new SQLiteD1(join(root,'mail.db')),objects=new FileObjects(join(root,'objects'));
@@ -56,7 +62,25 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
     const jobs=await openJobs(db,{clock});
     let chain=Promise.resolve();
     const serialize=run=>{const task=chain.then(run);chain=task.catch(()=>{});return task;};
-    const env={MAIL_ARCHIVE_IDENTITY:archiveIdentity,MAILDB:db,ATTACH:objects,PUBLIC_HOST:new URL(config.origin).hostname,MAIL_ALIAS_DOMAIN:'',MAX_ATTACHMENT_MB:'0'};
+    async function resolveArchiveIdentity(raw,parsed){
+      const exact=archiveIdentity(raw,parsed);
+      if(!parsed.messageId)return exact;
+      // Retain exact keys for all archives. Only compare decoded bodies for
+      // matching Message-IDs, preferring the first equivalent record.
+      const {results}=await db.prepare("SELECT archive_identity,raw_key FROM emails WHERE message_id=? AND archive_identity IS NOT NULL ORDER BY id LIMIT 8").bind(parsed.messageId).all();
+      let canonical;
+      for(const row of results){
+        if(row.archive_identity===exact)return exact;
+        if(!row.raw_key)continue;
+        const stored=await objects.get(row.raw_key);
+        if(!stored)continue;
+        canonical??=transportIdentity(raw,parsed);
+        const storedRaw=Buffer.from(await stored.arrayBuffer());
+        if(transportIdentity(storedRaw,await PostalMime.parse(storedRaw))===canonical)return row.archive_identity;
+      }
+      return exact;
+    }
+    const env={MAIL_ARCHIVE_IDENTITY:resolveArchiveIdentity,MAILDB:db,ATTACH:objects,PUBLIC_HOST:new URL(config.origin).hostname,MAIL_ALIAS_DOMAIN:'',MAX_ATTACHMENT_MB:'0'};
     env.MAIL_SOURCE_HEALTH=()=>sourceHealth(db,config,{clock});
     const accountIds=mailbox=>config.accounts.filter(a=>a.address.toLowerCase()===String(mailbox).toLowerCase()).map(a=>a.id);
     env.MAIL_MAILBOX_SCOPE=mailbox=>{const ids=accountIds(mailbox);return ids.length?{where:'EXISTS(SELECT 1 FROM product_source_copies sc WHERE sc.email_id=emails.id AND sc.account IN ('+ids.map(()=>'?').join(',')+'))',binds:ids}:null;};
@@ -75,7 +99,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       const old=await db.prepare('SELECT * FROM product_source_copies WHERE account=? AND folder=? AND validity=? AND uid=?').bind(...proof).first();
       if(old){if(old.raw_sha!==hash)throw Error('product_source_identity_changed');return {id:old.email_id,stored:false,raw_sha256:hash};}
       const parsed=await PostalMime.parse(raw);
-      const identity=archiveIdentity(raw,parsed);
+      const identity=await resolveArchiveIdentity(raw,parsed);
       const receivedAt=mailSourceReceivedAt(parsed,input.internal_date,clock());
       if(!receivedAt)throw Error('product_source_date_unavailable');
       const result=await archiveRaw(env,raw,{alias:account.address,envelopeFrom:parsed.from?.address||'',imported:true,sourceKind:projection.kind,isRead:!!input.seen,skipAI:!config.ai&&!(env.AI&&!input.historical),archiveIdentity:identity,receivedAt});
@@ -92,7 +116,7 @@ export async function openStore(config,{root=config.data_root,clock=Date.now}={}
       // create the durable responsibility. Unique job keys prevent replay.
       if(config.ai)commands.push(jobs.statement('classify',result.emailId));
       if(config.notifications&&projection.kind==='inbox'&&!input.historical&&firstGmailCopy)commands.push(jobs.statement('notify',result.emailId));
-      if(!accountSyncEnabled(config,account)||gmail?.workspaceKind==='sent')commands.push(...await sourceProjection(db,objects,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt,gmail?identity:null));
+      if(!accountSyncEnabled(config,account)||gmail?.workspaceKind==='sent')commands.push(...await sourceProjection(db,objects,config.owner.id,await repairMailHeaderEncoding(raw,parsed,PostalMime),gmail?{...input,kind:gmail.workspaceKind}:projection,result.emailId,rawKey,gmail?.projection||proof,receivedAt,gmail?archiveIdentity(raw,parsed):null));
       // Complete the adapter's durable incoming responsibility before the
       // source proof/cursor can commit. A failed handoff is safely retried.
       if(projection.kind==='inbox'&&!input.historical&&firstGmailCopy&&env.MAIL_SOURCE_ARRIVAL)await env.MAIL_SOURCE_ARRIVAL(result.emailId);

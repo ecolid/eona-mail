@@ -7,7 +7,9 @@ import {DatabaseSync} from 'node:sqlite';
 import {generateKeyPair,exportJWK,SignJWT} from 'jose';
 import {openProduct} from './runtime.mjs';
 import {validateConfig} from './config.mjs';
-import {openStore} from './store.mjs';
+import {archiveIdentity,openStore} from './store.mjs';
+import {archiveRaw} from '../src/index.js';
+import PostalMime from 'postal-mime';
 import {initialize} from './cli.mjs';
 
 const password='internal-test-password-only';
@@ -25,6 +27,36 @@ test('historical mail without a Date uses provider INTERNALDATE and missing prov
  assert.equal((await store.db.prepare('SELECT received_at FROM emails WHERE id=?').bind(result.id).first()).received_at,'2014-02-07 07:30:56');
  const copy=await store.db.prepare('SELECT raw_key FROM product_source_copies WHERE email_id=?').bind(result.id).first();assert.deepEqual(Buffer.from(await (await store.objects.get(copy.raw_key)).arrayBuffer()),original);
 });
+test('transport line endings keep one archive across direct delivery, a forwarded copy, and IMAP',async t=>{
+  const root=await temporary(t);
+  const store=await openStore(validateConfig(config(root,{mode:'personal',auth:{mode:'local'},accounts:[account]})));
+  t.after(()=>store.close());
+  const html=(id,body='<p>Original</p>',extra='')=>Buffer.from(raw(body,id,extra).toString().replace('text/plain;','text/html;'));
+  const original=html('forwarded');
+  const forwarded=Buffer.concat([html('forwarded','<p>Original</p>','Received: by relay.example.test\r\n'),'\r\n'].map(x=>Buffer.from(x)));
+  const legacy=archiveIdentity(original,await PostalMime.parse(original));
+  assert.notEqual(legacy,archiveIdentity(forwarded,await PostalMime.parse(forwarded)));
+  const direct=await archiveRaw(store.env,original,{alias:'owner@example.test',archiveIdentity:legacy,skipAI:true});
+  const replay=await archiveRaw(store.env,forwarded,{alias:'mirror@example.test',skipAI:true});
+  assert.equal(replay.emailId,direct.emailId);
+  assert.equal(replay.stored,false);
+  assert.equal((await store.ingest(forwarded,proof(1))).id,direct.emailId);
+  const source=await store.db.prepare('SELECT raw_key FROM product_source_copies WHERE email_id=?').bind(direct.emailId).first();
+  assert.deepEqual(Buffer.from(await (await store.objects.get(source.raw_key)).arrayBuffer()),forwarded);
+  assert.equal((await store.db.prepare('SELECT archive_identity FROM emails WHERE id=?').bind(direct.emailId).first()).archive_identity,legacy);
+
+  const first=await store.ingest(Buffer.concat([html('imap-first'),Buffer.from('\r\n')]),proof(2));
+  const later=await archiveRaw(store.env,html('imap-first'),{alias:'owner@example.test',skipAI:true});
+  assert.equal(later.emailId,first.id);
+  assert.equal(later.stored,false);
+
+  const other=await store.ingest(html('forwarded','<p>Different original</p>'),proof(3));
+  assert.notEqual(other.id,direct.emailId);
+  const differentRecipient=Buffer.from(original.toString().replace('To: owner@example.test','To: other@example.test'));
+  assert.notEqual((await store.ingest(differentRecipient,proof(4))).id,direct.emailId);
+  assert.equal((await store.db.prepare('SELECT COUNT(*) n FROM emails').first()).n,4);
+});
+
 function request(app,path,{method='GET',body,cookie,headers={}}={}){return app.handle(new Request(app.config.origin+path,{method,headers:{...(body===undefined?{}:{'content-type':'application/json'}),...(cookie?{cookie}:{}),...headers},...(body===undefined?{}:{body:JSON.stringify(body)})}));}
 const cookie=response=>response.headers.get('set-cookie')?.split(';')[0];
 async function temporary(t){const root=await mkdtemp(join(tmpdir(),'mail-product-test-'));t.after(()=>rm(root,{recursive:true,force:true}));return root;}
