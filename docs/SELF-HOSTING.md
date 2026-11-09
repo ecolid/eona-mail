@@ -34,6 +34,14 @@ node product/cli.mjs serve --config /path/to/mail-instance/mail.json
 
 访问页面，用初始密码登录。OIDC、AI 和外部通知均可选；它们的端点、凭据引用和拥有者由实例配置提供。
 
+### 可选通知接口
+
+`notifications.endpoint` 与 `notifications.token_env` 分别配置接收端的 HTTPS 地址和 Bearer 凭据引用。不配置时不创建通知任务，邮件归档和同步继续运行；不要求安装维护者的通知中心或注册 Cloudflare。
+
+接收端应将每个实例的独立凭据绑定到收件对象，以“已验证凭据对应的实例 + Idempotency-Key”去重；不能把正文中的用户字段当作授权。本产品使用稳定的 `mail:<邮件ID>` 键，正文的 `url` 从本实例 `origin` 生成。多个实例可以使用同一个通知服务，但应各用一份独立凭据。
+
+接收端耐久接管后返回 2xx，本地任务据此完成；错误或超时会沿同一键重试，不能每次重试新建一条提醒。2xx 表示接口接管，手机是否展示仍由接收端的平台与设备回执确认。
+
 ## 4. 接入邮箱
 
 以 config.example.json 为结构参考，配置 accounts。每个账号使用唯一 id、address，以及服务商允许的 IMAP 993 / SMTP 465或587。credentials.json 保存 password_env 所引用的密钥；不要把密码直接放在 mail.json 或提交仓库。部分服务商需要启用 IMAP/SMTP、应用专用密码或其他授权方式，以服务商实际设置为准。
