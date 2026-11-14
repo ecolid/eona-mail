@@ -137,3 +137,60 @@ test('notification-deep-link-prioritizes-reader',async({page},info)=>{
   await evidence(info,{method:'blocked-list-and-sidebar',readerBeforeAuxiliary:true,duplicateIdentityReads:0});
  }finally{release()}
 });
+
+test('unread batch keeps a nearby row and header actions work while scrolling',async({page},info)=>{
+  const f=await prepare(page,{port:8793,path:'/journeys'},320);
+  const scroller=f.locator('#mail-list-scroll'),filter=f.locator('.mail-list-filter');
+  const scrollPoint=await scroller.boundingBox();
+  await page.mouse.move(scrollPoint.x+100,scrollPoint.y+180);
+  await page.mouse.wheel(0,800);
+  await filter.tap();
+  const panel=f.locator('.mail-list-filter-panel');
+  await expect(panel).toBeVisible();
+  const top=f.getByRole('button',{name:'回到顶部',exact:true});
+  await expect(top).toBeVisible();
+  const geometry=await f.evaluate(()=>{
+    const list=document.querySelector('#list').getBoundingClientRect();
+    const top=document.querySelector('.mail-scroll-top').getBoundingClientRect();
+    return {inside:top.bottom<=list.bottom&&top.bottom>list.bottom-50&&top.top>list.top};
+  });
+  expect(geometry.inside).toBe(true);
+  await panel.locator('[data-filter-name=read][data-filter-value=unread]').tap();
+  await expect(f.locator('#q')).toHaveValue('is:unread');
+  await expect.poll(()=>f.locator('#list .mail:not(.unread)').count()).toBe(0);
+  await f.evaluate(()=>EonaUI.dismissPopovers());
+  const select=f.locator('[data-mail-select-toggle]');
+  await select.tap();
+  await scroller.evaluate(n=>n.scrollTop=1200);
+  const batch=await f.evaluate(()=>{
+    const clip=document.querySelector('#mail-list-scroll'),top=clip.getBoundingClientRect().top;
+    const rows=[...clip.querySelectorAll('.mail-action-row')];
+    const start=rows.findIndex(row=>row.getBoundingClientRect().top>=top);
+    return rows.slice(start,start+3).map(row=>row.querySelector('.mail').dataset.mailId);
+  });
+  expect(batch).toHaveLength(3);
+  for(const id of batch.slice(0,2)){
+    const row=f.locator('.mail-action-row').filter({has:f.locator('[data-mail-id="'+id+'"]')});
+    await expect(row.getByRole('checkbox')).toHaveAccessibleName(/未读/);
+    expect(await row.locator('.mail-row-sender').evaluate(n=>{
+      const marker=getComputedStyle(n,'::before');
+      return {width:marker.width,display:marker.display,color:marker.backgroundColor};
+    })).toEqual({width:'7px',display:'inline-block',color:'rgb(37, 99, 235)'});
+    await row.getByRole('checkbox').tap();
+  }
+  expect(await f.locator('.mail-selection-toolbar button:visible').evaluateAll(
+    controls=>controls.every(control=>control.scrollWidth<=control.clientWidth),
+  )).toBe(true);
+  const request=page.waitForRequest(r=>r.url().endsWith('/api/emails/read-state')&&r.method()==='POST');
+  await f.getByRole('button',{name:'标为已读',exact:true}).tap();
+  expect((await request).postDataJSON()).toEqual({ids:batch.slice(0,2).map(Number),read:true});
+  for(const id of batch.slice(0,2))await expect(f.locator('[data-mail-id="'+id+'"]')).toHaveCount(0);
+  await expect(select).toHaveAttribute('aria-label','选择');
+  const anchor=f.locator('[data-mail-id="'+batch[2]+'"]');
+  const [position,viewport]=await Promise.all([anchor.boundingBox(),scroller.boundingBox()]);
+  expect(Math.abs(position.y-viewport.y)).toBeLessThan(200);
+  await expect(top).toBeVisible();
+  await top.tap();
+  await expect.poll(()=>scroller.evaluate(n=>n.scrollTop)).toBe(0);
+  await evidence(info,{batchSize:2,anchorRetained:true,firstTapOpenedFilter:true,topControl:geometry});
+});

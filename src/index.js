@@ -2078,6 +2078,20 @@ async function handleFetch(request, env, trustedIdentity = null) {
     });
   }
 
+  if (path === '/api/emails/read-state' && request.method === 'POST') {
+    const {ids, read} = await request.json().catch(() => ({})) || {};
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || typeof read !== 'boolean'
+        || ids.some(id => !Number.isSafeInteger(id) || id < 1)) {
+      return json({error: '批量阅读状态无效。'}, 400);
+    }
+    // Keep the single update within SQLite/D1's parameter limit.
+    const unique = [...new Set(ids)];
+    const slots = unique.map(() => '?').join(',');
+    await env.MAILDB.prepare('UPDATE emails SET is_read = '+Number(read)+' WHERE id IN ('+slots+')')
+      .bind(...unique).run();
+    return json({ok:true});
+  }
+
   // ---- 操作:星标 / 删除 / 恢复
   mm = path.match(/^\/api\/email\/(\d+)\/(star|unstar|read|unread|trash|restore)$/);
   if (mm && request.method === 'POST') {
@@ -2676,7 +2690,7 @@ async function loadList(options={}){
   const anchor=selected_matches&&selected_email&&!page.ids.includes(String(selected_email.id))?'<div data-mail-selection-anchor><div class="mail-anchor-label">当前邮件</div>'+mailRow(selected_email)+'</div>':'';
   const markup=mailResultsBar(emails.length,listMore.done,total)+anchor+(emails.length?emails.map(mailRow).join(''):'<div class="empty">'+(state.q?'未找到相关邮件':state.folder==='sent'?'尚无发送记录':'没有邮件')+'</div>')+
     '<div id="list-tail" class="tail">'+(listMore.done?(emails.length?'— 到底了,共 '+emails.length+' 封 —':''):'往下滚加载更多…')+'</div>';
-  if(entry.markup!==markup){if(!options.fresh&&previousPage.offset>PAGE_SIZE){listMore=previousPage;const changedIDs=JSON.stringify(previousPage.ids)!==JSON.stringify(page.ids);const currentRows=new Map(emails.map(email=>[String(email.id),email]));for(const row of $('#list').querySelectorAll('[data-mail-id]')){const email=currentRows.get(String(row.dataset.mailId));if(email){const nextRow=mailRow(email);if(row.outerHTML!==nextRow)row.outerHTML=nextRow}else row.classList.toggle('on',String(row.dataset.mailId)===String(state.cur))}entry.markup=markup;let notice=$('#list').querySelector('[data-new-results]');if(changedIDs&&!notice){notice=document.createElement('button');notice.className='btn mail-results-bar';notice.setAttribute('data-new-results','');notice.textContent='列表有更新';notice.onclick=()=>loadList({fresh:true});$('#list').prepend(notice)}}else{const scroll=mailListScrollElement($('#list')).scrollTop;entry.markup=markup;entry.queryKey=queryKey;entry.page=page;if(options.transition||queryChanged)await mailAnimateListCommit($('#list'),()=>mailReconcileList($('#list'),markup));else mailCommitListContent($('#list'),markup);if(ticket!==mailListIntent)return;mailListScrollElement($('#list')).scrollTop=scroll;entry.markup=markup}}else if(previousPage.offset>page.offset)listMore=previousPage;
+  if(entry.markup!==markup){if(!options.fresh&&previousPage.offset>PAGE_SIZE){listMore=previousPage;const changedIDs=JSON.stringify(previousPage.ids)!==JSON.stringify(page.ids);const currentRows=new Map(emails.map(email=>[String(email.id),email]));for(const row of $('#list').querySelectorAll('[data-mail-id]')){const email=currentRows.get(String(row.dataset.mailId));if(email){const nextRow=mailRow(email);if(row.outerHTML!==nextRow)row.outerHTML=nextRow}else row.classList.toggle('on',String(row.dataset.mailId)===String(state.cur))}entry.markup=markup;let notice=$('#list').querySelector('[data-new-results]');if(changedIDs&&!notice){notice=document.createElement('button');notice.className='btn mail-results-bar';notice.setAttribute('data-new-results','');notice.textContent='列表有更新';notice.onclick=()=>loadList({fresh:true});$('#list').prepend(notice)}}else{const scroll=queryChanged?0:mailListScrollElement($('#list')).scrollTop;entry.markup=markup;entry.queryKey=queryKey;entry.page=page;if(options.transition||queryChanged)await mailAnimateListCommit($('#list'),()=>mailReconcileList($('#list'),markup));else mailCommitListContent($('#list'),markup);if(ticket!==mailListIntent)return;mailListScrollElement($('#list')).scrollTop=scroll;entry.markup=markup}}else if(previousPage.offset>page.offset)listMore=previousPage;
   entry.queryKey=queryKey;entry.page=listMore;
   return {ok:true,ids:page.ids,count:emails.length};
 }
@@ -2781,6 +2795,60 @@ function patchMailRead(id,value){
  mailResources.update('/api/emails',v=>({...v,emails:v.emails?.map(m=>String(m.id)===String(id)?{...m,is_read:Number(value)}:m)}));
  for(const page of mailPages.values()){page.markup=null;const prior=page.readerPreviews?.get(String(id));if(prior)page.readerPreviews.set(String(id),{...prior,is_read:Number(value)})}
  for(const row of document.querySelectorAll('[data-mail-id]'))if(row.dataset.mailId===String(id))row.classList.toggle('unread',!value);
+ document.dispatchEvent(new Event('mail:list-actions'));
+}
+async function writeMailReadingBatch(ids,read){
+ const {value}=await fetchMailResource('/api/emails/read-state',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ids:ids.map(Number),read})});
+ if(!value?.ok)throw Error('批量阅读状态未确认');
+}
+function commitMailReadingBatch(ids,read){
+ const keys=new Set(ids),value=Number(read);
+ const patch=mail=>keys.has(String(mail.id))?{...mail,is_read:value}:mail;
+ if(state.curMail)state.curMail=patch(state.curMail);
+ for(const id of ids)mailResources.invalidate('/api/email/'+id,{discard:true});
+ mailResources.invalidate('/api/emails',{discard:true});
+ for(const path of ['/api/aliases','/api/routes','/api/search/options'])mailResources.invalidate(path);
+ for(const page of mailPages.values()){
+  page.markup=null;
+  for(const id of ids){const preview=page.readerPreviews?.get(id);if(preview)page.readerPreviews.set(id,patch(preview))}
+  for(const row of page.nodes?.querySelectorAll('[data-mail-id]')||[]){
+   if(!keys.has(row.dataset.mailId))continue;
+   row.classList.toggle('unread',!read);
+   // Reconcile a hidden filtered view on return, even if it had paginated.
+   if(page.nodes.querySelector('[data-mail-result-count]'))page.queryKey=undefined;
+  }
+ }
+ const list=$('#list'),scroll=mailListScrollElement(list),rows=[...list.querySelectorAll('[data-mail-id]')];
+ const count=list.querySelector('[data-mail-result-count]');
+ const filters=(count?parseMailQuery(state.q||''):[]).filter(term=>term.field==='is'&&['read','unread'].includes(term.value));
+ const out=filters.some(term=>read!==((term.value==='read')!==!!term.exclude));
+ const changed=rows.filter(row=>keys.has(row.dataset.mailId)&&row.classList.contains('unread')===read);
+ for(const row of changed)row.classList.toggle('unread',!read);
+ if(out&&changed.length){
+  const top=scroll.getBoundingClientRect().top;
+  const rowBox=row=>(row.closest('.mail-action-row')||row).getBoundingClientRect();
+  const removed=new Set(changed),surviving=rows.filter(row=>!removed.has(row));
+  const paged=changed.filter(row=>!row.closest('[data-mail-selection-anchor]')).length;
+  const anchor=surviving.find(row=>rowBox(row).bottom>top);
+  const offset=anchor?Math.min(0,rowBox(anchor).top-top):0;
+  for(const row of changed){
+   const node=row.closest('.mail-action-row')||row;
+   (node.closest('[data-mail-selection-anchor]')||node).remove();
+  }
+  // An in-flight page still uses the previous result offsets. Ignore its reply.
+  if(listMore.loading)activeMailPage.page=listMore={...listMore,loading:false};
+  listMore.offset=Math.max(0,listMore.offset-paged);
+  if(listMore.ids)listMore.ids=listMore.ids.filter(id=>!keys.has(id));
+  if(Number.isFinite(listMore.total))listMore.total=Math.max(0,listMore.total-changed.length);
+  if(anchor)scroll.scrollTop+=rowBox(anchor).top-scroll.getBoundingClientRect().top-offset;
+  else if(!surviving.length)scroll.scrollTop=0;
+  if(count&&Number.isFinite(listMore.total))count.textContent=count.textContent.replace(/(?:\d+|已加载 \d+) 封$/,listMore.total+' 封');
+  const tail=$('#list-tail');
+  if(listMore.done&&tail)tail.textContent=listMore.offset?'— 到底了,共 '+listMore.offset+' 封 —':'';
+  if(!surviving.length&&listMore.done){
+   const empty=document.createElement('div');empty.className='empty';empty.textContent='未找到相关邮件';tail?.before(empty);
+  }else if(!listMore.done&&scroll.scrollTop+scroll.clientHeight>=scroll.scrollHeight-200)void loadMore();
+ }
  document.dispatchEvent(new Event('mail:list-actions'));
 }
 const mailReadWrites=createMailToggleQueue(async(id,value)=>{await api('/api/email/'+id+'/'+(value?'read':'unread'),{method:'POST'});mailResources.invalidate('/api/email/'+id)},{apply:patchMailRead,failed:(error,id)=>{if(!mailQuietStars.has(String(id)))mailToast(error.message,{id:'mail-read:'+id,tone:'error'})},settled:(id,value,change)=>{if(value===change.previous)return;mailResources.invalidate('/api/emails');if(mailQuietStars.has(String(id)))return;loadList({fresh:true,transition:true}).catch(()=>{});mailToast(value?'已标为已读':'已标为未读',{id:'mail-read:'+id,tone:'success'})}});

@@ -93,6 +93,7 @@ test("机器码发不了任何写请求", () => {
     ["POST", "/api/block"],
     ["POST", "/api/alias/toggle-block"],
     ["POST", "/api/email/42"],
+    ["POST", "/api/emails/read-state"],
     ["POST", "/api/login"],
     ["POST", "/api/routes"],
     ["POST", "/api/routes/delete"],
