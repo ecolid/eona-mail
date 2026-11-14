@@ -72,7 +72,7 @@ export function mailItemActions(item,value,{selectable=true,sourceIncluded=false
  return [{key:'open',label:'查看往来邮件',icon:'open'},...(selectable?[{key:'select',label:item.kind==='contact'?'选择联系人':'选择订阅来源',icon:'check'}]:[]),...(item.kind==='contact'?[{key:'write',label:'写邮件',icon:'write'},{key:'important',label:value.important?'取消重要联系人':'设为重要联系人',icon:'important'}]:[]),{key:'source',label:sourceIncluded?'移出订阅列表':'加入订阅列表',icon:'source'}];
 }
 export function mailBatchActions(kind,values=[],folder='inbox'){
- if(kind==='received')return [{key:values.length&&values.every(v=>v?.is_read)?'unread':'read',label:values.length&&values.every(v=>v?.is_read)?'未读':'已读',icon:'read'},{key:'star',label:'星标',icon:'star'},{key:folder==='trash'?'restore':'trash',label:folder==='trash'?'恢复':'删除',icon:folder==='trash'?'restore':'trash',danger:folder!=='trash'}];
+ if(kind==='received')return [{key:values.length&&values.every(v=>v?.is_read)?'unread':'read',label:values.length&&values.every(v=>v?.is_read)?'标为未读':'标为已读',icon:'read'},{key:'star',label:'星标',icon:'star'},{key:folder==='trash'?'restore':'trash',label:folder==='trash'?'恢复':'删除',icon:folder==='trash'?'restore':'trash',danger:folder!=='trash'}];
  if(kind==='sent')return [{key:'forward',label:'转发',icon:'forward'}];
  if(kind==='draft')return [{key:'discard',label:'丢弃',icon:'trash',danger:true}];
  if(kind==='source')return [{key:'exclude-source',label:'移出订阅',icon:'source'}];
@@ -125,15 +125,26 @@ export function installMailListActions(){
  const closeRow=()=>{rowPainter.cancel();if(!opened)return;opened.querySelector(selector)?.style.removeProperty('--mail-row-x');opened.removeAttribute('data-open');opened.querySelector('.mail-row-tray').inert=true;opened=null};
  const clearFeedback=()=>{for(const n of list.querySelectorAll('[data-mail-pressed]'))n.removeAttribute('data-mail-pressed')};
  const toolbar=document.createElement('div');toolbar.className='mail-selection-toolbar';toolbar.hidden=true;toolbar.setAttribute('aria-label','批量邮件操作');
- const read=button('已读','read','read');const all=button('全选','','all'),star=button('星标','star','star'),remove=button('删除','trash','trash',true),done=button('取消','close','done');const allLabel=document.createElement('span');all.innerHTML=icons.check;const allCopy=document.createElement('span');allCopy.className='mail-selection-all-copy';allCopy.append(allLabel);all.append(allCopy);done.hidden=true;toolbar.append(all,read,star,remove,done);list.parentElement.append(toolbar);
+ const read=button('标为已读','read','read');const all=button('全选','','all'),star=button('星标','star','star'),remove=button('删除','trash','trash',true),done=button('取消','close','done');const allLabel=document.createElement('span');all.innerHTML=icons.check;const allCopy=document.createElement('span');allCopy.className='mail-selection-all-copy';allCopy.append(allLabel);all.append(allCopy);done.hidden=true;toolbar.append(all,read,star,remove,done);list.parentElement.append(toolbar);
+ const top=button('回到顶部','','top');top.classList.add('mail-scroll-top');top.hidden=true;
+ top.title='回到顶部';top.setAttribute('aria-label',top.title);
+ top.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5h12M12 20V9m-5 5 5-5 5 5"/></svg>';
+ top.onclick=()=>{mailListScrollElement(list).scrollTop=0;list.querySelector('.mail-list-filter:not([hidden]),[data-mail-select-toggle]:not(:disabled)')?.focus({preventScroll:true})};
+ const updateTop=()=>{
+  if(!list.contains(top))return;
+  const scroll=mailListScrollElement(list);
+  top.hidden=selecting||scroll.scrollTop<Math.max(160,scroll.clientHeight*.65);
+ };
+ list.addEventListener('scroll',updateTop,{capture:true,passive:true});
  const paintSelection=()=>{
-  root.toggleAttribute('data-mail-selecting',selecting);document.body.toggleAttribute('data-mail-selecting',selecting);
+  updateTop();root.toggleAttribute('data-mail-selecting',selecting);document.body.toggleAttribute('data-mail-selecting',selecting);
   if(selectionVisible!==selecting){const current=toolbar.hidden?{opacity:0,transform:'translateY(24px) scale(.98)'}:{opacity:getComputedStyle(toolbar).opacity||1,transform:getComputedStyle(toolbar).transform||'none'};selectionVisible=selecting;selectionMotion?.cancel();selectionMotion=null;toolbar.inert=!selecting;if(selecting)toolbar.hidden=false;const finish=()=>{if(!selectionVisible)toolbar.hidden=true};if(!matchMedia('(prefers-reduced-motion:reduce)').matches&&toolbar.animate){const motion=toolbar.animate([current,selecting?{opacity:1,transform:'translateY(0) scale(1)'}:{opacity:0,transform:'translateY(16px) scale(.98)'}],{duration:selecting?280:160,easing:'cubic-bezier(.16,1,.3,1)'});selectionMotion=motion;motion.onfinish=()=>{if(selectionMotion===motion){selectionMotion=null;finish()}}}else finish()}
   toolbar.style.setProperty('--mail-selection-left',list.offsetLeft+12+'px');toolbar.style.setProperty('--mail-selection-width',Math.min(440,Math.max(240,list.clientWidth-24))+'px');
   const received=rows();
-  for(const row of rows()){const id=identity(row),wrap=row.parentElement,check=wrap.querySelector('.mail-row-check');if(!check)continue;const on=selected.has(id.id);check.hidden=!selecting;check.setAttribute('aria-checked',String(on));check.setAttribute('aria-label',(on?'取消选择：':'选择：')+(row.querySelector('.subj,.mail-directory-name')?.textContent||valueFor(id)?.name||valueFor(id)?.address||'项目'));wrap.toggleAttribute('data-selected',on)}
+  for(const row of rows()){const id=identity(row),wrap=row.parentElement,check=wrap.querySelector('.mail-row-check');if(!check)continue;const on=selected.has(id.id);check.hidden=!selecting;check.setAttribute('aria-checked',String(on));check.setAttribute('aria-label',(on?'取消选择：':'选择：')+(row.querySelector('.subj,.mail-directory-name')?.textContent||valueFor(id)?.name||valueFor(id)?.address||'项目')+(id.kind==='received'?(row.classList.contains('unread')?'，未读':'，已读'):''));wrap.toggleAttribute('data-selected',on)}
   const allSelected=received.length&&received.every(r=>selected.has(identity(r).id));allLabel.textContent=allSelected?'全不选':'全选';all.setAttribute('aria-pressed',String(!!allSelected));all.setAttribute('aria-label',(allSelected?'取消全选':'全选')+'已加载的 '+received.length+' '+unit()+(kind()==='contact'?'联系人':kind()==='source'?'订阅来源':'邮件'));all.title=all.getAttribute('aria-label');done.textContent='取消';done.setAttribute('aria-label','取消选择，已选 '+selected.size+' '+unit());done.disabled=busy;
-  const specs=mailBatchActions(kind(),[...selected].map(id=>valueFor({kind:kind(),id})),state.folder),controls=[read,star,remove];toolbar.style.setProperty('--mail-bulk-columns',String(specs.length+1));toolbar.setAttribute('aria-label',kind()==='contact'?'批量联系人操作':kind()==='source'?'批量订阅操作':'批量邮件操作');
+  const currentKind=kind();
+  const specs=mailBatchActions(currentKind,[...selected].map(id=>valueFor({kind:currentKind,id})),state.folder),controls=[read,star,remove];toolbar.style.setProperty('--mail-bulk-columns',String(specs.length+1));toolbar.setAttribute('aria-label',kind()==='contact'?'批量联系人操作':kind()==='source'?'批量订阅操作':'批量邮件操作');
   for(let i=0;i<controls.length;i++){const n=controls[i],spec=specs[i];n.hidden=!spec;if(!spec)continue;n.dataset.listAction=spec.key;n.innerHTML=(icons[spec.icon]||'')+'<span>'+esc(spec.label)+'</span>';n.toggleAttribute('data-danger',!!spec.danger);n.disabled=busy||!selected.size}all.disabled=busy;
   toolbar.dataset.compact=String(toolbar.clientWidth<280);if(selecting){const inset=Math.ceil(toolbar.offsetHeight+(parseFloat(getComputedStyle(toolbar).bottom)||0)+12);document.body.style.setProperty('--mail-selection-toast-bottom',inset+'px');list.style.setProperty('--mail-selection-inset',inset+'px')}else{document.body.style.removeProperty('--mail-selection-toast-bottom');list.style.removeProperty('--mail-selection-inset')}
   const toggle=list.querySelector('[data-mail-select-toggle]');if(toggle){const label=selecting?'取消':'选择';if(toggle.dataset.label!==label){toggle.dataset.label=label;toggle.innerHTML='<span class="mail-header-action-face">'+(selecting?icons.close:icons.check)+'<span data-mail-header-label>'+label+'</span></span>'}toggle.hidden=false;toggle.setAttribute('aria-label',selecting?'取消选择':'选择');toggle.setAttribute('aria-pressed',String(selecting));toggle.disabled=busy||(!received.length&&!selecting)}
@@ -185,6 +196,7 @@ export function installMailListActions(){
    const moreQuick=button('更多','more','more');paintQuick(moreQuick,{key:'more',icon:'more',label:'更多'});tray.append(moreQuick);const quick=actions(item).filter(a=>item.kind==='received'?['star','unstar','trash','restore'].includes(a.key):item.kind==='draft'?a.key==='edit':item.kind==='sent'?a.key==='forward':['important','source'].includes(a.key));for(const action of quick.slice(0,2)){const control=button(action.label,action.icon,action.key,action.danger);paintQuick(control,action);tray.append(control)}wrap.dataset.trayWidth=String(tray.children.length*64+(tray.children.length-1)*8+24);wrap.style.setProperty('--mail-tray-width',wrap.dataset.trayWidth+'px');wrap.append(tray);
   }
   const head=list.querySelector('.mail-workspace-title,.mail-results-bar');if(head&&!head.closest('.mail-page-skeleton')&&!head.querySelector('[data-mail-select-toggle]')){const toggle=button('选择','','toggle');toggle.dataset.mailSelectToggle='';toggle.onclick=()=>selecting?exitSelection():startSelection();head.append(toggle)}
+  if(head&&!head.closest('.mail-page-skeleton')&&top.parentElement!==list)list.append(top);
   if(selecting){const available=new Set(actual.map(r=>identity(r).id));for(const id of selected)if(!available.has(id))selected.delete(id)}paintSelection();
  };
  const observer=new MutationObserver(records=>{if(records.some(r=>[...r.addedNodes,...r.removedNodes].some(n=>n.nodeType===1&&(n.matches?.(selector+',.mail-workspace-title,.mail-results-bar,.mail-action-row')||n.querySelector?.(selector+',.mail-workspace-title,.mail-results-bar')))))enhance()});observer.observe(list,{childList:true,subtree:true});
@@ -257,8 +269,29 @@ export function installMailListActions(){
    }catch(error){mailToast(error.message,{tone:'error'})}finally{busy=false;paintSelection()}return;
   }
   busy=true;paintSelection();const generation=MailWorkspace.identityGeneration,ids=[...selected],previousStars=new Map(ids.map(id=>[id,!!valueFor({kind:'received',id})?.is_starred])),done=[],failed=[];
-  try{for(const id of ids){if(generation!==MailWorkspace.identityGeneration)break;const result=await act(id,op,{quiet:true,deferRemoval:true});if(result?.ok===false||result===false)failed.push(id);else{done.push(id);selected.delete(id)}}if(generation!==MailWorkspace.identityGeneration)return;if(op==='trash'||op==='restore')await mailRemoveRows(done);if(!failed.length){await exitSelection();await loadList({fresh:true,transition:true})}MailWorkspace.load(true).then(()=>loadSide()).catch(()=>{});
-   if(!failed.length)exitSelection();const feedbackId='mail-batch:'+generation+':'+op+':'+done.join(','),undoRemaining=new Set(done);const message=!done.length?'未能处理 '+failed.length+' 封，请重试':(op==='trash'?'已移入垃圾箱 ':op==='restore'?'已恢复 ':op==='read'?'已标为已读 ':op==='unread'?'已标为未读 ':'已加星标 ')+done.length+' 封'+(failed.length?'，'+failed.length+' 封未完成，请重试':'');
+  const reading=op==='read'||op==='unread',pageKey=mailPageKey();
+  try{
+   if(reading){
+    for(let offset=0;offset<ids.length;offset+=100){
+     if(generation!==MailWorkspace.identityGeneration)break;
+     const group=ids.slice(offset,offset+100);
+     try{await writeMailReadingBatch(group,op==='read');done.push(...group)}catch{failed.push(...group)}
+    }
+   }else{
+    for(const id of ids){if(generation!==MailWorkspace.identityGeneration)break;const result=await act(id,op,{quiet:true,deferRemoval:true});if(result?.ok===false||result===false)failed.push(id);else done.push(id)}
+   }
+   if(generation!==MailWorkspace.identityGeneration)return;
+   const samePage=pageKey===mailPageKey();
+   if(samePage)for(const id of done)selected.delete(id);
+   if(reading&&done.length){
+    commitMailReadingBatch(done,op==='read');
+    if(samePage&&!failed.length)exitSelection();
+   }else if(samePage&&!reading){
+    if(op==='trash'||op==='restore')await mailRemoveRows(done);
+    if(!failed.length){await exitSelection();await loadList({fresh:true,transition:true})}
+   }
+   MailWorkspace.load(true).then(()=>loadSide()).catch(()=>{});
+   if(samePage&&!reading&&!failed.length)exitSelection();const feedbackId='mail-batch:'+generation+':'+op+':'+done.join(','),undoRemaining=new Set(done);const message=!done.length?'未能处理 '+failed.length+' 封，请重试':(op==='trash'?'已移入垃圾箱 ':op==='restore'?'已恢复 ':op==='read'?'已标为已读 ':op==='unread'?'已标为未读 ':'已加星标 ')+done.length+' 封'+(failed.length?'，'+failed.length+' 封未完成，请重试':'');
    mailToast(message,{id:feedbackId,tone:failed.length?'error':'success',...(op==='star'&&done.length?{action:{label:'恢复原星标',pending:'正在恢复星标…',run:async()=>{if(generation!==MailWorkspace.identityGeneration)throw Error('账号已变化，请重新操作。');for(const id of [...undoRemaining]){const result=await act(id,previousStars.get(id)?'star':'unstar',{quiet:true});if(result!==false&&result?.ok!==false)undoRemaining.delete(id)}if(undoRemaining.size)throw Error('还有 '+undoRemaining.size+' 封星标未恢复，请重试。');mailToast('已恢复原星标',{id:feedbackId,tone:'success'})}}}:op==='trash'&&done.length?{action:{get label(){return '恢复这 '+undoRemaining.size+' 封'},pending:'正在恢复邮件…',run:async()=>{if(generation!==MailWorkspace.identityGeneration)throw Error('账号已变化，请重新操作。');for(const id of [...undoRemaining]){const result=await act(id,'restore',{quiet:true});if(result!==false&&result?.ok!==false)undoRemaining.delete(id)}await loadList({fresh:true,transition:true});MailWorkspace.load(true).then(()=>loadSide()).catch(()=>{});if(undoRemaining.size)throw Error('还有 '+undoRemaining.size+' 封邮件未恢复，请重试。');mailToast('已恢复 '+done.length+' 封',{id:feedbackId,tone:'success'})}}}:{})});
   }catch(error){mailToast(error.message,{tone:'error'})}finally{busy=false;paintSelection()}
  };
@@ -289,6 +322,7 @@ body[data-mail-density=comfortable] .mail-row-check{top:11px}
 .mail-row-check>span{display:flex;width:22px;height:22px;align-items:center;justify-content:center;border:1px solid var(--e-ui-muted);border-radius:50%}
 .mail-row-check svg{width:16px;height:16px;visibility:hidden}
 .mail-row-check[aria-checked=true]>span{background:var(--e-ui-accent);border-color:var(--e-ui-accent);color:white}.mail-row-check[aria-checked=true] svg{visibility:visible}
+#app[data-mail-selecting] #list .mail.unread .from::before{content:'';display:inline-block;width:7px;height:7px;flex:none;margin-inline-end:6px;border-radius:50%;background:var(--e-ui-accent);vertical-align:.08em}
 #app[data-mail-selecting] .mail-action-row>.mail>:is(.av,.mail-workspace-avatar){opacity:0;transform:scale(.8)}
 #app #list .mail-action-row>.mail>:is(.av,.mail-workspace-avatar){transition:opacity 140ms,transform 180ms var(--e-ui-ease)}
 #app[data-mail-selecting] #list .mail-action-row:not([data-selected])>.mail.on{background:var(--e-ui-surface)}
@@ -298,6 +332,11 @@ body[data-mail-density=comfortable] .mail-row-check{top:11px}
 #app #list :is([data-mail-select-toggle],.mail-list-filter){display:inline-flex;align-items:center;justify-content:center;width:64px;min-width:64px;flex:0 0 64px;margin-left:auto;padding:0;height:34px;min-height:34px;border:0;border-radius:10px;background:transparent;color:var(--e-ui-ink);font:500 12px/20px var(--e-ui-font);box-shadow:none}
 #app:not([data-mail-selecting]) #list .mail-list-filter+[data-mail-select-toggle]{margin-left:0}
 #app #list .mail-header-action-face{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:5px;width:64px;min-width:64px;height:32px;padding:0 8px;font:500 12px/20px var(--e-ui-font);border:1px solid var(--e-ui-line);border-radius:10px;background:var(--e-ui-surface);color:inherit;pointer-events:none;transition:background-color 120ms,color 120ms,border-color 120ms,transform 100ms}
+#app #list :is([data-mail-select-toggle],.mail-list-filter,.mail-scroll-top){touch-action:manipulation}
+#app #list .mail-scroll-top{position:absolute;z-index:5;inset-inline-end:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:grid;place-items:center;width:36px;height:36px;min-height:36px;padding:0;border-radius:10px;color:var(--e-ui-ink);background:var(--e-ui-surface);border:1px solid var(--e-ui-line);box-shadow:0 2px 8px #0001}
+#app #list .mail-scroll-top[hidden]{display:none}
+#app #list .mail-scroll-top svg{width:16px;height:16px}
+@media(max-width:860px){#app #list .mail-scroll-top{width:44px;height:44px}}
 #app #list .mail-header-action-face svg{width:14px;height:14px;flex:none}
 #app #list :is([data-mail-select-toggle],.mail-list-filter):is(:hover,:active,:focus){background:transparent;transform:none;box-shadow:none}
 #app #list :is([data-mail-select-toggle][aria-pressed=true],.mail-list-filter[data-active=true],.mail-list-filter[aria-expanded=true])>.mail-header-action-face{background:var(--e-ui-selected);border-color:transparent;color:var(--e-ui-accent)}

@@ -6,6 +6,7 @@ function fixture(withIndicator=false){
   constructor(name){this.name=name;this.className=name;this.children=[];this.style={values:new Map(),setProperty(k,v){this.values.set(k,v)},removeProperty(k){this.values.delete(k)}};this.scrollTop=0}
   append(...nodes){for(const n of nodes){n.remove();n.parentElement=this;this.children.push(n)}}
   replaceChildren(...nodes){for(const n of [...this.children])n.remove();this.append(...nodes)}
+  insertBefore(node,reference){if(reference)reference.before(node);else this.append(node)}
   before(...nodes){const parent=this.parentElement,index=parent.children.indexOf(this);for(const n of nodes)n.remove();parent.children.splice(index,0,...nodes);for(const n of nodes)n.parentElement=parent}
   after(n){const parent=this.parentElement,index=parent.children.indexOf(this);n.remove();parent.children.splice(index+1,0,n);n.parentElement=parent}
   remove(){if(!this.parentElement)return;const p=this.parentElement;p.children.splice(p.children.indexOf(this),1);this.parentElement=null}
@@ -56,8 +57,8 @@ test('the cached native viewport retains its offset through parent rerenders and
 });
 
 test('same-page commits keep the original native viewport and scroll offset',()=>{
- const f=fixture(),scroll=f.surface.scrollElement(),nextHead=f.node('mail-workspace-title'),nextRow=f.node('new-row');scroll.scrollTop=280;
- f.surface.commit(f.list,[nextHead,nextRow]);assert.equal(f.surface.scrollElement(),scroll);assert.equal(scroll.scrollTop,280);assert.equal(f.list.children[0],nextHead);assert.deepEqual(scroll.children[0].children,[nextRow]);assert(!scroll.contains(nextHead));
+ const f=fixture(),scroll=f.surface.scrollElement(),nextHead=f.node('mail-workspace-title'),nextRow=f.node('new-row'),filter=f.node('mail-list-filter');f.heading.append(filter);scroll.scrollTop=280;
+ f.surface.commit(f.list,[nextHead,nextRow]);assert.equal(f.surface.scrollElement(),scroll);assert.equal(scroll.scrollTop,280);assert.equal(f.list.children[0],f.heading);assert.equal(filter.parentElement,f.heading);assert.deepEqual(scroll.children[0].children,[nextRow]);assert(!scroll.contains(f.heading));
 });
 
 test('the first completed directory replaces its loading shell instead of retaining it',()=>{

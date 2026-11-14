@@ -206,7 +206,8 @@
         "selection-contacts",
         "selection-important",
         "selection-subscriptions",
-        "selection-trash"
+        "selection-trash",
+        "unread batch keeps a nearby row and header actions work while scrolling"
       ],
       "unit": [
         {

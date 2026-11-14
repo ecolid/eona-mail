@@ -35,14 +35,13 @@ export function mailListFilterFields(folder,{data={},filter={},terms=[],order='r
  return fields;
 }
 export function installMailListFilters(){
- const list=document.getElementById('list');let owner=null,dispose=null,panel=null,pageScope='',retained=null;
- const enhance=()=>{const nextScope=JSON.stringify([state.folder,state.starred,state.alias,state.box,state.origin,state.category,state.actionOnly]);if(nextScope!==pageScope&&dispose){dispose();dispose=null;retained=null;panel=null;owner=null}const head=list.querySelector('.mail-workspace-title,.mail-results-bar');if(!head||head.closest('.mail-page-skeleton')||head===owner)return;const sameScope=nextScope===pageScope;owner=head;pageScope=nextScope;
+ const list=document.getElementById('list');let dispose=null,panel=null,pageScope='',retained=null;
+ const enhance=()=>{const nextScope=JSON.stringify([state.folder,state.starred,state.alias,state.box,state.origin,state.category,state.actionOnly]);if(nextScope!==pageScope&&dispose){dispose();dispose=null;retained=null;panel=null}const head=list.querySelector('.mail-workspace-title,.mail-results-bar');if(!head||head.closest('.mail-page-skeleton'))return;const sameScope=nextScope===pageScope;pageScope=nextScope;
   const folder=state.folder,directory=['contacts','important','subscriptions','drafts'].includes(folder),filter=state.directoryFilters?.[folder]||{},terms=directory?[]:parseMailQuery(state.q||'');
   const fields=mailListFilterFields(folder,{data:MailWorkspace.data,filter,terms,order:state.searchOrder,total:folder==='sent'?MailWorkspace.data.sent_total:listMore.total});if(!fields.length){dispose?.();dispose=null;retained=null;panel=null;return}
-  // A result commit replaces the heading, not the user's open control. Move
-  // its trigger to the new heading and keep the top-layer node and focus.
+  // Same-page commits keep the trigger connected and preserve the open panel.
   const shape=JSON.stringify(fields.map(({name,label,options})=>({name,label,options})));
-  if(sameScope&&retained?.shape===shape){const {trigger,values,paint,position}=retained;Object.assign(values,Object.fromEntries(fields.map(f=>[f.name,f.value])));head.insertBefore(trigger,head.querySelector('[data-mail-select-toggle]'));paint();position();return}
+  if(sameScope&&retained?.shape===shape){const {trigger,values,paint,position}=retained;Object.assign(values,Object.fromEntries(fields.map(f=>[f.name,f.value])));if(trigger.parentElement!==head)head.insertBefore(trigger,head.querySelector('[data-mail-select-toggle]'));paint();position();return}
   dispose?.();dispose=null;retained=null;
   const category=['contacts','important'].includes(folder),label=category?'分类':'筛选';
   const trigger=document.createElement('button');trigger.type='button';trigger.className='e-button mail-list-filter';head.insertBefore(trigger,head.querySelector('[data-mail-select-toggle]'));
@@ -57,7 +56,12 @@ export function installMailListFilters(){
   retained={shape,trigger,values,paint,position};paint();
   panel.onclick=event=>{const choice=event.target.closest('[data-filter-name]');if(!choice)return;Object.assign(values,mailToggleFilter(values,choice.dataset.filterName,choice.dataset.filterValue));apply()};
   dispose=()=>{cancelAnimationFrame(anchorFrame);binding.dispose();current.remove();trigger.remove()};
- };new MutationObserver(enhance).observe(list,{childList:true,subtree:true});enhance();
+ };
+ const header='.mail-workspace-title,.mail-results-bar';
+ new MutationObserver(records=>{
+  if(records.some(r=>r.target.matches?.(header)||[...r.addedNodes,...r.removedNodes].some(n=>n.matches?.(header)||n.querySelector?.(header))))enhance();
+ }).observe(list,{childList:true,subtree:true});
+ enhance();
 }
 export function mailListFiltersBrowserScript(){return [mailFilterQuery,mailFilterCaption,mailDirectoryFilter,mailToggleFilter,mailListFilterFields,installMailListFilters].map(f=>f.toString()).join('\n')+'\ninstallMailListFilters();'}
 export const MAIL_LIST_FILTERS_CSS=`

@@ -72,8 +72,9 @@ export function bindMailPullSurface({list,indicator,onArrange,document:doc=docum
  const arrange=()=>{
   const head=heading();if(!head){list.removeAttribute?.('data-mail-viewport');return}const host=head.parentElement;
   if(!clip||clip.parentElement!==host){const cached=[...host.children].find(n=>n.matches?.('.mail-pull-clip'));clip=cached||doc.createElement('div');clip.className='mail-pull-clip';clip.id='mail-list-scroll';content=cached?.children[0]||doc.createElement('div');content.className='mail-pull-content';if(!cached)clip.append(content)}
-  const outside=[...host.children].filter(n=>n!==head&&n!==clip);
-  if(outside.length){const ordered=[...host.children].filter(n=>n!==head).flatMap(n=>n===clip?[...content.children]:[n]),scroll=clip.scrollTop;content.replaceChildren(...ordered);if(clip.parentElement!==host)host.append(clip);clip.scrollTop=scroll}
+  const isBody=n=>n!==head&&!n.matches?.('.mail-scroll-top');
+  const outside=[...host.children].filter(n=>n!==clip&&isBody(n));
+  if(outside.length){const ordered=[...host.children].filter(isBody).flatMap(n=>n===clip?[...content.children]:[n]),scroll=clip.scrollTop;content.replaceChildren(...ordered);if(clip.parentElement!==host)host.append(clip);clip.scrollTop=scroll}
   // Anchor feedback in the same local coordinate space as the moving content.
   // Cached/replaced lists and browser viewport changes cannot stale a fixed y.
   if(indicator&&indicator.parentElement!==clip)clip.append(indicator);
@@ -88,7 +89,16 @@ export function bindMailPullSurface({list,indicator,onArrange,document:doc=docum
   // A same-page result commit updates the header and rows in place. Retain the
   // native scroll node, including an in-flight native pan and its scrollTop.
   const compatible=clip&&list.contains(clip)&&oldHead&&newHead&&!oldHead.closest?.('.mail-page-skeleton')&&(oldHost===list?newHost===next:newHost!==next&&oldHost.className===newHost.className);
-  if(compatible){oldHead.replaceWith(newHead);content.replaceChildren(...[...newHost.children].filter(n=>n!==newHead));for(const n of [...oldHost.children])if(n!==newHead&&n!==clip)n.remove()}
+  if(compatible){
+   // Keep the header buttons connected through pointerdown, click and a query repaint.
+   const controls='[data-mail-select-toggle],.mail-list-filter';
+   const firstControl=oldHead.querySelector(controls);
+   for(const node of [...oldHead.childNodes])if(!node.matches?.(controls))node.remove();
+   oldHead.className=newHead.className;
+   for(const node of [...newHead.childNodes])oldHead.insertBefore(node,firstControl);
+   content.replaceChildren(...[...newHost.children].filter(n=>n!==newHead));
+   for(const node of [...oldHost.children])if(node!==oldHead&&node!==clip&&!node.matches?.('.mail-scroll-top'))node.remove();
+  }
   else list.replaceChildren(...next.childNodes);
   arrange();
  },contentElement:()=>content||list,scrollElement(){if(!clip||!list.contains(clip))arrange();return clip&&list.contains(clip)?clip:list},top:()=>heading()?.getBoundingClientRect().bottom??list.getBoundingClientRect().top,dispose(){observer?.disconnect();if(clip?.parentElement){const scroll=clip.scrollTop;clip.before(...content.children);clip.remove();list.scrollTop=scroll}list.removeAttribute?.('data-mail-viewport')}};
@@ -341,7 +351,7 @@ body.mail-composing #mail-reader-page{display:none!important}
 /* Header and native scroll viewport are siblings, as in a page/content shell.
    Native rubber banding must never translate the header. Custom refresh owns
    the only overscroll displacement; ordinary vertical scrolling stays native. */
-#list[data-mail-viewport]{display:flex;flex-direction:column;overflow:hidden}
+#list[data-mail-viewport]{position:relative;display:flex;flex-direction:column;overflow:hidden}
 #list[data-mail-viewport] :is(.mail-workspace-content,.mail-page-skeleton,.mail-pending-content):has(.mail-pull-clip){display:flex;flex-direction:column;flex:1;min-height:0;padding-block:0}
 #list[data-mail-viewport] :is(.mail-workspace-title,.mail-results-bar){flex:none}
 .mail-pull-clip{position:relative;flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;overflow-anchor:none}
