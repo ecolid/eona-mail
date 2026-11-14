@@ -139,7 +139,7 @@ test('notification-deep-link-prioritizes-reader',async({page},info)=>{
 });
 
 test('unread batch keeps a nearby row and header actions work while scrolling',async({page},info)=>{
-  const f=await prepare(page,{port:8793,path:'/journeys'});
+  const f=await prepare(page,{port:8793,path:'/journeys'},320);
   const scroller=f.locator('#mail-list-scroll'),filter=f.locator('.mail-list-filter');
   const scrollPoint=await scroller.boundingBox();
   await page.mouse.move(scrollPoint.x+100,scrollPoint.y+180);
@@ -172,9 +172,15 @@ test('unread batch keeps a nearby row and header actions work while scrolling',a
   for(const id of batch.slice(0,2)){
     const row=f.locator('.mail-action-row').filter({has:f.locator('[data-mail-id="'+id+'"]')});
     await expect(row.getByRole('checkbox')).toHaveAccessibleName(/未读/);
-    expect(await row.locator('.from').evaluate(n=>getComputedStyle(n,'::before').width)).toBe('7px');
+    expect(await row.locator('.mail-row-sender').evaluate(n=>{
+      const marker=getComputedStyle(n,'::before');
+      return {width:marker.width,display:marker.display,color:marker.backgroundColor};
+    })).toEqual({width:'7px',display:'inline-block',color:'rgb(37, 99, 235)'});
     await row.getByRole('checkbox').tap();
   }
+  expect(await f.locator('.mail-selection-toolbar button:visible').evaluateAll(
+    controls=>controls.every(control=>control.scrollWidth<=control.clientWidth),
+  )).toBe(true);
   const request=page.waitForRequest(r=>r.url().endsWith('/api/emails/read-state')&&r.method()==='POST');
   await f.getByRole('button',{name:'标为已读',exact:true}).tap();
   expect((await request).postDataJSON()).toEqual({ids:batch.slice(0,2).map(Number),read:true});
