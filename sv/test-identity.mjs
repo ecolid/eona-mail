@@ -90,6 +90,32 @@ try{
   const noFlow=await identity.route(new Request(origin+'/auth/callback?code=do-not-display&state=do-not-display',{headers:{accept:'text/html'}}));
   assert.equal(noFlow.status,400);assert.ok(noFlow.headers.get('set-cookie').includes('Max-Age=0'));
   const recovery=await noFlow.text();assert.ok(recovery.includes('href="/auth/start"'));assert.ok(!recovery.includes('do-not-display'));assert.equal(tokenCalls,exchanged);
+  const restored=await start(),beforeRestored=tokenCalls;
+  const resumedMissing=await identity.route(new Request(origin+'/auth/callback?code=old&state='+restored.state,{headers:{accept:'text/html'}}));
+  assert.equal(resumedMissing.status,303,'restored pages restart a fresh browser binding');
+  assert.equal(tokenCalls,beforeRestored,'missing bindings cannot redeem their old authorization code');
+  const missingURL=new URL(resumedMissing.headers.get('location'));
+  assert.notEqual(missingURL.searchParams.get('state'),restored.state);
+  const missingCookie=resumedMissing.headers.getSetCookie().find(c=>!c.includes('Max-Age=0')).split(';')[0];
+  const cookiesBlocked=await identity.route(new Request(origin+'/auth/callback?code=new&state='+missingURL.searchParams.get('state'),{headers:{accept:'text/html'}}));
+  assert.equal(cookiesBlocked.status,400,'a second missing browser binding stops automatic restart');
+  const boundAgain={at:origin,flow:missingCookie,state:missingURL.searchParams.get('state'),nonce:missingURL.searchParams.get('nonce')};
+  assert.equal((await callback(boundAgain)).headers.get('location'),'/api/email/1');
+
+  const interrupted=await start();
+  await callback(interrupted);
+  const afterInterrupted=tokenCalls;
+  instant+=61000;
+  const replayService=await openIdentity(join(root,'auth.db'),config,{fetcher,clock:()=>instant});
+  try{
+    const replay=await replayService.route(new Request(origin+'/auth/callback?code=code&state='+interrupted.state,{headers:{cookie:interrupted.flow,accept:'text/html'}}));
+    assert.equal(replay.status,303,'a completed callback survives the in-memory response cache');
+    assert.equal(tokenCalls,afterInterrupted,'process restart cannot exchange a consumed authorization code');
+    const url=new URL(replay.headers.get('location'));
+    assert.notEqual(url.searchParams.get('state'),interrupted.state);
+    assert.ok(url.searchParams.get('code_challenge'));
+  }finally{replayService.close();instant-=61000;}
+
   const beforeDelay=instant,delayed=await start();instant+=600000;
   assert.equal((await callback(delayed)).status,303,'normal MFA flow remains valid after the former five-minute deadline');
   instant=beforeDelay;
