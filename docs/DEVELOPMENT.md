@@ -335,6 +335,25 @@ without exchanging the code again. Recovery rechecks the live session and shared
 logout generation. Expired flows, different codes, foreign origins and revoked
 sessions retain their existing rejection and bounded restart rules.
 
+When a browser restores an old callback after its application binding has gone,
+the HTML navigation starts one fresh authorization with new state, nonce and
+PKCE. It never exchanges the old code. The fresh state records that recovery has
+already happened, so rejected cookies cannot form a redirect loop. Completed
+states retain a consumed marker across process restart. An existing verified
+application session goes directly to the saved safe destination.
+
+| Scene | Navigation |
+| --- | --- |
+| Completed callback and live session | Return directly to the application |
+| Old callback or missing browser binding | Start fresh authorization once |
+| Explicit sign-out or revoked login | Show the shared sign-in card |
+| Sensitive reauthentication expired | Offer explicit reauthentication |
+| Failed claims, permission or unavailable service | Show the shared status card and its matching action |
+
+All retained status documents use the same card, embedded local wordmark,
+heading group, compact action and mobile/dark styles. They perform no external
+asset requests and keep the original no-store and CSP restrictions.
+
 Account navigation uses `/auth/account` and `/auth/account?view=settings`; the
 configured issuer owns the destination. Authentication status pages render their
 wordmark locally and make no cross-domain asset requests.

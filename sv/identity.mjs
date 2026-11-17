@@ -169,7 +169,24 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
         // An authorization callback is single-use. Revisiting it after a
         // successful login may use only the already verified owner session;
         // it must never exchange the old code without the browser-bound flow.
-        if(await session(request))return redirect('/');
+        const own=await session(request);
+        if(own)return redirect(safeReturn(flow?.returnTo));
+        if(isAuthDocument(request)&&['login_flow_missing','login_flow_expired'].includes(error)&&
+            /^[\w-]{43}$/.test(state||'')&&u.searchParams.has('code')){
+          // An old URL may have survived the browser binding or the callback
+          // result. State alone can restart login, never redeem its old code.
+          if(!flow){
+            const saved=await db.prepare("SELECT body FROM auth_states WHERE origin=? AND json_extract(body,'$.state')=?").bind(u.origin,state).first();
+            if(saved)flow=JSON.parse(saved.body);
+          }
+          const revoked=flow&&!flow.generations&&Number(flow.revocation_generation||0)!==await generation();
+          if(!revoked&&!flow?.reauth&&!flow?.recoveryAttempt){
+            const fresh=await beginLogin(request,p,{returnTo:flow?.returnTo||'/',recoveryAttempt:1,
+              revocationGeneration:flow?.revocation_generation,generations:flow?.generations});
+            if(readCookie(request,boundName))fresh.headers.append('set-cookie',cookie(boundName,'',0));
+            return fresh;
+          }
+        }
         const action=flow?'/auth/start?return='+encodeURIComponent(safeReturn(flow.returnTo))+(flow.reauth?'&reauth=1':''):'/auth/start';
         return failure(request,error,400,{action,headers:{'set-cookie':cookie(boundName,'',0)}});
       }
@@ -198,6 +215,7 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
       // A stray/older tab must not consume the current tab's flow.
       if(flow.state!==state)return failure(request,'login_validation_failed');
       if(!flow.generations&&Number(flow.revocation_generation||0)!==await generation())return failure(request,'login_flow_revoked');
+      if(flow.consumed)return unavailableFlow('login_flow_expired',flow);
       if(row.expires<=now()){
         const consumed=await db.prepare('DELETE FROM auth_states WHERE key=? AND origin=? RETURNING key').bind(hash,u.origin).first();
         if(consumed&&isAuthDocument(request)&&!flow.reauth&&!flow.recoveryAttempt&&row.expires+recoverySeconds*1000>now()){
@@ -206,7 +224,7 @@ export async function openIdentity(path,config,{fetcher=fetch,clock=Date.now,onR
         }
         return unavailableFlow('login_flow_expired',flow);
       }
-      const consumed=await db.prepare('DELETE FROM auth_states WHERE key=? AND origin=? AND expires>? RETURNING key').bind(hash,u.origin,now()).first();
+      const consumed=await db.prepare("UPDATE auth_states SET body=json_set(body,'$.consumed',1) WHERE key=? AND origin=? AND expires>? AND COALESCE(json_extract(body,'$.consumed'),0)=0 RETURNING key").bind(hash,u.origin,now()).first();
       if(!consumed)return unavailableFlow('login_flow_expired');
       try{
         const tokens=await oidc.authorizationCodeGrant(await provider(u.origin),u,{expectedState:flow.state,expectedNonce:flow.nonce,pkceCodeVerifier:flow.verifier,idTokenExpected:true});
