@@ -20,7 +20,16 @@ export async function cachedSegments(env,emailId,segments,options={}) {
  if(missing.length&&options.cacheOnly)return null;
  if(missing.length){
   if(!env.AI)throw Error('translation_unavailable');
-  const neighborContext=options.neighborContext||missing.flatMap(x=>{const i=keys.indexOf(x.key);return segments.slice(Math.max(0,i-2),i+3)}).join('\n').slice(0,4000);
+  // The request already contains the missing text in order. Only supply
+  // nearby cached source nodes, once each, as extra context.
+  const neighbors=new Set();
+  for(let i=0;i<keys.length;i++){
+   if(found.has(keys[i]))continue;
+   for(let j=Math.max(0,i-2);j<Math.min(keys.length,i+3);j++){
+    if(found.has(keys[j]))neighbors.add(j);
+   }
+  }
+  const neighborContext=options.neighborContext||[...neighbors].map(i=>segments[i]).join('\n').slice(0,4000);
   const result=await translateInline(env,missing.map(x=>x.source),{...options,neighborContext,onValidated:async(i,translated,usedModel)=>{
    const x=missing[i];
    await env.MAILDB.prepare(`INSERT INTO translation_segment_cache(email_id,source_hash,source_text,translated,model)

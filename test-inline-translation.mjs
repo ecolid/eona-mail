@@ -24,7 +24,7 @@ test('fragment repair leaves the protected values outside model output',async()=
  const r=await translateInline({AI:{run:async(model,input)=>{
   calls++;const packet=JSON.parse(input.messages.at(-1).content);
   if(calls===1)return {response:{items:[{id:0,text:'wrong __KEEP_99_0__'}]}};
-  assert(packet.read_only_context);assert.equal(packet.items.length,2);
+  assert.equal(packet.read_only_context,undefined);assert.equal(packet.items.length,2);
   assert(packet.items.every(x=>!/__KEEP_|003480|OpenAI/.test(x.text)));
   return {response:{items:packet.items.map((x,i)=>({...x,text:i===0?'登录 ':' 验证码 '}))}};
  }}},['Login OpenAI verification code 003480']);
@@ -43,13 +43,39 @@ test('validated nodes survive a failed repair and the next request resumes only 
  const root=await mkdtemp(join(tmpdir(),'translation-partial-'));const db=new SQLiteD1(join(root,'mail.db'));
  try{
   let calls=0;const env={MAILDB:db,AI:{run:async(model,input)=>{calls++;const packet=JSON.parse(input.messages.at(-1).content),items=packet.items;
-   return {response:{items:items.map(x=>({...x,text:packet.read_only_context?.includes('__KEEP_')||x.id===1?'wrong __KEEP_99_0__':x.text}))}};
+   return {response:{items:items.map(x=>({...x,text:calls===2||x.id===1?'wrong __KEEP_99_0__':x.text}))}};
   }}};
   await assert.rejects(cachedSegments(env,1,['Price 123','Code 456','Hello']),/fragment_identifier/);
   assert.equal(await db.prepare('SELECT count(*) n FROM translation_segment_cache').first('n'),2);
   env.AI.run=async(model,input)=>{calls++;const items=JSON.parse(input.messages.at(-1).content).items;assert.equal(items.length,1);return {response:{items}};};
   const r=await cachedSegments(env,1,['Price 123','Code 456','Hello']);assert.deepEqual(r.translated,['Price 123','Code 456','Hello']);assert.equal(calls,3);
  }finally{db.close();await rm(root,{recursive:true,force:true});}
+});
+test('multiple faulty nodes share one repair without passing identifiers back to the model',async()=>{
+ let calls=0;
+ const input=['Payment $18.28 is due','Your code is 004210','Read https://example.test before Monday'];
+ const result=await translateInline({AI:{run:async(model,request)=>{
+  const packet=JSON.parse(request.messages.at(-1).content);
+  if(++calls===1)return {response:{items:packet.items.map(x=>({...x,text:'missing identifier'}))}};
+  assert.equal(calls,2);
+  assert.doesNotMatch(JSON.stringify(packet),/__KEEP_|18\.28|004210|example\.test/);
+  return {response:{items:packet.items.map(x=>({...x,text:'译 '+x.text.trim()}))}};
+ }}},input,{neighborContext:'A nearby cached invoice uses $1.50.'});
+ assert.equal(calls,2);
+ assert.deepEqual(result.translated,['译 Payment $18.28 译 is due','译 Your code is 004210','译 Read https://example.test 译 before Monday']);
+});
+
+test('smaller batches save partial translations when a full request exceeds local quota',async()=>{
+ const input=Array.from({length:4},(_,i)=>'Paragraph '+i+' '+('English words '.repeat(38)));
+ let calls=0,remaining=310;
+ const committed=[];
+ const env={AI:{run:async(...args)=>{calls++;return mockAI.run(...args);}}};
+ await assert.rejects(translateInline(env,input,{gate:async reserve=>{
+  if(reserve>remaining)throw Object.assign(Error('translation_budget'),{budget:{remaining}});
+  remaining-=reserve;return true;
+ },onValidated:async id=>committed.push(id)}),/translation_budget/);
+ assert.equal(calls,1);
+ assert.deepEqual(committed,[0]);
 });
 test('full translation splits long input without truncation and checks every segment',async()=>{const source=Array.from({length:25},(_,i)=>'Paragraph '+i+' '+('word '.repeat(80)));let calls=0;const r=await translateInline({AI:{run:async(...args)=>{calls++;return mockAI.run(...args)}},TRANSLATE_MODEL:'@cf/meta/llama-3.3-70b-instruct-fp8-fast'},source);assert.ok(calls>1);assert.equal(r.truncated,false);assert.equal(r.translated.length,source.length);assert.ok(r.translated.at(-1).endsWith(source.at(-1)));});
 test('missing IDs cannot be cached as a successful translation',async()=>{await assert.rejects(translateInline({AI:{run:async()=>({response:'{"items":[]}'})}},['First','Second']),/segment_count/);});
