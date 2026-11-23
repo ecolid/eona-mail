@@ -198,42 +198,45 @@ const utcDay = () => new Date().toISOString().slice(0, 10);
 /** 今日用量 */
 const neuronsOf = (inTok, outTok) => Math.round(((inTok / 1e6) * AI_NEURONS_IN + (outTok / 1e6) * AI_NEURONS_OUT) * 10) / 10;
 
-async function aiUsageToday(env) {
+async function aiUsageToday(env,day=utcDay()) {
   const row = await env.MAILDB.prepare(
     'SELECT calls, in_tokens, out_tokens, tr_in_tokens, tr_out_tokens FROM ai_usage WHERE day = ?'
-  ).bind(utcDay()).first();
+  ).bind(day).first();
   const calls = (row && row.calls) || 0;
   const inTok = (row && row.in_tokens) || 0;
   const outTok = (row && row.out_tokens) || 0;
   // 翻译那一份单独记一笔:总额度是共用的,但翻译不能把打标的份额吃掉(见 AI_TRANSLATE_SHARE)
   const trIn = (row && row.tr_in_tokens) || 0;
   const trOut = (row && row.tr_out_tokens) || 0;
-  const extra=Number(await backupStateGet(env,'tag_model_extra:'+utcDay())) || 0;
-  const translationExtra=Number(await backupStateGet(env,'translation_model_extra:'+utcDay()))||0;
-  const reserved=Number(await backupStateGet(env,'translation_reserved:'+utcDay()))||0;
-  return {calls,inTok,outTok,neurons:Math.round((neuronsOf(inTok,outTok)+extra+translationExtra+reserved)*10)/10,trNeurons:Math.round((neuronsOf(trIn,trOut)+translationExtra+reserved)*10)/10};
+  const extra=Number(await backupStateGet(env,'tag_model_extra:'+day)) || 0;
+  const translationExtra=Number(await backupStateGet(env,'translation_model_extra:'+day))||0;
+  const reserved=Number(await backupStateGet(env,'translation_reserved:'+day))||0;
+  const booked=neuronsOf(inTok,outTok)+extra+translationExtra;
+  return {calls,inTok,outTok,booked,reserved,neurons:Math.round((booked+reserved)*10)/10,trNeurons:Math.round((neuronsOf(trIn,trOut)+translationExtra+reserved)*10)/10};
 }
 
 /** 记一次调用的用量。kind='translate' 的那部分另记一份,给翻译份额用。 */
-async function aiUsageAdd(env, inTok, outTok, kind, model) {
+async function aiUsageAdd(env, inTok, outTok, kind, model, day=utcDay(), settlement=[]) {
   const tIn = ['translate','translate-inline'].includes(kind) ? inTok : 0, tOut = ['translate','translate-inline'].includes(kind) ? outTok : 0;
   const tokenStatement=env.MAILDB.prepare(
     `INSERT INTO ai_usage (day, calls, in_tokens, out_tokens, tr_in_tokens, tr_out_tokens) VALUES (?, 1, ?, ?, ?, ?)
      ON CONFLICT(day) DO UPDATE SET
        calls = calls + 1, in_tokens = in_tokens + ?, out_tokens = out_tokens + ?,
        tr_in_tokens = tr_in_tokens + ?, tr_out_tokens = tr_out_tokens + ?`
-  ).bind(utcDay(), inTok, outTok, tIn, tOut, inTok, outTok, tIn, tOut);
-  const extra=(['tag','translate-inline'].includes(kind)||(kind==='translate'&&model===MAIL_TAG_MODEL))?((TAG_NEURONS_IN-AI_NEURONS_IN)*inTok+(TAG_NEURONS_OUT-AI_NEURONS_OUT)*outTok)/1e6:0;
+  ).bind(day, inTok, outTok, tIn, tOut, inTok, outTok, tIn, tOut);
+  const statements=[tokenStatement];
+  const extra=((kind==='tag'||(kind==='translate-inline'&&model!=='@cf/meta/llama-3.1-8b-instruct-fp8-fast'))||(kind==='translate'&&model===MAIL_TAG_MODEL))?((TAG_NEURONS_IN-AI_NEURONS_IN)*inTok+(TAG_NEURONS_OUT-AI_NEURONS_OUT)*outTok)/1e6:0;
   if(extra>0){
     // Keep old token counters and translation rates intact. Atomically add only
     // the new tag model's rate difference, avoiding repricing the earlier day.
     const costStatement=env.MAILDB.prepare(`INSERT INTO backup_state(k,v) VALUES(?,?)
       ON CONFLICT(k) DO UPDATE SET v=CAST(CAST(backup_state.v AS REAL)+CAST(excluded.v AS REAL) AS TEXT)`)
-      .bind((kind==='tag'?'tag_model_extra:':'translation_model_extra:')+utcDay(),String(extra));
-    if(env.MAILDB.batch)await env.MAILDB.batch([tokenStatement,costStatement]);
-    else {await tokenStatement.run();await costStatement.run();}
-  } else await tokenStatement.run();
-
+      .bind((kind==='tag'?'tag_model_extra:':'translation_model_extra:')+day,String(extra));
+    statements.push(costStatement);
+  }
+  statements.push(...settlement);
+  if(env.MAILDB.batch&&statements.length>1)await env.MAILDB.batch(statements);
+  else for(const statement of statements)await statement.run();
 }
 
 /**
@@ -383,9 +386,9 @@ const AI_TAG_RESERVE = (env) => Number(env.AI_TAG_RESERVE || 600);
 const AI_TRANSLATE_MANUAL_RESERVE = (env) => Math.max(0,Number(env.AI_TRANSLATE_MANUAL_RESERVE ?? 1500));
 
 async function aiGate(env, ceiling) {
-  const limit = Number(ceiling || AI_DAILY_NEURONS(env));
-  const u = await aiUsageToday(env);
-  return { open: u.neurons < limit, used: u.neurons, limit };
+  const day=utcDay(),local=await aiUsageToday(env,day);
+  const {used,limit}=ceiling?{used:local.neurons,limit:Number(ceiling)}:await accountBudget(env,day,local,0,0);
+  return {open:used<limit,used,limit};
 }
 
 /** 自动翻译的阀门:先看总闸,再看翻译自己那份。share 传 null = 不限份额(打标已清空)。 */
@@ -401,30 +404,112 @@ async function aiTranslateGate(env, share) {
   return { open: true, used: share == null ? u.neurons : u.trNeurons, limit: share == null ? 放开上限 : share };
 }
 
+const translationHoldPrefix=day=>'translation_hold:'+day+':';
+const translationReserveKey=day=>'translation_reserved:'+day;
+const validUsage=usage=>Number.isSafeInteger(usage?.input)&&usage.input>=0
+  &&Number.isSafeInteger(usage.output)&&usage.output>=0;
+
+async function settleTranslationHold(env,{day,key,reserve,model},usage) {
+  const statements=[env.MAILDB.prepare('UPDATE backup_state SET v=CAST(MAX(0,CAST(v AS REAL)-?) AS TEXT) WHERE k=?')
+    .bind(reserve,translationReserveKey(day))];
+  if(key)statements.push(env.MAILDB.prepare('DELETE FROM backup_state WHERE k=?').bind(key));
+  if(usage)await aiUsageAdd(env,usage.input,usage.output,'translate-inline',model,day,statements);
+  else await env.MAILDB.batch(statements);
+}
+
+export async function reconcileTranslationReceipts(env) {
+  if(!env.TRANSLATION_RECEIPTS)return;
+  const work=async()=>{
+    const day=utcDay(),prefix=translationHoldPrefix(day);
+    const yesterday=new Date(Date.parse(day)-86400000).toISOString().slice(0,10);
+    const oldPrefix=translationHoldPrefix(yesterday);
+    await env.MAILDB.prepare('DELETE FROM backup_state WHERE k>=? AND k<?').bind('translation_hold:',oldPrefix).run();
+    const {results}=await env.MAILDB.prepare(`SELECT k,v FROM backup_state
+      WHERE (k GLOB ? OR k GLOB ?) AND CASE WHEN json_valid(v) THEN json_extract(v,'$.checkAfter') END<=?
+      ORDER BY json_extract(v,'$.checkAfter') LIMIT 4`).bind(prefix+'*',oldPrefix+'*',Date.now()).all();
+    for(const row of results||[]){
+      const [,,id]=row.k.split(':');
+      const hold=JSON.parse(row.v);
+      let receipt;
+      try{receipt=await env.TRANSLATION_RECEIPTS.read(id);}catch{}
+      if(receipt?.state==='completed'&&validUsage(receipt.usage)){
+        await settleTranslationHold(env,{...hold,key:row.k},receipt.usage);
+      }else if(receipt?.state==='rejected'){
+        await settleTranslationHold(env,{...hold,key:row.k},null);
+      }else{
+        hold.checkAfter=Date.now()+120000;
+        await env.MAILDB.prepare('UPDATE backup_state SET v=? WHERE k=?').bind(JSON.stringify(hold),row.k).run();
+      }
+    }
+  };
+  return env.TRANSLATION_RUN?env.TRANSLATION_RUN(work):work();
+}
+
+async function accountBudget(env,day,local,allocation,reserve) {
+  const fallbackLimit=AI_DAILY_NEURONS(env)-allocation;
+  const refresh=local.neurons+reserve>=fallbackLimit;
+  const budgetFrom=observed=>{
+    // Analytics can lag behind inference. Carry local bookings after this
+    // observation forward, and keep the local ledger as a lower bound.
+    const provider=observed?.day===day&&Number.isFinite(observed.used)&&observed.used>=0
+      &&Number.isFinite(observed.limit)&&observed.limit>0&&Number.isFinite(observed.booked);
+    return provider
+      ? {used:Math.max(local.booked,observed.used+Math.max(0,local.booked-observed.booked))+local.reserved,limit:Math.max(0,(observed.verified===false?Math.min(observed.limit,AI_DAILY_NEURONS(env)):observed.limit)-allocation)}
+      : {used:local.neurons,limit:Math.max(0,fallbackLimit)};
+  };
+  const source=env.TRANSLATION_QUOTA;
+  let balance=budgetFrom(source?await source({day,booked:local.booked,refresh}):null);
+  if(source&&!refresh&&balance.used+reserve>=balance.limit){
+    balance=budgetFrom(await source({day,booked:local.booked,refresh:true}));
+  }
+  return balance;
+}
+
+async function inlineTranslationGate(env,day,automatic,reserve) {
+  const local=await aiUsageToday(env,day);
+  const allocation=automatic?AI_TAG_RESERVE(env)+AI_TRANSLATE_MANUAL_RESERVE(env):0;
+  const {used,limit}=await accountBudget(env,day,local,allocation,reserve);
+  if(used+reserve>=limit){
+    const reset=Date.parse(day)+86400000;
+    const budget={used,limit,required:reserve,remaining:Math.max(0,limit-used),reset_at:new Date(reset).toISOString()};
+    if(env.TRANSLATION_QUOTA)budget.retry_at=new Date(Math.min(reset,Date.now()+300000)).toISOString();
+    throw Object.assign(Error('translation_budget'),{budget});
+  }
+}
+
 export async function cachedInlineTranslation(env,emailId,segments,{automatic=false,refresh=false,neighborContext=''}={}) {
  const ready=await cachedSegments(env,emailId,segments,{cacheOnly:true,refresh});
  if(ready)return ready;
  const work=async()=>{
-  let held=0,heldDay='';
+  let hold;
   return cachedSegments(env,emailId,segments,{refresh,neighborContext,
-   gate:async(reserve)=>{
-    const g=automatic?await aiTranslateGate(env,null):await aiGate(env);
-    if(!g.open||g.used+reserve>=g.limit){
-     const resetAt=new Date(Date.parse(utcDay()+'T00:00:00Z')+86400000).toISOString();
-     throw Object.assign(Error('translation_budget'),{budget:{used:g.used,limit:g.limit,required:reserve,remaining:Math.max(0,g.limit-g.used),reset_at:resetAt}});
-    }
-    heldDay=utcDay();held=reserve;
-    await env.MAILDB.prepare(`INSERT INTO backup_state(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET
-     v=CAST(CAST(backup_state.v AS REAL)+CAST(excluded.v AS REAL) AS TEXT)`).bind('translation_reserved:'+heldDay,String(reserve)).run();
+   gate:async(reserve,model)=>{
+    const day=utcDay();
+    await inlineTranslationGate(env,day,automatic,reserve);
+    const tracked=env.TRANSLATION_RECEIPTS&&env.MAILDB.batch;
+    const id=tracked?crypto.randomUUID():null;
+    const key=id?translationHoldPrefix(day)+id:null;
+    hold={day,id,key,reserve,model,checkAfter:Date.now()+60000};
+    const reserveStatement=env.MAILDB.prepare(`INSERT INTO backup_state(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET
+     v=CAST(CAST(backup_state.v AS REAL)+CAST(excluded.v AS REAL) AS TEXT)`).bind(translationReserveKey(day),String(reserve));
+    if(key)await env.MAILDB.batch([reserveStatement,env.MAILDB.prepare('INSERT INTO backup_state(k,v) VALUES(?,?)').bind(key,JSON.stringify(hold))]);
+    else await reserveStatement.run();
     return true;
    },
+   run:async(model,input)=>{
+    if(!hold.id)return env.AI.run(model,input);
+    const response=await env.TRANSLATION_RECEIPTS.run(model,input,hold.id);
+    if(response?.state==='completed'&&response.result)return response.result;
+    if(response?.state==='rejected')await settleTranslationHold(env,hold,null);
+    throw Error('translation_unavailable');
+   },
    accountUsage:async(u,src,out)=>{
-    await aiUsageAdd(env,u.prompt_tokens||u.input_tokens||Math.round(src/3),u.completion_tokens||u.output_tokens||Math.round(out/1.5),'translate-inline');
-    await env.MAILDB.prepare('UPDATE backup_state SET v=CAST(MAX(0,CAST(v AS REAL)-?) AS TEXT) WHERE k=?').bind(held,'translation_reserved:'+heldDay).run();held=0;
+    await settleTranslationHold(env,hold,{
+      input:u.prompt_tokens??u.input_tokens??Math.round(src/3),
+      output:u.completion_tokens??u.output_tokens??Math.round(out/1.5),
+    });
    }
   });
-  // Missing usage after a timeout retains the conservative reservation for
-  // that UTC day; a restart cannot turn an uncertain charge into free budget.
  };
  return env.TRANSLATION_RUN?env.TRANSLATION_RUN(work):work();
 }

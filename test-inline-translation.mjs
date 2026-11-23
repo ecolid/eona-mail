@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {translateInline,protectTranslationText,validateInlineSegments,validateTranslatedText} from './src/translation-inline.js';
-import {fetchWithIdentity,testHooks,cachedInlineTranslation} from './src/index.js';
+import {fetchWithIdentity,testHooks,cachedInlineTranslation,reconcileTranslationReceipts} from './src/index.js';
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
@@ -130,3 +130,56 @@ test('budget rejection distinguishes remaining allowance from exhaustion and ret
   await db.prepare('UPDATE backup_state SET v=?').bind('8000').run();r=await post();body=await r.json();assert.equal(body.budget.remaining,0);assert.match(body.error,/已用完/);assert.equal((await db.prepare('SELECT text_body FROM emails WHERE id=1').first()).text_body,'Original body');
  }finally{db.close();await rm(root,{recursive:true,force:true});}
 });
+
+async function quotaFixture(run){
+ const root=await mkdtemp(join(tmpdir(),'translation-account-quota-')),db=new SQLiteD1(join(root,'mail.db'));
+ try{
+  await db.exec('CREATE TABLE backup_state(k TEXT PRIMARY KEY,v TEXT);CREATE TABLE ai_usage(day TEXT PRIMARY KEY,calls INTEGER,in_tokens INTEGER,out_tokens INTEGER,tr_in_tokens INTEGER,tr_out_tokens INTEGER);');
+  await run(db,new Date().toISOString().slice(0,10));
+ }finally{db.close();await rm(root,{recursive:true,force:true});}
+}
+
+test('live Workers AI quota opens the old local freeze and honors the account-wide limit',()=>quotaFixture(async(db,day)=>{
+ await db.prepare('INSERT INTO backup_state VALUES(?,?)').bind('tag_model_extra:'+day,'5783').run();
+ const inputs=[];
+ let used=5302,verified=true;
+ const env={MAILDB:db,AI:mockAI,TRANSLATION_QUOTA:async options=>{
+  inputs.push(options);return {day,used,limit:10000,booked:5500,verified};
+ }};
+ const incoming=['The existing queue can now continue. '.repeat(10)];
+ await assert.rejects(cachedInlineTranslation({...env,TRANSLATION_QUOTA:undefined},1,incoming,{automatic:true}),/translation_budget/);
+ const first=await cachedInlineTranslation(env,1,incoming,{automatic:true});
+ assert.equal(first.translated.length,1);
+ assert.ok(inputs[0].booked>=5783);
+ used=7890;
+ await assert.rejects(cachedInlineTranslation(env,2,['This part requires more than the real remaining balance.'],{automatic:true}),error=>
+  error.message==='translation_budget'&&error.budget.limit===7900&&!!error.budget.retry_at);
+ used=5302;verified=false;
+ await db.prepare('UPDATE backup_state SET v=? WHERE k=?').bind('5900','tag_model_extra:'+day).run();
+ await assert.rejects(cachedInlineTranslation(env,3,['A degraded snapshot cannot raise the limit.'],{automatic:true}),error=>
+  error.message==='translation_budget'&&error.budget.limit===5900);
+}));
+
+test('a lost response is settled once from its persisted receipt, and confirmed rejection releases the hold',()=>quotaFixture(async(db,day)=>{
+ let id,receipt={state:'pending'},reads=0;
+ const env={MAILDB:db,AI:mockAI,TRANSLATION_RECEIPTS:{
+  run:async(_model,_input,value)=>{id=value;throw new DOMException('timed out','TimeoutError');},
+  read:async value=>{assert.equal(value,id);reads++;return receipt;}
+ }};
+ const pending=()=>db.prepare('SELECT k,v FROM backup_state WHERE k GLOB ?').bind('translation_hold:'+day+':*').first();
+ const reserved=async()=>Number(await db.prepare('SELECT v FROM backup_state WHERE k=?').bind('translation_reserved:'+day).first('v'));
+ const due=async()=>{const hold=await pending();await db.prepare("UPDATE backup_state SET v=json_set(v,'$.checkAfter',0) WHERE k=?").bind(hold.k).run();};
+ await assert.rejects(cachedInlineTranslation(env,1,['The response was lost after dispatch.']),{name:'TimeoutError'});
+ assert.ok(await reserved()>0);assert.ok((await pending()).k.endsWith(id));
+ await due();await reconcileTranslationReceipts(env);assert.ok(await reserved()>0);
+ receipt={state:'completed',usage:{input:31,output:42}};
+ await due();await reconcileTranslationReceipts(env);await reconcileTranslationReceipts(env);
+ assert.equal(await pending(),null);assert.equal(await reserved(),0);assert.equal(reads,2);
+ assert.deepEqual({...await db.prepare('SELECT calls,in_tokens,out_tokens FROM ai_usage WHERE day=?').bind(day).first()},
+  {calls:1,in_tokens:31,out_tokens:42});
+
+ env.TRANSLATION_RECEIPTS.run=async()=>({state:'rejected'});
+ await assert.rejects(cachedInlineTranslation(env,2,['This request was rejected before inference.']),/translation_unavailable/);
+ assert.equal(await pending(),null);assert.equal(await reserved(),0);
+ assert.equal(await db.prepare('SELECT calls FROM ai_usage WHERE day=?').bind(day).first('calls'),1);
+}));
