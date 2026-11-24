@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "lockfileSha256": "b4fee41857408c65a754d81fbf391cf88a14aca4d4802f66b9b5dd6bc86455f1",
+  "lockfileSha256": "e406c5c0a6eb21893db16740eca7b983bc09dece8260df15285e0e12a2560c7f",
   "packages": [
     {
       "name": "@esbuild/aix-ppc64",

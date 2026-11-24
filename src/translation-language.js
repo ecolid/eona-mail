@@ -45,10 +45,12 @@ export function isTranslationLiteral(value,source=value){
     /^\p{Script=Han}{1,16}\s*[:：]\s*[a-z]+(?:[_.-][a-z\d]+)+$/iu.test(original))return true;
  const text=String(value||'').normalize('NFKC').replace(/\p{Cf}/gu,'').trim();
  if(!text||/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text))return !text;
- const withoutHan=text.replace(/\p{Script=Han}/gu,' ');
+ if(/(?:^|[,·・])\s*\d{1,6}[\w-]*\s+[\p{L}\p{N} .’'-]{1,95}\s+(?:street|st|road|rd|drive|dr|parkway|pkwy|avenue|ave|boulevard|blvd|lane|ln|way|place|pl)\.?(?:\s*(?:[,·・]|$))/iu.test(original)&&
+    !/\b(?:please|your|you|we|received|delivery|shipped|mail to|send to)\b/i.test(original))return true;
+ const withoutHan=text.replace(/\p{Script=Han}/gu,' ').replace(/\bs\s*\.\s*r\s*\.\s*o\s*\.|\bb\s*\.\s*v\s*\./gi,' ');
  const words=withoutHan.match(/\p{L}[\p{L}\p{M}\p{N}'’-]*/gu)||[];
  if(!words.length||words.length>8&&(!/\p{Script=Han}/u.test(text)||new Set(words).size>8))return false;
  if(words.some(word=>!/\p{Script=Latin}/u.test(word)))return false;
  if(/\b(?:hello|thanks|thank|welcome|dear|best|regards|cheers|attention|notice|alert|action|update|updates|confirm|confirmation|verify|verification|success|successful|failed|delivered|shipped|shipping|receipt|invoice|payment|order|renewal|reminder|status|important|review|required|read|reply|unsubscribe|view|subscribe|click|open|download|cancel|settings|here|please|free|new|your|you|this|is|no|not|with|now|expires?|today|tomorrow|sign|report|version|password|login|price|code|first|second)\b/i.test(withoutHan))return false;
- return words.every(word=>/\p{Lu}|^[ivxlcdm]+$/u.test(word)||/^(?:of|the|de|van|von|da|del|and|&|la|le|et|at|v\d+)$/i.test(word));
+ return words.every(word=>/\p{Lu}|^[ivxlcdm]+$/u.test(word)||/^(?:of|the|de|van|von|da|del|and|&|la|le|et|at|mini|pro|max|ultra|v\d+)$/i.test(word));
 }
