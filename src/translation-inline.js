@@ -46,7 +46,7 @@ export function validateTranslationResult(source,text,{knownArchive=false}={}){
  validateTranslatedText(source,text);
  if(knownArchive)return text;
  const prose=translatedProse(protectTranslationText(source));
- if(hasForeignProse(prose)&&!isTranslationLiteral(prose)&&
+ if(hasForeignProse(prose)&&!isTranslationLiteral(prose,source)&&
     (prose.trim().split(/\s+/u).length>1||/[^\x00-\x7f]/u.test(prose))&&
     (source.trim()===text.trim()||!/\p{Script=Han}/u.test(text)))throw Error('translation_text_untranslated');
  return text;
@@ -160,7 +160,7 @@ export async function translateInline(env,segments,{accountUsage=async()=>{},gat
  const items=[];
  for(const [id,p] of protectedTexts.entries()){
   const prose=translatedProse(p);
-  if(hasForeignProse(prose)&&!isTranslationLiteral(prose))items.push({id,text:p.source});
+  if(hasForeignProse(prose)&&!isTranslationLiteral(prose,segments[id]))items.push({id,text:p.source});
   else await accept(id,p.source);
  }
  for(const batch of translationBatches(items))await translateItems(batch);
