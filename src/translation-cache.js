@@ -12,7 +12,14 @@ export async function cachedSegments(env,emailId,segments,options={}) {
  for(let i=0;i<unique.length;i+=80){
   const slice=unique.slice(i,i+80);
   const {results}=await env.MAILDB.prepare('SELECT * FROM translation_segment_cache WHERE email_id=? AND source_hash IN ('+slice.map(()=>'?').join(',')+')').bind(emailId,...slice).all();
-  for(const row of results||[]){try{validateTranslationResult(row.source_text,row.translated,{knownArchive:row.model==='archive-mime-header-zh-v1'});if(!options.refresh)found.set(row.source_hash,row);}catch{}}
+  for(const row of results||[]){
+   try{
+    const retained=row.model==='mail-history-source-retained-v1';
+    if(retained&&row.source_text!==row.translated)throw Error('translation_cache_invalid');
+    validateTranslationResult(row.source_text,row.translated,{knownArchive:retained||row.model==='archive-mime-header-zh-v1'});
+    if(!options.refresh)found.set(row.source_hash,row);
+   }catch{}
+  }
  }
  const missing=[];const seen=new Set();
  for(let i=0;i<keys.length;i++)if(!found.has(keys[i])&&!seen.has(keys[i])){seen.add(keys[i]);missing.push({key:keys[i],source:segments[i]});}

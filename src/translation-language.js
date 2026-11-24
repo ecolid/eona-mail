@@ -57,7 +57,18 @@ export function needsMailTranslation(subject,body){
 // translation. They must not turn a successfully translated mail into a retry.
 export function isTranslationLiteral(value,source=value){
  const original=String(source||'').normalize('NFKC').replace(/\p{Cf}/gu,'').trim();
- if(/^@?[a-z\d][a-z\d._-]+\/[a-z\d][a-z\d._-]+$/i.test(original)||
+ const field=original.replace(/^[:：#]\s*/u,'').replace(/^["'`]+|["'`]+$/gu,'').trim();
+ if(/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(field)||
+    /^(?:[a-z\d-]+\.)+[a-z]{2,}\/[a-z\d_~./\-\u2011]+$/iu.test(field)||
+    /^\{[a-z_][a-z\d_.-]*\}$/i.test(field)||
+    /^ref:[a-z\d.!_-]+:ref$/i.test(field)||
+    /^(?:[A-Za-z]{2,12}\s+)?[A-Z]{2,4}\d+:[\w_-]+(?:\([\w_-]+\))?(?::[a-z\d_-]*)+$/u.test(field)||
+    /^"[a-z_][a-z\d_]*"\s*:\s*"[^\r\n]*"\s*,?$/i.test(original)||
+    /^(?:\d[\w-]*\s+)?rue\s+[\p{L} .'-]{3,70},\s*\d{4,6}\s+\p{L}[\p{L} .'-]+$/iu.test(field)||
+    /^(?:>>?)?\s*(?:\.{1,2}\/|~\/|\/)[a-z\d_./~-]+(?:\s+(?:--?[\w-]+|\/\S+))*$/i.test(field)||
+    /^(?:curl|chmod|chattr|wget|sh|bash|netlify)\s+(?:-\S+|\/\S+|\$[A-Z_]+|dev$)/u.test(field)||
+    /^[a-z][a-z\d]+(?:-[a-z\d]+){2,}$/iu.test(field)&&/\d/.test(field)||
+    /^@?[a-z\d][a-z\d._-]+\/[a-z\d][a-z\d._-]+$/i.test(original)||
     /^\/\s*[a-z\d_.-]+(?:\/[a-z\d_.-]+)*\/?$/i.test(original)||
     /^(?:[\da-f]{0,4}:){2,8}[\da-f]{0,4}(?:%[a-z\d_.-]+)?$/i.test(original)||
     /^(?:ref:[a-z\d]+:ref|(?:[a-z]{2,5}[a-z\d_-]*[:.])?\d{7,}[a-z\d_.:-]*)$/i.test(original)||

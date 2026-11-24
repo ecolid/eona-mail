@@ -1,0 +1,7 @@
+{
+  "id": "mail-translation-preserved-fields",
+  "summary": "全文译文兼容需原样显示的历史字段",
+  "details": [
+    "阅读译文时按原字呈现已复核的技术字段。原文变化后按新内容重新校验。"
+  ]
+}
