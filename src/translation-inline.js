@@ -1,4 +1,4 @@
-import {hasForeignProse} from './translation-language.js';
+import {hasForeignProse,isTranslationLiteral} from './translation-language.js';
 // A translation is text data. It cannot create HTML, links or executable content.
 const KEEP = /\b(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}(?:\s+at\s+\d{1,2}:\d{2}(?:\s*[AP]M)?(?:\s*\([A-Z]{2,5}\))?)?|https?:\/\/[^\s<>]+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b(?:[a-z\d-]+\.)+[a-z]{2,}\b|\b(?:OpenAI|ChatGPT|Cloudflare|CloudCone|UptimeRobot|Codex|Eona|Sony|Linux|Chrome|Safari|Microsoft Edge|PDT|PST|UTC|GMT)\b|[$¥€£]?[0-9]+(?:[.,:/%-][0-9]+)*/gi;
 const MARKER='__KEEP_[A-Za-z0-9]+(?:_[A-Za-z0-9]+)*__';
@@ -46,7 +46,7 @@ export function validateTranslationResult(source,text,{knownArchive=false}={}){
  validateTranslatedText(source,text);
  if(knownArchive)return text;
  const prose=translatedProse(protectTranslationText(source));
- if(hasForeignProse(prose)&&
+ if(hasForeignProse(prose)&&!isTranslationLiteral(prose)&&
     (prose.trim().split(/\s+/u).length>1||/[^\x00-\x7f]/u.test(prose))&&
     (source.trim()===text.trim()||!/\p{Script=Han}/u.test(text)))throw Error('translation_text_untranslated');
  return text;
@@ -128,7 +128,7 @@ export async function translateInline(env,segments,{accountUsage=async()=>{},gat
    entry.pieces=[...protectedText.pieces];
    entry.fragments=[];
    for(const [i,text] of entry.pieces.entries()){
-    if(protectedText.saved.has(text)||!hasForeignProse(text))continue;
+    if(protectedText.saved.has(text)||!hasForeignProse(text)||isTranslationLiteral(text))continue;
     const id=fragments.length;
     fragments.push({id,text});entry.fragments.push({index:i,id});
    }
@@ -159,7 +159,8 @@ export async function translateInline(env,segments,{accountUsage=async()=>{},gat
  }
  const items=[];
  for(const [id,p] of protectedTexts.entries()){
-  if(hasForeignProse(translatedProse(p)))items.push({id,text:p.source});
+  const prose=translatedProse(p);
+  if(hasForeignProse(prose)&&!isTranslationLiteral(prose))items.push({id,text:p.source});
   else await accept(id,p.source);
  }
  for(const batch of translationBatches(items))await translateItems(batch);

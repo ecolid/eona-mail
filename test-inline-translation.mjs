@@ -226,3 +226,13 @@ test('validated pre-existing full-body translation is accessible via the reader 
   assert.deepEqual(await get(),{ok:true,cached:false});
  }finally{db.close();}
 });
+
+test('brand and contact name literals stay intact while actionable title-case phrases translate',async()=>{
+ const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','Payment Confirmation'];
+ const result=await translateInline({AI:{run:async(_model,input)=>{
+  const {items}=JSON.parse(input.messages.at(-1).content);
+  assert.deepEqual(items,[{id:5,text:original[5]}]);
+  return {response:{items:[{id:5,text:'付款确认'}]}};
+ }}},original);
+ assert.deepEqual(result.translated,[...original.slice(0,5),'付款确认']);
+});

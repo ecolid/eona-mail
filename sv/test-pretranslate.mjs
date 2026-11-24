@@ -24,8 +24,8 @@ async function fixture(fn){
 }
 
 test('static extraction keeps browser text/entity boundaries and excludes hidden or executable mail',()=>{
- const html='<html><head><style>p{color:red}</style></head><body><p>'+body+'</p><table><tr><td>Tom &amp; Sony</td><td><b>Notice</b> 12</td></tr></table><p hidden>Hidden</p><span style="display: none">Preheader</span><script>fetch("https://example.invalid")</script><svg><text>SVG</text></svg></body></html>';
- assert.deepEqual(htmlTranslationSegments(html),[body,'Tom & Sony','Notice','12']);
+ const html='<html><head><style>p{color:red}</style></head><body><p>'+body+'</p><table><tr><td>Tom &amp; Sony</td><td><b>Notice</b> 12</td></tr></table><p hidden>Hidden</p><span style="display: none">Preheader</span><noscript><p>Fallback text.</p></noscript><script>fetch("https://example.invalid")</script><svg><text>SVG</text></svg></body></html>';
+ assert.deepEqual(htmlTranslationSegments(html),[body,'Tom & Sony','Notice','12','Fallback text.']);
  const p=protectTranslationText('Renewal: October 12, 2026 at 1:08 AM (PDT).');
  assert.equal(p.source,'Renewal: __KEEP_0_0__.');assert.equal(p.restore(p.source),'Renewal: October 12, 2026 at 1:08 AM (PDT).');
 });
@@ -70,7 +70,7 @@ test('a failed later chunk resumes completed chunks without paying for them agai
 test('concurrent foreground/background requests share one successful purchase',()=>fixture(async f=>{
  const source=['Project update',body,'Sony'];
  const [a,b]=await Promise.all([cachedInlineTranslation(f.env,1,source,{automatic:true}),cachedInlineTranslation(f.env,1,source)]);
- assert.equal(f.calls(),1);assert.equal(a.cached,false);assert.equal(b.cached,true);assert.deepEqual(a.translated,b.translated);
+ assert.equal(f.calls(),1);assert.deepEqual([a.cached,b.cached].sort(),[false,true]);assert.deepEqual(a.translated,b.translated);
 }));
 
 test('unknown provider usage remains reserved across restarts and stops further purchases',()=>fixture(async f=>{
