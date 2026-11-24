@@ -228,11 +228,11 @@ test('validated pre-existing full-body translation is accessible via the reader 
 });
 
 test('brand and contact name literals stay intact while actionable title-case phrases translate',async()=>{
- const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','Payment Confirmation'];
+ const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','openai/gpt-6-example','Mozilla/5.0 (Macintosh) AppleWebKit/100 Chrome/100','登录活动来自 Apple iPhone','操作：rows_read','Payment Confirmation'];
  const result=await translateInline({AI:{run:async(_model,input)=>{
   const {items}=JSON.parse(input.messages.at(-1).content);
-  assert.deepEqual(items,[{id:5,text:original[5]}]);
-  return {response:{items:[{id:5,text:'付款确认'}]}};
+  assert.deepEqual(items,[{id:9,text:original[9]}]);
+  return {response:{items:[{id:9,text:'付款确认'}]}};
  }}},original);
- assert.deepEqual(result.translated,[...original.slice(0,5),'付款确认']);
+ assert.deepEqual(result.translated,[...original.slice(0,9),'付款确认']);
 });

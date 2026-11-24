@@ -36,13 +36,19 @@ export function needsMailTranslation(subject,body){
 
 // Names, brands, identifiers and address fragments can be identical in the
 // translation. They must not turn a successfully translated mail into a retry.
-export function isTranslationLiteral(value){
- const text=String(value||'').normalize('NFKC').trim();
+export function isTranslationLiteral(value,source=value){
+ const original=String(source||'').normalize('NFKC').replace(/\p{Cf}/gu,'').trim();
+ if(/^@?[a-z\d][a-z\d._-]+\/[a-z\d][a-z\d._-]+$/i.test(original)||
+    /^[a-z\d]+(?:_[a-z\d.]+)+$/i.test(original)||
+    /^[a-z][a-z\d]*-[a-z.]*\d[a-z\d.-]*$/i.test(original)||
+    /^(?:Mozilla|Opera)\/\d[\s\S]+\b(?:Chrome|Safari|Firefox|Edg)\/\d/i.test(original)||
+    /^\p{Script=Han}{1,16}\s*[:：]\s*[a-z]+(?:[_.-][a-z\d]+)+$/iu.test(original))return true;
+ const text=String(value||'').normalize('NFKC').replace(/\p{Cf}/gu,'').trim();
  if(!text||/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text))return !text;
  const withoutHan=text.replace(/\p{Script=Han}/gu,' ');
  const words=withoutHan.match(/\p{L}[\p{L}\p{M}\p{N}'’-]*/gu)||[];
  if(!words.length||words.length>8&&(!/\p{Script=Han}/u.test(text)||new Set(words).size>8))return false;
  if(words.some(word=>!/\p{Script=Latin}/u.test(word)))return false;
- if(/\b(?:hello|thanks|thank|welcome|dear|best|regards|cheers|attention|notice|alert|action|update|updates|confirm|confirmation|verify|verification|success|successful|failed|delivered|shipped|shipping|receipt|invoice|payment|order|renewal|reminder|status|important|review|required|read|reply|unsubscribe|view|subscribe|click|open|download|cancel|settings|here|please|free|new|your|you|the|this|is|no|not|from|with|now|expires?|today|tomorrow|sign|report|version|password|login|price|code|first|second)\b/i.test(withoutHan))return false;
- return words.every(word=>/^\p{Lu}|^[ivxlcdm]+$/u.test(word)||/^(?:of|de|van|von|da|del|and|&|la|le|et|at|v\d+)$/i.test(word));
+ if(/\b(?:hello|thanks|thank|welcome|dear|best|regards|cheers|attention|notice|alert|action|update|updates|confirm|confirmation|verify|verification|success|successful|failed|delivered|shipped|shipping|receipt|invoice|payment|order|renewal|reminder|status|important|review|required|read|reply|unsubscribe|view|subscribe|click|open|download|cancel|settings|here|please|free|new|your|you|this|is|no|not|with|now|expires?|today|tomorrow|sign|report|version|password|login|price|code|first|second)\b/i.test(withoutHan))return false;
+ return words.every(word=>/\p{Lu}|^[ivxlcdm]+$/u.test(word)||/^(?:of|the|de|van|von|da|del|and|&|la|le|et|at|v\d+)$/i.test(word));
 }

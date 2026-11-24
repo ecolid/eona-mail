@@ -1,0 +1,7 @@
+{
+  "id": "mail-translation-technical-literals",
+  "summary": "译文保留技术标识及中文段落中的品牌名称",
+  "details": [
+    "模型编号、软件识别信息和字段名原样显示，外语正文继续通过原有翻译校验。"
+  ]
+}
