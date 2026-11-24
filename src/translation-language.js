@@ -3,6 +3,7 @@
 export function hasForeignProse(value) {
  const source=String(value||'').replace(/[\p{Cf}\uFE00-\uFE0F]/gu,'')
   .replace(/(?:https?:\/\/|mailto:)\S+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b(?:[a-z\d-]+\.)+[a-z]{2,}\b/gi,' ')
+  .replace(/\b(?:Windows Hello|Hello Kitty)\b/gi,' ')
   .replace(/\b[A-Za-z\d+/_=%-]{48,}\b/g,' ');
  for(const line of source.split(/[\r\n。！？；]+/u)){
   const trimmed=line.trim();
@@ -60,6 +61,15 @@ export function isTranslationLiteral(value,source=value){
     /^\/\s*[a-z\d_.-]+(?:\/[a-z\d_.-]+)*\/?$/i.test(original)||
     /^(?:[\da-f]{0,4}:){2,8}[\da-f]{0,4}(?:%[a-z\d_.-]+)?$/i.test(original)||
     /^(?:ref:[a-z\d]+:ref|(?:[a-z]{2,5}[a-z\d_-]*[:.])?\d{7,}[a-z\d_.:-]*)$/i.test(original)||
+    /^\[(?:math|latex)\][\s\S]+\[\/(?:math|latex)\]$/i.test(original)||
+    /^(?:timeout\s+\d+(?:\.\d+)?\s+)?(?:npm\s+(?:i|install|run|exec)\s|npx\s|bash\s+-c\s|pip(?:3)?\s+install\s|git\s+(?:clone|fetch|pull|push|checkout|switch)\s)\S[\s\S]*$/u.test(original)||
+    /^[a-z_][\w.]*\s*=\s*(?:[a-z_][\w.]*\s*\([^\r\n]*|["'][^\r\n]*["'])$/i.test(original)||
+    /^(?=[^\s]*\d)(?:[A-Z0-9]{2,}-){2,}[A-Z0-9]{2,}$/u.test(original)||
+    /^(?=[^\s]*\d)(?=[^\s]*[_:=])[A-Z0-9:/+=._-]{8,}$/i.test(original)||
+    /^(?:UID|GUID|SKU|VPS)\s*:\s*[a-z\d][a-z\d._-]{1,63}$/i.test(original)||
+    /^[\w.-]{2,40}\s*\(\d{3,}\)$/u.test(original)||
+    /^(?:[A-Za-z]{2,12}\s+)?[A-Z]{2,4}\d+:[\w_-]+(?:\([\w_-]+\))?(?::[a-z\d_-]+)+$/u.test(original)||
+    /^©\s*\d{4}\s+[^\r\n]+\b(?:LLC|Inc\.|Ltd\.|GmbH)\b[^\r\n]*\b(?:Street|St|Road|Rd|Drive|Dr|Blvd|Boulevard|Avenue|Ave)\b/i.test(original)||
     /^(?:VS Code|Visual Studio Code|Claude Code)$/i.test(original)||
     /^[a-z\d]+(?:_[a-z\d.]+)+$/i.test(original)||
     /^[a-z][a-z\d]*-[a-z.]*\d[a-z\d.-]*$/i.test(original)||

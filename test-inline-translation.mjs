@@ -4,7 +4,7 @@ import {fetchWithIdentity,testHooks,cachedInlineTranslation,reconcileTranslation
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
 import {splitTranslationNode} from './src/mail-translation-view.js';
-import {needsMailTranslation} from './src/translation-language.js';
+import {needsMailTranslation,isTranslationLiteral} from './src/translation-language.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 const mockAI={run:async(model,input)=>({response:JSON.stringify({items:JSON.parse(input.messages.at(-1).content).items.map(x=>({id:x.id,text:'译文 '+x.text}))}),usage:{prompt_tokens:30,completion_tokens:30}})};
 test('long reader nodes split losslessly without changing existing cache keys',()=>{
@@ -239,5 +239,8 @@ test('brand and contact name literals stay intact while actionable title-case ph
  assert.equal(needsMailTranslation('推荐人物，在动态中查看 mia and loren 和更多帐户','关注 jane example 并查看照片。\nThe New York Times\nF I L M Y G Y A N'),false);
  assert.equal(needsMailTranslation('通知','Ϊ���ܹ�������ʾ�ʼ�����,���齫��������'),false);
  assert.equal(needsMailTranslation('[Task Update] AI 工具提醒','这是一条中文提醒，详细内容如下。'),true);
+ assert.equal(needsMailTranslation('产品动态','无论何时离开，Windows Hello 都会使设备保持锁定。'),false);
+ for(const value of ['[math]ax^2 + bx + c = 0[/math]','client = Client()','npm i -g @example/thing','9ABC-10200-18DE','SKU: xyz-123','Demo RT14:en_US(en-US):312','© 2026 Example LLC | 42 Market Street'])assert.equal(isTranslationLiteral(value),true,value);
+ for(const value of ['Please pay invoice 31415.','Put the client in standby.','Payment: 123456','Desk reservation: Confirmed'])assert.equal(isTranslationLiteral(value),false,value);
  assert.equal(needsMailTranslation('通知','以下是外文正文，其中包括账单和金额。付款说明原文：Your invoice is ready.'),true);
 });
