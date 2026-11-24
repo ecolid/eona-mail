@@ -4,6 +4,7 @@ import {fetchWithIdentity,testHooks,cachedInlineTranslation,reconcileTranslation
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
 import {splitTranslationNode} from './src/mail-translation-view.js';
+import {needsMailTranslation,isTranslationLiteral} from './src/translation-language.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 const mockAI={run:async(model,input)=>({response:JSON.stringify({items:JSON.parse(input.messages.at(-1).content).items.map(x=>({id:x.id,text:'译文 '+x.text}))}),usage:{prompt_tokens:30,completion_tokens:30}})};
 test('long reader nodes split losslessly without changing existing cache keys',()=>{
@@ -101,7 +102,19 @@ test('real HTML response permits parent text translation while prohibiting activ
 test('browser input translates once, cache reuses exact source and leaves originals unchanged',async()=>{const root=await mkdtemp(join(tmpdir(),'translation-cache-'));const db=new SQLiteD1(join(root,'mail.db'));try{await db.exec('CREATE TABLE emails(id INTEGER PRIMARY KEY,subject TEXT,text_body TEXT);INSERT INTO emails VALUES(1,\'Monitor is UP: servers.eona.top\',\'Original body\');CREATE TABLE backup_state(k TEXT PRIMARY KEY,v TEXT);CREATE TABLE ai_usage(day TEXT PRIMARY KEY,calls INTEGER,in_tokens INTEGER,out_tokens INTEGER,tr_in_tokens INTEGER,tr_out_tokens INTEGER);');let calls=0;const env={PUBLIC_HOST:'mail.eona.top',MAILDB:db,AI:{run:async(...args)=>{calls++;return mockAI.run(...args);}},AI_DAILY_NEURONS:'8000'};const post=()=>fetchWithIdentity(new Request('https://mail.eona.top/api/email/1/translate',{method:'POST',headers:{origin:'https://mail.eona.top','content-type':'application/json'},body:JSON.stringify({format:'inline-v1',segments:['Hello','Best,']})}),env,{authenticated:true});let r=await post();assert.equal(r.status,200,await r.clone().text());assert.equal((await r.json()).cached,false);r=await post();assert.equal((await r.json()).cached,true);assert.equal(calls,1);const other=()=>fetchWithIdentity(new Request('https://mail.eona.top/api/email/1/translate',{method:'POST',headers:{origin:'https://mail.eona.top','content-type':'application/json'},body:JSON.stringify({format:'inline-v1',segments:['Another section']})}),env,{authenticated:true});assert.equal((await(await other()).json()).cached,false);assert.equal((await(await post()).json()).cached,true);assert.equal(calls,2);assert.equal(await db.prepare('SELECT count(*) AS n FROM translations_inline_parts').first('n'),2);assert.equal((await db.prepare('SELECT text_body FROM emails WHERE id=1').first()).text_body,'Original body');}finally{db.close();await rm(root,{recursive:true,force:true});}});
 test('invalid old cached translation is replaced by validated text',async()=>{
  const root=await mkdtemp(join(tmpdir(),'translation-repair-')),db=new SQLiteD1(join(root,'mail.db'));
- try{const env={MAILDB:db,AI:mockAI};await cachedSegments(env,1,['could replace him? (']);await db.prepare('UPDATE translation_segment_cache SET translated=?').bind('可能取代他（'+']}]]'.repeat(130)).run();assert.equal(await cachedSegments(env,1,['could replace him? ('],{cacheOnly:true}),null);const repaired=await cachedSegments(env,1,['could replace him? (']);assert.equal(repaired.cached,false);assert.equal((await cachedSegments(env,1,['could replace him? ('])).cached,true);}finally{db.close();await rm(root,{recursive:true,force:true});}
+ const env={MAILDB:db,AI:mockAI},source=['could replace him? ('];
+ const fetch=cacheOnly=>cachedSegments(env,1,source,{cacheOnly});
+ try{
+  await fetch(false);
+  await db.prepare('UPDATE translation_segment_cache SET translated=?').bind('可能取代他（'+']}]]'.repeat(130)).run();
+  assert.equal(await fetch(true),null);
+  assert.equal((await fetch(false)).cached,false);
+  assert.equal((await fetch(false)).cached,true);
+  await db.prepare("UPDATE translation_segment_cache SET model='mail-history-source-retained-v1',translated=source_text").run();
+  assert.deepEqual((await fetch(true)).translated,source);
+  await db.prepare("UPDATE translation_segment_cache SET translated='不一致的译文'").run();
+  assert.equal(await fetch(true),null);
+ }finally{db.close();await rm(root,{recursive:true,force:true});}
 });
 
 test('provider JSON tails cannot enter cached prose',()=>{assert.throws(()=>validateTranslatedText('will not renew the contract (','不会续约（"}, {'),/text_invalid/);});
@@ -228,11 +241,18 @@ test('validated pre-existing full-body translation is accessible via the reader 
 });
 
 test('brand and contact name literals stay intact while actionable title-case phrases translate',async()=>{
- const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','openai/gpt-6-example','Mozilla/5.0 (Macintosh) AppleWebKit/100 Chrome/100','登录活动来自 Apple iPhone','操作：rows_read','Mac mini 今晚更新','100 3rd Street','Example Company s. r. o.','Example, Inc. ・42 Main Street ・San Francisco, CA 99999','Payment Confirmation'];
+ const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','openai/gpt-6-example','Mozilla/5.0 (Macintosh) AppleWebKit/100 Chrome/100','登录活动来自 Apple iPhone','操作：rows_read','Mac mini 今晚更新','100 3rd Street','Example Company s. r. o.','Example, Inc. ・42 Main Street ・San Francisco, CA 99999','/ wiki','2606:4700::1234','ref:ABC123:ref','VS Code','Payment Confirmation'];
  const result=await translateInline({AI:{run:async(_model,input)=>{
   const {items}=JSON.parse(input.messages.at(-1).content);
-  assert.deepEqual(items,[{id:13,text:original[13]}]);
-  return {response:{items:[{id:13,text:'付款确认'}]}};
+  assert.deepEqual(items,[{id:17,text:original[17]}]);
+  return {response:{items:[{id:17,text:'付款确认'}]}};
  }}},original);
- assert.deepEqual(result.translated,[...original.slice(0,13),'付款确认']);
+ assert.deepEqual(result.translated,[...original.slice(0,17),'付款确认']);
+ assert.equal(needsMailTranslation('推荐人物，在动态中查看 mia and loren 和更多帐户','关注 jane example 并查看照片。\nThe New York Times\nF I L M Y G Y A N'),false);
+ assert.equal(needsMailTranslation('通知','Ϊ���ܹ�������ʾ�ʼ�����,���齫��������'),false);
+ assert.equal(needsMailTranslation('[Task Update] AI 工具提醒','这是一条中文提醒，详细内容如下。'),true);
+ assert.equal(needsMailTranslation('产品动态','无论何时离开，Windows Hello 都会使设备保持锁定。'),false);
+ for(const value of ['[math]ax^2 + bx + c = 0[/math]','client = Client()','npm i -g @example/thing','9ABC-10200-18DE','SKU: xyz-123','Demo RT14:en_US(en-US):312','© 2026 Example LLC | 42 Market Street'])assert.equal(isTranslationLiteral(value),true,value);
+ for(const value of ['Please pay invoice 31415.','Put the client in standby.','Payment: 123456','Desk reservation: Confirmed'])assert.equal(isTranslationLiteral(value),false,value);
+ assert.equal(needsMailTranslation('通知','以下是外文正文，其中包括账单和金额。付款说明原文：Your invoice is ready.'),true);
 });
