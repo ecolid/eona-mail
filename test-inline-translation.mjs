@@ -3,8 +3,19 @@ import {translateInline,protectTranslationText,validateInlineSegments,validateTr
 import {fetchWithIdentity,testHooks,cachedInlineTranslation,reconcileTranslationReceipts} from './src/index.js';
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
+import {splitTranslationNode} from './src/mail-translation-view.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 const mockAI={run:async(model,input)=>({response:JSON.stringify({items:JSON.parse(input.messages.at(-1).content).items.map(x=>({id:x.id,text:'译文 '+x.text}))}),usage:{prompt_tokens:30,completion_tokens:30}})};
+test('long reader nodes split losslessly without changing existing cache keys',()=>{
+ const existing='a'.repeat(8000);
+ assert.deepEqual(splitTranslationNode(existing),[existing]);
+ const unbroken='a'.repeat(1999)+'𠮷'+'b'.repeat(7800);
+ const parts=splitTranslationNode(unbroken);
+ assert.equal(parts.join(''),unbroken);
+ assert.equal(parts[0].length,1999);
+ assert(parts.length>1&&parts.every(part=>part.length<=2000));
+ for(const part of parts)assert.deepEqual(validateInlineSegments([part]),[part]);
+});
 test('translation preserves domains, brands, URLs, prices and verification codes',()=>{const text='OpenAI UptimeRobot servers.eona.top https://example.test/path?token=123 sample@example.test $18.28 2026-10-12 003480';const p=protectTranslationText(text);assert.equal(p.restore(p.source),text);assert.throws(()=>p.restore('译文'),/identifier_missing/);});
 test('markers cannot move between segments, duplicate or collide with literal mail text',()=>{
  const a=protectTranslationText('Price $18.28',0),b=protectTranslationText('Code 004210',1);
