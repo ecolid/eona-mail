@@ -3,6 +3,24 @@
   "product": "eona-mail",
   "families": [
     {
+      "id": "long-inline-translation",
+      "trigger": "reusable",
+      "contract": "长正文在原阅读页按原顺序拼回译文，普通正文沿用缓存，原文可精确恢复",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-TRANSLATION-2026-11-23.md"
+      ],
+      "browser": [
+        "reads and restores a long plain text translation in Mail"
+      ],
+      "unit": [
+        {
+          "file": "test-inline-translation.mjs",
+          "name": "long reader nodes split losslessly without changing existing cache keys"
+        }
+      ],
+      "python": []
+    },
+    {
       "id": "query-continuity",
       "trigger": "reusable",
       "contract": "实时条件、清空、旧响应、分页和空结果；保留面板与滚动节点",

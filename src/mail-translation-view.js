@@ -1,5 +1,23 @@
-export function translationBrowserScript(){return '('+mailTranslationController.toString()+')();';}
-function mailTranslationController(){
+export function splitTranslationNode(text){
+ if(text.length<=8000)return [text];
+ const parts=[];
+ for(let start=0;start<text.length;){
+  let end=Math.min(start+2000,text.length);
+  if(end<text.length){
+   const latterHalf=text.slice(start+1000,end);
+   const newline=latterHalf.lastIndexOf('\n');
+   const boundary=newline>=0?newline:latterHalf.search(/\s(?=\S*$)/u);
+   if(boundary>=0)end=start+1000+boundary+1;
+   else if(/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;
+  }
+  parts.push(text.slice(start,end));
+  start=end;
+ }
+ return parts;
+}
+
+export function translationBrowserScript(){return '('+mailTranslationController.toString()+')('+splitTranslationNode.toString()+');';}
+function mailTranslationController(splitNode){
  let current=null;
  const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.translationAction=action;return b;};
  window.installMailTranslation=function(mail){
@@ -37,30 +55,43 @@ function mailTranslationController(){
  function toggle(c,show){
   if(!c.translated)return;
   const title=document.querySelector('#vhead h2');if(title)title.textContent=show?c.translated[0]:c.originalSubject;
-  c.nodes.forEach((x,i)=>{x.node.textContent=show?x.original.replace(x.text,c.translated[i+1]):x.original;});
+  c.nodes.forEach((x,i)=>{x.node.textContent=show?x.original.replace(x.text,()=>c.translated[i+1]):x.original;});
   const frame=document.querySelector('#vbody iframe');if(frame)frame.title=show?'邮件中文译文':'邮件原文';
   c.showing=show;status(c,show?'邮件已翻译为中文':'邮件可翻译为中文');controls(c);
  }
  async function translate(c){
-  if(c.busy)return;c.busy=true;status(c,'正在翻译…');controls(c);c.abort=new AbortController();
+  if(c.busy)return;
+  const controller=new AbortController();
+  c.abort=controller;c.busy=true;status(c,'正在翻译…');controls(c);
   try{
-   c.nodes=await sourceNodes(c);if(current!==c)return;
-   const chunks=[];let chunk=[],size=0;for(const x of c.nodes){if(chunk.length&&(size+x.text.length>2000||chunk.length>=40)){chunks.push(chunk);chunk=[];size=0;}chunk.push(x.text);size+=x.text.length;}if(chunk.length)chunks.push(chunk);
+   const originals=await sourceNodes(c);
+   if(current!==c||controller.signal.aborted)return;
+   const nodes=originals.map(x=>splitNode(x.text).map(raw=>({raw,text:raw.trim()})));
+   const chunks=[];let chunk=[],size=0;
+   for(const part of nodes.flat()){
+    if(!part.text)continue;
+    if(chunk.length&&(size+part.text.length>2000||chunk.length>=40)){chunks.push(chunk);chunk=[];size=0;}
+    chunk.push(part);size+=part.text.length;
+   }
+   if(chunk.length)chunks.push(chunk);
    if(!chunks.length)throw Error('没有可翻译的正文。');
-   const result=[];
+   let translatedSubject;
    for(let i=0;i<chunks.length;i++){
     status(c,chunks.length>1?'正在翻译 '+(i+1)+' / '+chunks.length:'正在翻译…');
-    const segments=chunks[i],abort=new AbortController();let expired=false;
-    const cancel=()=>abort.abort();c.abort.signal.addEventListener('abort',cancel,{once:true});
+    const parts=chunks[i],segments=parts.map(part=>part.text),abort=new AbortController();let expired=false;
+    const cancel=()=>abort.abort();controller.signal.addEventListener('abort',cancel,{once:true});
     const timer=setTimeout(()=>{expired=true;abort.abort();},55000);
-    let r;try{r=await api('/api/email/'+c.id+'/translate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format:'inline-v1',segments}),signal:abort.signal});}catch(e){if(expired)throw Error('翻译等待超时，请重试。原邮件已保留。');throw e;}finally{clearTimeout(timer);c.abort.signal.removeEventListener('abort',cancel);}
-    if(current!==c||c.abort.signal.aborted)return;
+    let r;try{r=await api('/api/email/'+c.id+'/translate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({format:'inline-v1',segments}),signal:abort.signal});}catch(e){if(expired)throw Error('翻译等待超时，请重试。原邮件已保留。');throw e;}finally{clearTimeout(timer);controller.signal.removeEventListener('abort',cancel);}
+    if(current!==c||controller.signal.aborted)return;
     if(!r.ok||r.version!==1||!Array.isArray(r.translated)||r.translated.length!==segments.length+1)throw Error(r.error||'翻译暂时不可用，请重试。');
-    if(!i)result.push(r.translated[0]);result.push(...r.translated.slice(1));
+    if(!i)translatedSubject=r.translated[0];
+    parts.forEach((part,index)=>{part.translated=r.translated[index+1];});
    }
-   c.translated=result;c.busy=false;toggle(c,true);
+   const translatedNodes=nodes.map(parts=>parts.map(part=>part.text?
+    part.raw.replace(part.text,()=>part.translated):part.raw).join(''));
+   c.nodes=originals;c.translated=[translatedSubject,...translatedNodes];c.busy=false;toggle(c,true);
   }catch(error){
-   if(current!==c||c.abort.signal.aborted)return;c.busy=false;status(c,error.message==='mail_changed'?'请选择当前邮件。':error.message||'翻译暂时不可用，请重试。');controls(c,true);
+   if(current!==c||controller.signal.aborted)return;c.busy=false;status(c,error.message==='mail_changed'?'请选择当前邮件。':error.message||'翻译暂时不可用，请重试。');controls(c,true);
   }
  }
  document.addEventListener('click',event=>{
