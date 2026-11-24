@@ -1,3 +1,4 @@
+import {hasForeignProse} from './translation-language.js';
 // 纯文本转换无外部依赖，可独立运行和测试。
 
 
@@ -40,22 +41,11 @@ export function htmlToText(html) {
   return t.trim().slice(0, 100000);
 }
 
-/** 粗判「这封信是不是英文的」:字母多、汉字少。给前端决定要不要显示按钮用,判错的代价只是按钮多出来/少出来。 */
+// Retain the old exported threshold for callers of the legacy endpoint.
 export const FOREIGN_CJK_RATIO = 0.5;
-// 25 个字:中日韩一句话就有二三十字,门槛定 40 会把「订单已发货」这种短通知漏掉;
-// 再低就会让「OK」「Thanks」这类两三个词的信也冒按钮。
-const FOREIGN_MIN_LETTERS = 25;
 
 export function looksForeign(text) {
-  const t = String(text || '').slice(0, 3000);
-  const letters = (t.match(/\p{L}/gu) || []).length;
-  if (letters < FOREIGN_MIN_LETTERS) return false;
-  // 日文和韩文里有大量汉字,只数汉字会把它们当成中文信(第一版就是这么漏的)。
-  // 出现假名或谚文就说明不是中文,直接给按钮。
-  const kanaHangul = (t.match(/[\u3040-\u30ff\uac00-\ud7af]/g) || []).length;
-  if (kanaHangul / letters >= 0.05) return true;
-  const chinese = (t.match(/[\u4e00-\u9fff]/g) || []).length;
-  return chinese / letters < FOREIGN_CJK_RATIO;
+  return hasForeignProse(text);
 }
 
 // 老名字留个别名给判据和外部调用方用。**必须是函数**:这个文件的具名导出只要有非函数,
