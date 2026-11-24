@@ -4,6 +4,7 @@ import {fetchWithIdentity,testHooks,cachedInlineTranslation,reconcileTranslation
 import {SQLiteD1} from './sv/storage.mjs';
 import {cachedSegments} from './src/translation-cache.js';
 import {splitTranslationNode} from './src/mail-translation-view.js';
+import {needsMailTranslation} from './src/translation-language.js';
 import {mkdtemp,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';
 const mockAI={run:async(model,input)=>({response:JSON.stringify({items:JSON.parse(input.messages.at(-1).content).items.map(x=>({id:x.id,text:'译文 '+x.text}))}),usage:{prompt_tokens:30,completion_tokens:30}})};
 test('long reader nodes split losslessly without changing existing cache keys',()=>{
@@ -228,11 +229,15 @@ test('validated pre-existing full-body translation is accessible via the reader 
 });
 
 test('brand and contact name literals stay intact while actionable title-case phrases translate',async()=>{
- const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','openai/gpt-6-example','Mozilla/5.0 (Macintosh) AppleWebKit/100 Chrome/100','登录活动来自 Apple iPhone','操作：rows_read','Mac mini 今晚更新','100 3rd Street','Example Company s. r. o.','Example, Inc. ・42 Main Street ・San Francisco, CA 99999','Payment Confirmation'];
+ const original=['Google AI Ultra','TeamViewer Germany GmbH','Jane Example','订单来自 Google Play','此更新适用于 GPT Work 和 GPT API，GPT 接入使用 Sol，请通过 GPT Work 和 GPT API 检查 GPT 配置。','openai/gpt-6-example','Mozilla/5.0 (Macintosh) AppleWebKit/100 Chrome/100','登录活动来自 Apple iPhone','操作：rows_read','Mac mini 今晚更新','100 3rd Street','Example Company s. r. o.','Example, Inc. ・42 Main Street ・San Francisco, CA 99999','/ wiki','2606:4700::1234','ref:ABC123:ref','VS Code','Payment Confirmation'];
  const result=await translateInline({AI:{run:async(_model,input)=>{
   const {items}=JSON.parse(input.messages.at(-1).content);
-  assert.deepEqual(items,[{id:13,text:original[13]}]);
-  return {response:{items:[{id:13,text:'付款确认'}]}};
+  assert.deepEqual(items,[{id:17,text:original[17]}]);
+  return {response:{items:[{id:17,text:'付款确认'}]}};
  }}},original);
- assert.deepEqual(result.translated,[...original.slice(0,13),'付款确认']);
+ assert.deepEqual(result.translated,[...original.slice(0,17),'付款确认']);
+ assert.equal(needsMailTranslation('推荐人物，在动态中查看 mia and loren 和更多帐户','关注 jane example 并查看照片。\nThe New York Times\nF I L M Y G Y A N'),false);
+ assert.equal(needsMailTranslation('通知','Ϊ���ܹ�������ʾ�ʼ�����,���齫��������'),false);
+ assert.equal(needsMailTranslation('[Task Update] AI 工具提醒','这是一条中文提醒，详细内容如下。'),true);
+ assert.equal(needsMailTranslation('通知','以下是外文正文，其中包括账单和金额。付款说明原文：Your invoice is ready.'),true);
 });

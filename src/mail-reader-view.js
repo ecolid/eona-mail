@@ -1,4 +1,4 @@
-import {hasForeignProse,needsMailTranslation} from './translation-language.js';
+import {hasForeignProse,isTranslationLiteral,needsMailTranslation} from './translation-language.js';
 // Address actions preserve the submitted search and replace only their own field.
 export function mailAddressParts(value) {
  const parts=[];let text='',quoted=false,angle=0;
@@ -115,4 +115,4 @@ export function showMailContact(trigger,contact){
  trigger.mailContactDispose=installMailContactActions(trigger,mailContactOptions(),true);
 }
 
-export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailSelectReaderRow,mailReaderAttachments,hasForeignProse,needsMailTranslation,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}
+export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailSelectReaderRow,mailReaderAttachments,hasForeignProse,isTranslationLiteral,needsMailTranslation,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}
