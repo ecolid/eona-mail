@@ -1,3 +1,4 @@
+import {hasForeignProse,needsMailTranslation} from './translation-language.js';
 // Address actions preserve the submitted search and replace only their own field.
 export function mailAddressParts(value) {
  const parts=[];let text='',quoted=false,angle=0;
@@ -63,8 +64,7 @@ export function mailReaderAttachments(files,esc,I,{id,kind='received',time=Strin
 }
 
 export function mailCanTranslate(mail) {
- const foreign=value=>{const text=String(value||'').slice(0,3000),letters=(text.match(/\p{L}/gu)||[]).length;if(letters<25)return false;const kana=(text.match(/[\u3040-\u30ff\uac00-\ud7af]/g)||[]).length;if(kana/letters>=.05)return true;return (text.match(/[\u4e00-\u9fff]/g)||[]).length/letters<.5};
- return foreign(mail.text_body)||foreign(mail.subject);
+ return needsMailTranslation(mail.subject,mail.text_body)||!!(mail.html_key&&!String(mail.text_body||'').trim());
 }
 
 export function mailReaderHeader(mail,esc,I,time,pending=false) {
@@ -115,4 +115,4 @@ export function showMailContact(trigger,contact){
  trigger.mailContactDispose=installMailContactActions(trigger,mailContactOptions(),true);
 }
 
-export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailSelectReaderRow,mailReaderAttachments,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}
+export function mailReaderBrowserScript(){return [mailAddressParts,mailAddressSearch,mailPersonSearch,mailContactTrigger,mailContactOptions,mailMessageHeader,mailSelectReaderRow,mailReaderAttachments,hasForeignProse,needsMailTranslation,mailCanTranslate,mailReaderHeader,installMailContactActions,showMailContact].map(f=>f.toString()).join('\n');}

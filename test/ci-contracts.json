@@ -21,6 +21,36 @@
       "python": []
     },
     {
+      "id": "mail-translation-languages",
+      "trigger": "reusable",
+      "contract": "多语种来信经过持久队列进入同一翻译缓存，旧完整译文可在阅读页查回，失败与原文回显不标为成功",
+      "evidence": [
+        "wiki:04-drills-audits/MAIL-TRANSLATION-2026-11-23.md"
+      ],
+      "browser": [
+        "reads legacy body and subject-only translations with the normal reader controls"
+      ],
+      "unit": [
+        {
+          "file": "test-inline-translation.mjs",
+          "name": "non-Latin prose is sent to the translator, and a copied Korean result is repaired"
+        },
+        {
+          "file": "test-inline-translation.mjs",
+          "name": "validated pre-existing full-body translation is accessible via the reader without a model call"
+        },
+        {
+          "file": "sv/test-pretranslate.mjs",
+          "name": "multilingual, subject-only, and overlong HTML arrive in the same durable queue"
+        },
+        {
+          "file": "sv/test-pretranslate.mjs",
+          "name": "a transient failed mail leaves a retry and the next due mail can finish"
+        }
+      ],
+      "python": []
+    },
+    {
       "id": "query-continuity",
       "trigger": "reusable",
       "contract": "实时条件、清空、旧响应、分页和空结果；保留面板与滚动节点",

@@ -71,3 +71,39 @@ test('reads and restores a long plain text translation in Mail',async({browser})
   await expect.poll(()=>content.textContent()).toBe(expected);
  }finally{await context?.close();await app?.close();await rm(root,{recursive:true,force:true});}
 });
+
+test('reads legacy body and subject-only translations with the normal reader controls',async({browser})=>{
+ const probe=createServer();probe.listen(0,'127.0.0.1');await once(probe,'listening');
+ const port=probe.address().port;await new Promise(resolve=>probe.close(resolve));
+ const root=await mkdtemp(join(tmpdir(),'mail-translation-history-'));
+ const origin='http://127.0.0.1:'+port,password='synthetic-browser-password';
+ let app,context;
+ try{
+  const hash=await passwordHash(password);
+  app=await serveProduct({schema:1,mode:'personal',origin,port,owner:{id:'owner',email:'owner@example.test'},auth:{mode:'local'},data_root:root,accounts:[]},{secrets:()=>hash});
+  const db=app.store.db;
+  const subject='配送のお知らせ';
+  const deliver='Your parcel has been delivered.';
+  const insert=db.prepare("INSERT INTO emails(id,alias,from_addr,subject,text_body,is_read,received_at) VALUES(?,'owner@example.test','sender@example.test',?,?,1,'2026-10-28 00:00:00')");
+  await insert.bind(1,'Delivery',deliver).run();
+  await insert.bind(2,subject,'').run();
+  await db.exec("CREATE TABLE IF NOT EXISTS translations(email_id INTEGER PRIMARY KEY,lang TEXT,model TEXT,paragraphs TEXT,translated TEXT,truncated INTEGER)");
+  await db.prepare('INSERT INTO translations(email_id,lang,model,paragraphs,translated,truncated) VALUES(?,\'zh\',?,?,?,0)').bind(1,'fixture',JSON.stringify([deliver]),'["您的包裹已送达。"]').run();
+  await cachedSegments({MAILDB:db},2,[subject],{cacheOnly:true});
+  await db.prepare('INSERT INTO translation_segment_cache(email_id,source_hash,source_text,translated,model) VALUES(2,?,?,?,?)')
+   .bind(await inlineSourceHash([subject]),subject,'配送通知','fixture').run();
+  context=await browser.newContext();
+  expect((await context.request.post(origin+'/api/login',{data:{password}})).status()).toBe(200);
+  const page=await context.newPage();
+  await page.goto(origin+'/?mail=1');
+  await page.getByRole('button',{name:'全文翻译'}).click();
+  await expect(page.locator('#vbody pre:visible')).toHaveText('您的包裹已送达。');
+  await page.getByRole('button',{name:'显示原文'}).click();
+  await expect(page.locator('#vbody pre:visible')).toHaveText(deliver);
+  await page.goto(origin+'/?mail=2');
+  await page.getByRole('button',{name:'全文翻译'}).click();
+  await expect(page.locator('#vhead h2')).toHaveText('配送通知');
+  await page.getByRole('button',{name:'显示原文'}).click();
+  await expect(page.locator('#vhead h2')).toHaveText(subject);
+ }finally{await context?.close();await app?.close();await rm(root,{recursive:true,force:true});}
+});

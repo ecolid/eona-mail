@@ -194,3 +194,35 @@ test('a lost response is settled once from its persisted receipt, and confirmed 
  assert.equal(await pending(),null);assert.equal(await reserved(),0);
  assert.equal(await db.prepare('SELECT calls FROM ai_usage WHERE day=?').bind(day).first('calls'),1);
 }));
+
+test('non-Latin prose is sent to the translator, and a copied Korean result is repaired',async()=>{
+ const source=['배송이 완료되었습니다.','معلومات الحساب الجديدة','お届け予定のお知らせ','Оплата успешно получена.','原本就是中文。'];
+ const answers=['已完成配送。','新的账户信息','预计配送通知','付款到账。'];
+ let calls=0;const received=[];
+ const result=await translateInline({AI:{run:async(_model,input)=>{
+  const {items}=JSON.parse(input.messages.at(-1).content);
+  received.push(...items.map(i=>i.text));
+  if(++calls===1)return {response:{items:items.map(i=>({id:i.id,text:i.id===0?i.text:answers[i.id]}))}};
+  return {response:{items:[{id:0,text:answers[0]}]}};
+ }}},source);
+ assert.deepEqual(received.slice(0,4),source.slice(0,4));
+ assert.deepEqual(result.translated,[...answers,source.at(-1)]);
+ assert.equal(calls,2);
+});
+
+test('validated pre-existing full-body translation is accessible via the reader without a model call',async()=>{
+ const db=new SQLiteD1(':memory:');
+ try{
+  await db.exec("CREATE TABLE emails(id INTEGER PRIMARY KEY,subject TEXT,text_body TEXT);CREATE TABLE translations(email_id INTEGER PRIMARY KEY,lang TEXT,model TEXT,paragraphs TEXT,translated TEXT,truncated INTEGER);");
+  const source=['Shipment has arrived.','The package was collected.'],target=['货物已到达。','包裹已被领取。'];
+  await db.prepare('INSERT INTO emails VALUES(?,?,?)').bind(1,'Delivery',source.join('\n\n')).run();
+  await db.prepare('INSERT INTO translations VALUES(?,?,?,?,?,?)').bind(1,'zh','fixture',JSON.stringify(source),JSON.stringify(target),0).run();
+  const get=async()=>await(await fetchWithIdentity(new Request('https://mail.example.test/api/email/1/translation?complete=1'),{MAILDB:db}, {authenticated:true})).json();
+  assert.deepEqual(await get(),{ok:true,cached:true,paragraphs:source,translated:target,model:'fixture'});
+  const combined=[target.join('')];
+  await db.prepare('UPDATE translations SET translated=?').bind(JSON.stringify(combined)).run();
+  assert.deepEqual(await get(),{ok:true,cached:true,paragraphs:source,translated:combined,model:'fixture'});
+  await db.prepare('UPDATE translations SET truncated=1').run();
+  assert.deepEqual(await get(),{ok:true,cached:false});
+ }finally{db.close();}
+});

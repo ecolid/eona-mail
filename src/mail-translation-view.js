@@ -22,7 +22,16 @@ function mailTranslationController(splitNode){
  const button=(label,action)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.translationAction=action;return b;};
  window.installMailTranslation=function(mail){
   if(current?.abort)current.abort.abort();current=null;
-  if(!mailCanTranslate(mail))return;
+  if(!mailCanTranslate(mail)){
+   const frame=document.querySelector('#vbody iframe');
+   if(frame)frame.addEventListener('load',()=>{
+    if(!frame.isConnected||frame.contentDocument?.URL==='about:blank')return;
+    if(needsMailTranslation(mail.subject,frame.contentDocument?.body?.innerText||'')){
+     window.installMailTranslation({...mail,text_body:frame.contentDocument.body.innerText});
+    }
+   },{once:true});
+   return;
+  }
   const bar=document.createElement('div');bar.id='vtrans';bar.innerHTML=I.lang+'<span role="status">邮件可翻译为中文</span>';
   bar.append(button('全文翻译','translate'));
   const slot=document.querySelector('[data-mail-translation-slot]');if(slot)slot.append(bar);else document.querySelector('#vbody').before(bar);
@@ -33,7 +42,10 @@ function mailTranslationController(splitNode){
   if(frame){
    if(!frame.contentDocument?.body||frame.contentDocument.URL==='about:blank')await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('原邮件尚未加载，请稍后重试。')),10000);frame.addEventListener('load',()=>{clearTimeout(timer);resolve();},{once:true});});
    if(current!==c)throw Error('mail_changed');root=frame.contentDocument.body;
-  }else root=document.querySelector('#vbody pre');
+  }else{
+   if(!String(c.mail.text_body||'').trim())return [];
+   root=document.querySelector('#vbody pre');
+  }
   if(!root)throw Error('原邮件尚未加载，请稍后重试。');
   const view=root.ownerDocument.defaultView;const walk=root.ownerDocument.createTreeWalker(root,NodeFilter.SHOW_TEXT);const nodes=[];let node;
   while((node=walk.nextNode())){
@@ -54,9 +66,15 @@ function mailTranslationController(splitNode){
  }
  function toggle(c,show){
   if(!c.translated)return;
+  if(c.legacy){
+   c.legacy.original.hidden=show;
+   c.legacy.original.style.display=show?'none':c.legacy.display;
+   c.legacy.document.hidden=!show;
+   c.legacy.document.style.display=show?'':'none';
+  }
   const title=document.querySelector('#vhead h2');if(title)title.textContent=show?c.translated[0]:c.originalSubject;
-  c.nodes.forEach((x,i)=>{x.node.textContent=show?x.original.replace(x.text,()=>c.translated[i+1]):x.original;});
-  const frame=document.querySelector('#vbody iframe');if(frame)frame.title=show?'邮件中文译文':'邮件原文';
+  c.nodes?.forEach((x,i)=>{x.node.textContent=show?x.original.replace(x.text,()=>c.translated[i+1]):x.original;});
+  const frame=document.querySelector('#vbody iframe');if(frame&&!c.legacy)frame.title=show?'邮件中文译文':'邮件原文';
   c.showing=show;status(c,show?'邮件已翻译为中文':'邮件可翻译为中文');controls(c);
  }
  async function translate(c){
@@ -64,6 +82,19 @@ function mailTranslationController(splitNode){
   const controller=new AbortController();
   c.abort=controller;c.busy=true;status(c,'正在翻译…');controls(c);
   try{
+   const legacy=await api('/api/email/'+c.id+'/translation?complete=1',{signal:controller.signal}).catch(()=>null);
+   if(current!==c||controller.signal.aborted)return;
+   if(legacy?.cached){
+    const original=document.querySelector('#vbody > iframe,#vbody > pre');
+    if(original){
+     const documentNode=document.createElement('pre');
+     documentNode.className='e-reader-prose';
+     documentNode.textContent=legacy.translated.join('\n\n');
+     original.after(documentNode);
+     c.legacy={original,document:documentNode,display:original.style.display};
+     c.translated=[c.originalSubject];c.busy=false;toggle(c,true);return;
+    }
+   }
    const originals=await sourceNodes(c);
    if(current!==c||controller.signal.aborted)return;
    const nodes=originals.map(x=>splitNode(x.text).map(raw=>({raw,text:raw.trim()})));
@@ -74,7 +105,10 @@ function mailTranslationController(splitNode){
     chunk.push(part);size+=part.text.length;
    }
    if(chunk.length)chunks.push(chunk);
-   if(!chunks.length)throw Error('没有可翻译的正文。');
+   if(!chunks.length){
+    if(!hasForeignProse(c.originalSubject))throw Error('没有可翻译的正文。');
+    chunks.push([]);
+   }
    let translatedSubject;
    for(let i=0;i<chunks.length;i++){
     status(c,chunks.length>1?'正在翻译 '+(i+1)+' / '+chunks.length:'正在翻译…');

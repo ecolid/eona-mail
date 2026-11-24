@@ -18,7 +18,7 @@ import {buildMailSearch,mailSearchTerms,mailSearchMatches} from './mail-search.j
 import {workflowMailSummary} from './mail-workflow-summary.js';
 import {normalizeMailLayout,rankMailboxes} from './mail-layout-model.js';
 import {EONA_FOUNDATION_CSS,EONA_FOUNDATION_JS} from './eona-foundation-assets.js';
-import {translateInline,inlineSourceHash,validateInlineSegments,validateTranslatedText} from './translation-inline.js';
+import {translateInline,inlineSourceHash,validateInlineSegments,validateTranslationResult} from './translation-inline.js';
 import {translationBrowserScript} from './mail-translation-view.js';
 import {mailBodyBrowserScript} from './mail-body-view.js';
 import {mailHTMLPolicy,mailHTMLDocument,sanitizeMailHTML} from './mail-html-policy.js';
@@ -645,16 +645,10 @@ export async function backfillTags(env, limit = 10) {
 
 const TRANSLATE_MODEL_DEFAULT = '@cf/qwen/qwen1.5-14b-chat-awq,@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const TRANSLATE_MAX_CHARS = 6000;   // 超过的只翻前 6000 字,并在译文末尾说明 —— 邮件超过这个长度基本是 HTML 转的垃圾尾巴
-const PARA_SPLIT = /\n\s*\n/;
-
-// 无依赖纯文本处理位于 text.js，同时保留此处的具名函数导出。
 export { htmlToText, looksForeign, looksEnglish } from './text.js';
 import { htmlToText, looksForeign, FOREIGN_CJK_RATIO } from './text.js';
-
-/** 把正文切成段落(空行分隔),空段丢掉。译文按同样规则切回来才能对照。 */
-export function splitParagraphs(text) {
-  return String(text || '').replace(/\r\n?/g, '\n').split(PARA_SPLIT).map((x) => x.trim()).filter(Boolean);
-}
+export { splitParagraphs } from './translation-legacy.js';
+import { splitParagraphs, completeLegacyTranslation } from './translation-legacy.js';
 
 const TRANSLATE_SYSTEM = '你是邮件翻译。把用户给的外文邮件正文逐段翻译成简体中文。规则:'
   + '1) 逐段对应:输入有几段,输出就几段,段与段之间用一个空行分隔,不合并、不拆分、不省略、不加序号;'
@@ -2049,6 +2043,12 @@ async function handleFetch(request, env, trustedIdentity = null) {
   // ---- 翻译:读缓存(只读码也能读,Eona 用得上);翻(只有浏览器身份,花的是免费 AI 额度)
   mm = path.match(/^\/api\/email\/(\d+)\/translation$/);
   if (mm && request.method === 'GET') {
+    if(url.searchParams.get('complete')==='1'){
+      const exists=await env.MAILDB.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='translations'").first();
+      const row=exists&&await env.MAILDB.prepare("SELECT t.*,e.text_body FROM translations t JOIN emails e ON e.id=t.email_id WHERE t.email_id=?").bind(mm[1]).first();
+      const complete=completeLegacyTranslation(row,row?.text_body);
+      return json({ok:true,cached:!!complete,...(complete||{})});
+    }
     let row = null;
     try { row = await env.MAILDB.prepare('SELECT * FROM translations WHERE email_id = ?').bind(mm[1]).first(); } catch (e) { row = null; }
     if (!row || row.lang !== 'zh') return json({ ok: true, cached: false });
@@ -2062,12 +2062,12 @@ async function handleFetch(request, env, trustedIdentity = null) {
     if(input.format==='inline-v1'){
       const row=await env.MAILDB.prepare('SELECT id,subject FROM emails WHERE id=?').bind(mm[1]).first();
       if(!row)return json({error:'not found'},404);
-      let segments;try{segments=validateInlineSegments([row.subject||'',...validateInlineSegments(input.segments)]);}catch{return json({ok:false,error:'邮件过长，暂时无法全文翻译。'},413);}
+      let segments;try{segments=validateInlineSegments([row.subject||'',...(Array.isArray(input.segments)&&input.segments.length===0?[]:validateInlineSegments(input.segments))]);}catch{return json({ok:false,error:'邮件过长，暂时无法全文翻译。'},413);}
       const hash=await inlineSourceHash(segments);
       await env.MAILDB.prepare('CREATE TABLE IF NOT EXISTS translations_inline(email_id INTEGER PRIMARY KEY,source_hash TEXT NOT NULL,model TEXT,segments TEXT,translated TEXT,created_at TEXT DEFAULT (datetime(\'now\')))').run();
       await env.MAILDB.prepare('CREATE TABLE IF NOT EXISTS translations_inline_parts(email_id INTEGER NOT NULL,source_hash TEXT NOT NULL,model TEXT,segments TEXT,translated TEXT,created_at TEXT DEFAULT (datetime(\'now\')),PRIMARY KEY(email_id,source_hash))').run();
       const have=await env.MAILDB.prepare('SELECT * FROM translations_inline_parts WHERE email_id=? AND source_hash=?').bind(row.id,hash).first()||await env.MAILDB.prepare('SELECT * FROM translations_inline WHERE email_id=? AND source_hash=?').bind(row.id,hash).first();
-      if(have){try{const values=JSON.parse(have.translated);if(values.length!==segments.length)throw Error('translation_cache_invalid');values.forEach((text,i)=>validateTranslatedText(segments[i],text));return json({ok:true,cached:true,version:1,translated:values});}catch{}}
+      if(have){try{const values=JSON.parse(have.translated);if(values.length!==segments.length)throw Error('translation_cache_invalid');values.forEach((text,i)=>validateTranslationResult(segments[i],text,{knownArchive:have.model==='archive-mime-header-zh-v1'}));return json({ok:true,cached:true,version:1,translated:values});}catch{}}
       try{
         const result=await cachedInlineTranslation(env,row.id,segments);
         await env.MAILDB.prepare('INSERT INTO translations_inline_parts(email_id,source_hash,model,segments,translated) VALUES(?,?,?,?,?) ON CONFLICT(email_id,source_hash) DO UPDATE SET translated=excluded.translated,model=excluded.model,created_at=datetime(\'now\')').bind(row.id,hash,result.model,JSON.stringify(segments),JSON.stringify(result.translated)).run();
@@ -2859,7 +2859,6 @@ ${mailHTMLPolicy.toString()}
 ${mailHTMLDocument.toString()}
 async function loadMailHTML(frame,id,ticket,fresh=false){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceLoading?.();try{const source=await api('/api/email/'+id+'/html?format=json',{fresh});if(ticket!==mailReaderIntent||!frame.isConnected)return;frame.srcdoc=mailHTMLDocument(source.html);mailBodyDispose?.sourceLoaded?.()}catch(error){if(ticket!==mailReaderIntent||!frame.isConnected)return;mailBodyDispose?.sourceFailed?.(error)}}
 ${mailBodyBrowserScript()}
-function looksForeignJs(t){t=(t||'').slice(0,3000);const letters=(t.match(/\\p{L}/gu)||[]).length;if(letters<25)return false;const kana=(t.match(/[\\u3040-\\u30ff\\uac00-\\ud7af]/g)||[]).length;if(kana/letters>=0.05)return true;const chinese=(t.match(/[\\u4e00-\\u9fff]/g)||[]).length;return chinese/letters<0.5}
 ${translationBrowserScript()}
 
 function patchMailStar(id,value){
