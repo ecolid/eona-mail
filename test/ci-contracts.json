@@ -46,6 +46,10 @@
         {
           "file": "sv/test-pretranslate.mjs",
           "name": "a transient failed mail leaves a retry and the next due mail can finish"
+        },
+        {
+          "file": "test-inline-translation.mjs",
+          "name": "brand and contact name literals stay intact while actionable title-case phrases translate"
         }
       ],
       "python": []

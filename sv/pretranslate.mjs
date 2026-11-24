@@ -6,7 +6,7 @@ export function htmlTranslationSegments(html){
  const doc=parse(String(html),{scriptingEnabled:false});const values=[];
  function visit(node,blocked=false,inBody=false){
   const attrs=Object.fromEntries((node.attrs||[]).map(x=>[x.name,x.value]));
-  const excluded=blocked||['script','style','noscript','svg','code','template'].includes(node.tagName)||'hidden' in attrs||attrs['aria-hidden']==='true'||/(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))/i.test(attrs.style||'');
+  const excluded=blocked||['script','style','svg','code','template'].includes(node.tagName)||'hidden' in attrs||attrs['aria-hidden']==='true'||/(?:display\s*:\s*none|visibility\s*:\s*(?:hidden|collapse))/i.test(attrs.style||'');
   if(node.nodeName==='#text'&&inBody&&!excluded){const text=node.value.trim();if(text)values.push(...translationBodySegments(text));}
   for(const child of node.childNodes||[])visit(child,excluded,inBody||node.tagName==='body');
  }
