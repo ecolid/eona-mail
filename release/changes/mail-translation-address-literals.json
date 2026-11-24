@@ -1,0 +1,7 @@
+{
+  "id": "mail-translation-address-literals",
+  "summary": "联系地址和公司后缀保留原字",
+  "details": [
+    "译文保留用于联系或核对的邮寄地址、公司简称和设备型号，避免这些字段令整封邮件反复等待。"
+  ]
+}
